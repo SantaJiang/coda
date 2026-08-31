@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal } from "solid-js"
 import { useApp } from "../store/app"
+import { ModelMenu } from "./ModelMenu"
 
 export function Composer() {
   const app = useApp()
@@ -8,6 +9,7 @@ export function Composer() {
 
   const placeholder = createMemo(() => {
     if (!app.selectedProject()) return "先添加一个项目文件夹"
+    if (!app.selectedModel()) return "先配置一个模型"
     if (app.blocked()) return "请先处理权限或提问"
     if (app.busy()) return "Agent 正在工作，Enter 可停止…"
     return "发给 Agent 一条消息"
@@ -45,7 +47,7 @@ export function Composer() {
         onKeyDown={onKeyDown}
       />
       <div class="composer-bar">
-        <span class="model-chip">DeepSeek V4 Flash</span>
+        <ModelMenu />
         <button
           type="button"
           class="send-btn"

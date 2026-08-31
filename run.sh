@@ -18,7 +18,6 @@ if [[ -f "$ROOT/config/local.env" ]]; then
   set +a
 fi
 
-export DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-REMOVED_REVOKE_THIS_KEY}"
 export OPENCODE_CONFIG="$ROOT/config/opencode.json"
 export OPENCODE_CONFIG_DIR="$LOG_DIR/opencode"
 export CODA_PORT="$PORT"

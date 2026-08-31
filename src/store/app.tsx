@@ -10,6 +10,23 @@ import { createStore, produce, type SetStoreFunction } from "solid-js/store"
 import * as api from "../lib/api"
 import { eventProps, subscribeEvents } from "../lib/events"
 import {
+  createConfiguredModel,
+  discoveredFromProviderList,
+  loadConfiguredModels,
+  loadPinnedModelKeys,
+  loadSelectedModelKey,
+  mergeSelectables,
+  resolveSelectedKey,
+  saveConfiguredModels,
+  savePinnedModelKeys,
+  saveSelectedModelKey,
+  toOpenCodePatch,
+  updateConfiguredModel,
+  type ConfiguredModel,
+  type ModelForm,
+  type SelectableModel,
+} from "../lib/models"
+import {
   createProject,
   loadLastProject,
   loadProjects,
@@ -48,6 +65,13 @@ export type AppState = {
   sending: boolean
   composer: string
   error: string | null
+  configuredModels: ConfiguredModel[]
+  selectedModelKey: string | null
+  discoveredModels: SelectableModel[]
+  pinnedModelKeys: string[]
+  modelMenuOpen: boolean
+  modelSettingsOpen: boolean
+  modelSettingsError: string | null
 }
 
 type AppContextValue = {
@@ -57,6 +81,18 @@ type AppContextValue = {
   selectedSession: () => Session | undefined
   busy: () => boolean
   blocked: () => boolean
+  selectableModels: () => SelectableModel[]
+  selectedModel: () => SelectableModel | undefined
+  selectModel: (key: string) => void
+  openModelMenu: () => void
+  closeModelMenu: () => void
+  openModelSettings: () => void
+  closeModelSettings: () => void
+  saveConfiguredModel: (form: ModelForm, editingId?: string) => Promise<void>
+  deleteConfiguredModel: (id: string) => Promise<void>
+  pinDiscoveredModel: (key: string) => void
+  unpinDiscoveredModel: (key: string) => void
+  refreshDiscovered: () => Promise<void>
   addProject: () => Promise<void>
   toggleProject: (id: string) => void
   selectProject: (id: string) => void
@@ -100,6 +136,13 @@ const initial: AppState = {
   sending: false,
   composer: "",
   error: null,
+  configuredModels: [],
+  selectedModelKey: null,
+  discoveredModels: [],
+  pinnedModelKeys: [],
+  modelMenuOpen: false,
+  modelSettingsOpen: false,
+  modelSettingsError: null,
 }
 
 export function AppProvider(props: ParentProps) {
@@ -117,6 +160,117 @@ export function AppProvider(props: ParentProps) {
     const session = selectedSession()
     if (!session) return false
     return state.status[session.id]?.type === "busy" || state.sending
+  }
+
+  const selectableModels = () =>
+    mergeSelectables(
+      state.configuredModels,
+      state.discoveredModels.filter((item) => state.pinnedModelKeys.includes(item.key)),
+    )
+
+  const selectedModel = () => selectableModels().find((item) => item.key === state.selectedModelKey)
+
+  const persistSelection = (key: string | null) => {
+    setState("selectedModelKey", key)
+    saveSelectedModelKey(key)
+  }
+
+  const applyConfiguredModels = async (models: ConfiguredModel[], preferredKey?: string | null) => {
+    const extras = state.discoveredModels.filter((item) => state.pinnedModelKeys.includes(item.key))
+    const selectables = mergeSelectables(models, extras)
+    const nextKey = resolveSelectedKey(models, selectables, preferredKey ?? state.selectedModelKey)
+    setState("configuredModels", models)
+    persistSelection(nextKey)
+    saveConfiguredModels(models)
+    const patch = toOpenCodePatch(models, nextKey)
+    if (!patch) return
+    await api.patchGlobalConfig(patch)
+  }
+
+  const refreshDiscovered = async () => {
+    try {
+      const list = await api.listProviders(selectedProject()?.path)
+      const discovered = discoveredFromProviderList(list)
+      setState("discoveredModels", discovered)
+      const extras = discovered.filter((item) => state.pinnedModelKeys.includes(item.key))
+      const nextKey = resolveSelectedKey(
+        state.configuredModels,
+        mergeSelectables(state.configuredModels, extras),
+        state.selectedModelKey,
+      )
+      persistSelection(nextKey)
+    } catch {
+      setState("discoveredModels", [])
+    }
+  }
+
+  const selectModel = (key: string) => {
+    persistSelection(key)
+    setState("modelMenuOpen", false)
+  }
+
+  const openModelMenu = () => {
+    setState("modelMenuOpen", true)
+    void refreshDiscovered()
+  }
+  const closeModelMenu = () => setState("modelMenuOpen", false)
+
+  const openModelSettings = () => {
+    setState({
+      modelMenuOpen: false,
+      modelSettingsOpen: true,
+      modelSettingsError: null,
+    })
+  }
+
+  const closeModelSettings = () => {
+    setState({
+      modelSettingsOpen: false,
+      modelSettingsError: null,
+    })
+  }
+
+  const saveConfiguredModel = async (form: ModelForm, editingId?: string) => {
+    setState("modelSettingsError", null)
+    const next = editingId
+      ? state.configuredModels.map((item) => (item.id === editingId ? updateConfiguredModel(item, form) : item))
+      : [...state.configuredModels, createConfiguredModel(form)]
+    const saved = editingId ? next.find((item) => item.id === editingId) : next[next.length - 1]
+    try {
+      await applyConfiguredModels(next, saved ? `${saved.providerID}/${saved.modelID}` : null)
+      setState("modelSettingsOpen", false)
+    } catch (error) {
+      setState("modelSettingsError", error instanceof Error ? error.message : "同步到 OpenCode 失败")
+    }
+  }
+
+  const deleteConfiguredModel = async (id: string) => {
+    const next = state.configuredModels.filter((item) => item.id !== id)
+    try {
+      await applyConfiguredModels(next)
+    } catch (error) {
+      setState("modelSettingsError", error instanceof Error ? error.message : "删除后同步失败")
+    }
+  }
+
+  const pinDiscoveredModel = (key: string) => {
+    if (state.pinnedModelKeys.includes(key)) {
+      persistSelection(key)
+      return
+    }
+    const keys = [...state.pinnedModelKeys, key]
+    setState("pinnedModelKeys", keys)
+    savePinnedModelKeys(keys)
+    persistSelection(key)
+  }
+
+  const unpinDiscoveredModel = (key: string) => {
+    const keys = state.pinnedModelKeys.filter((item) => item !== key)
+    setState("pinnedModelKeys", keys)
+    savePinnedModelKeys(keys)
+    if (state.selectedModelKey === key) {
+      persistSelection(resolveSelectedKey(state.configuredModels, selectableModels(), null))
+    }
   }
 
   const blocked = () => {
@@ -238,19 +392,26 @@ export function AppProvider(props: ParentProps) {
     }
     if (blocked()) return
 
+    const model = selectedModel()
+    if (!model) {
+      setState("error", "请先配置一个模型")
+      openModelSettings()
+      return
+    }
+
     setState("sending", true)
     setState("error", null)
     try {
       let session = selectedSession()
       if (!session) {
-        session = await api.createSession(project.path, sessionTitle(content))
+        session = await api.createSession(project.path, sessionTitle(content), model)
         setState("sessionsByProject", project.path, (list = []) => upsertById(list, session!))
         setState({
           selectedSessionId: session.id,
           draft: false,
         })
       }
-      await api.promptAsync(project.path, session.id, content)
+      await api.promptAsync(project.path, session.id, content, model)
       setState("composer", "")
       setState("status", session.id, { type: "busy" })
     } catch (error) {
@@ -310,9 +471,13 @@ export function AppProvider(props: ParentProps) {
   onMount(() => {
     const projects = loadProjects()
     const last = loadLastProject()
+    const configured = loadConfiguredModels()
     setState("projects", projects)
     setState("selectedProjectId", last && projects.some((item) => item.id === last) ? last : projects[0]?.id ?? null)
     setState("draft", true)
+    setState("configuredModels", configured)
+    setState("pinnedModelKeys", loadPinnedModelKeys())
+    persistSelection(resolveSelectedKey(configured, mergeSelectables(configured, []), loadSelectedModelKey()))
 
     for (const project of projects) {
       void refreshProjectSessions(project)
@@ -322,6 +487,15 @@ export function AppProvider(props: ParentProps) {
       const ok = await api.healthcheck().catch(() => false)
       if (!ok) setState("connection", "disconnected")
     }, 8000)
+
+    void (async () => {
+      const ok = await api.healthcheck().catch(() => false)
+      if (!ok) return
+      setState("connection", "connected")
+      const patch = toOpenCodePatch(loadConfiguredModels(), loadSelectedModelKey())
+      if (patch) await api.patchGlobalConfig(patch).catch(() => undefined)
+      await refreshDiscovered()
+    })()
 
     const stop = subscribeEvents(
       (parsed) => {
@@ -448,7 +622,10 @@ export function AppProvider(props: ParentProps) {
           }),
         )
       },
-      (connected) => setState("connection", connected ? "connected" : "disconnected"),
+      (connected) => {
+        setState("connection", connected ? "connected" : "disconnected")
+        if (connected) void refreshDiscovered()
+      },
     )
 
     onCleanup(() => {
@@ -468,6 +645,18 @@ export function AppProvider(props: ParentProps) {
     selectedSession,
     busy,
     blocked,
+    selectableModels,
+    selectedModel,
+    selectModel,
+    openModelMenu,
+    closeModelMenu,
+    openModelSettings,
+    closeModelSettings,
+    saveConfiguredModel,
+    deleteConfiguredModel,
+    pinDiscoveredModel,
+    unpinDiscoveredModel,
+    refreshDiscovered,
     addProject,
     toggleProject,
     selectProject,

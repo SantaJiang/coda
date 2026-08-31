@@ -11,7 +11,7 @@ chmod +x ./run.sh
 ./run.sh
 ```
 
-脚本会重新构建前端、启动 OpenCode 后端（默认 `127.0.0.1:4096`），再启动 Tauri 桌面窗口。
+脚本会启动 OpenCode 后端（默认 `127.0.0.1:4096`），再启动 Tauri 桌面窗口。
 
 仅浏览器调试：
 
@@ -19,4 +19,4 @@ chmod +x ./run.sh
 ./run.sh --web
 ```
 
-默认模型为 `deepseek/deepseek-v4-flash`，密钥写在 `config/local.env`。
+首次打开没有预置模型。在输入框左下角点「配置模型」，添加一个 OpenAI 兼容接口（Base URL、API Key、模型 ID）即可。

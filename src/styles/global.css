@@ -356,11 +356,13 @@ button {
 }
 
 .composer {
+  position: relative;
   background: var(--bg-elevated);
   border: 1px solid #333;
   border-radius: 14px;
   padding: 10px 12px 8px;
   box-shadow: var(--shadow);
+  overflow: visible;
 }
 
 .composer textarea {
@@ -382,9 +384,268 @@ button {
   margin-top: 6px;
 }
 
+.model-picker {
+  position: relative;
+}
+
 .model-chip {
-  font-size: 11px;
+  max-width: 280px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
   color: var(--text-faint);
+  font-size: 11px;
+  text-align: left;
+}
+
+.model-chip:hover,
+.model-chip.open {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.model-chip.empty {
+  color: var(--accent);
+}
+
+.model-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  min-width: 220px;
+  max-width: 320px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+
+.model-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.model-menu-item:hover,
+.model-menu-item.active {
+  background: var(--bg-hover);
+}
+
+.model-menu-list {
+  max-height: 220px;
+  overflow: auto;
+}
+
+.model-menu-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-menu-tag {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.model-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 24px;
+}
+
+.dialog {
+  width: min(520px, 100%);
+  max-height: min(820px, calc(100vh - 48px));
+  overflow: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 16px 18px 18px;
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.dialog-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.dialog-hint,
+.field-note {
+  margin: 0 0 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.model-list {
+  margin-bottom: 16px;
+}
+
+.model-list-title,
+.model-form-title {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.model-list-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-align: left;
+}
+
+.model-list-toggle:hover {
+  color: var(--text);
+}
+
+.model-list-empty {
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+.model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 6px;
+}
+
+.model-row.compact {
+  padding: 6px 10px;
+}
+
+.discovered-scroll {
+  max-height: 160px;
+  overflow: auto;
+}
+
+.model-row-name {
+  font-size: 13px;
+}
+
+.model-row-meta {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.model-row-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.text-btn,
+.ghost-btn {
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.text-btn:hover,
+.ghost-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.text-btn.danger:hover {
+  color: var(--danger);
+}
+
+.model-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.field input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+.field input:focus {
+  border-color: #444;
+}
+
+.dialog-error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .send-btn {

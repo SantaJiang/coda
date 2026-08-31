@@ -1,4 +1,5 @@
-import { API_BASE, DEFAULT_AGENT, DEFAULT_MODEL } from "./config"
+import { API_BASE, DEFAULT_AGENT } from "./config"
+import type { ModelRef, OpenCodeConfigPatch, ProviderList } from "./models"
 import type {
   MessageWithParts,
   PermissionRequest,
@@ -99,13 +100,13 @@ export async function listSessions(directory: string) {
   return request<Session[]>("GET", "/session", { directory })
 }
 
-export async function createSession(directory: string, title?: string) {
+export async function createSession(directory: string, title: string | undefined, model: ModelRef) {
   return request<Session>("POST", "/session", {
     directory,
     body: {
       title,
       agent: DEFAULT_AGENT,
-      model: { id: DEFAULT_MODEL.modelID, providerID: DEFAULT_MODEL.providerID },
+      model: { id: model.modelID, providerID: model.providerID },
     },
   })
 }
@@ -118,18 +119,26 @@ export async function listMessages(directory: string, sessionID: string) {
   return request<MessageWithParts[]>("GET", `/session/${sessionID}/message`, { directory })
 }
 
-export async function promptAsync(directory: string, sessionID: string, text: string) {
+export async function promptAsync(directory: string, sessionID: string, text: string, model: ModelRef) {
   return request<void>("POST", `/session/${sessionID}/prompt_async`, {
     directory,
     body: {
       agent: DEFAULT_AGENT,
       model: {
-        providerID: DEFAULT_MODEL.providerID,
-        modelID: DEFAULT_MODEL.modelID,
+        providerID: model.providerID,
+        modelID: model.modelID,
       },
       parts: [{ type: "text", text }],
     },
   })
+}
+
+export async function listProviders(directory?: string) {
+  return request<ProviderList>("GET", "/provider", { directory })
+}
+
+export async function patchGlobalConfig(body: OpenCodeConfigPatch) {
+  return request<unknown>("PATCH", "/global/config", { body })
 }
 
 export async function abortSession(directory: string, sessionID: string) {
