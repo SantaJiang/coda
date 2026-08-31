@@ -72,17 +72,21 @@ export function activitySummary(parts: Part[]) {
   return bits.join(", ")
 }
 
+function labelForBucket(bucket: Bucket) {
+  if (bucket === "edit") return "Editing"
+  if (bucket === "explore" || bucket === "search") return "Exploring"
+  if (bucket === "browser") return "Browsing"
+  return "Running"
+}
+
 export function activityFlip(parts: Part[]) {
-  const tools = [...parts].reverse().filter((part): part is ToolPart => part.type === "tool")
-  const running = tools.find((part) => part.state.status === "pending" || part.state.status === "running")
-  if (running) {
-    const bucket = bucketOf(running.tool)
-    if (bucket === "edit") return "Editing"
-    if (bucket === "explore") return "Exploring"
-    if (bucket === "search") return "Searching"
-    if (bucket === "browser") return "Browsing"
-    return "Running"
-  }
+  const tools = parts.filter((part): part is ToolPart => part.type === "tool")
+  const running = [...tools].reverse().find(
+    (part) => part.state.status === "pending" || part.state.status === "running",
+  )
+  if (running) return labelForBucket(bucketOf(running.tool))
+  const latest = tools[tools.length - 1]
+  if (latest) return labelForBucket(bucketOf(latest.tool))
   if (parts.some((part) => part.type === "reasoning" && (part as ReasoningPart).text)) return "Thinking"
   return "Planning next moves"
 }

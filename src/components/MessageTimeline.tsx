@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, on } from "solid-js"
+import { Index, Show, createEffect, createMemo, on } from "solid-js"
 import { useApp } from "../store/app"
 import { ChatTurnView, groupTurns } from "./MessagePart"
 import { WorkGroup } from "./WorkGroup"
@@ -37,15 +37,15 @@ export function MessageTimeline() {
   return (
     <div class="timeline" ref={scroller} onScroll={onScroll}>
       <div class="timeline-inner">
-        <For each={turns()}>
+        <Index each={turns()}>
           {(turn, index) => (
             <ChatTurnView
-              turn={turn}
+              turn={turn()}
               partsByMessage={app.state.parts}
-              live={app.busy() && index() === turns().length - 1}
+              live={app.busy() && index === turns().length - 1}
             />
           )}
-        </For>
+        </Index>
         <Show when={app.busy() && (turns()[turns().length - 1]?.assistants.length ?? 0) === 0}>
           <WorkGroup parts={[]} live />
         </Show>

@@ -1,34 +1,74 @@
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { activityFlip, activitySummary } from "../lib/activity"
 import type { Part, ReasoningPart, ToolPart } from "../lib/types"
 import { MarkdownView } from "./MarkdownView"
 import { ToolCard } from "./ToolCard"
 
-export function WorkGroup(props: { parts: Part[]; live: boolean }) {
-  const [open, setOpen] = createSignal(false)
-  const summary = createMemo(() => activitySummary(props.parts))
-  const flip = createMemo(() => activityFlip(props.parts))
-  const toggle = () => setOpen((value) => !value)
+const FLIP_HOLD_MS = 600
+
+export function WorkGroup(props: {
+  parts?: Part[]
+  getParts?: () => Part[]
+  live: boolean
+  open?: boolean
+  onToggle?: () => void
+}) {
+  const [localOpen, setLocalOpen] = createSignal(false)
+  const [flipLine, setFlipLine] = createSignal({ label: "Planning next moves", animate: false })
+  const parts = createMemo(() => (props.getParts ? props.getParts() : (props.parts ?? [])))
+  const summary = createMemo(() => activitySummary(parts()))
+  const flip = createMemo(() => activityFlip(parts()))
+  const open = () => (props.onToggle ? Boolean(props.open) : localOpen())
+  const toggle = (event?: MouseEvent) => {
+    event?.preventDefault()
+    event?.stopPropagation()
+    if (props.onToggle) props.onToggle()
+    else setLocalOpen((value) => !value)
+  }
+
+  let lastFlip = ""
+  let hold: number | undefined
+  createEffect(() => {
+    const next = flip()
+    window.clearTimeout(hold)
+    if (next === lastFlip) return
+    if (!lastFlip) {
+      lastFlip = next
+      setFlipLine({ label: next, animate: false })
+      return
+    }
+    hold = window.setTimeout(() => {
+      if (next === lastFlip) return
+      lastFlip = next
+      setFlipLine({ label: next, animate: true })
+    }, FLIP_HOLD_MS)
+  })
+  onCleanup(() => window.clearTimeout(hold))
 
   return (
     <div class="work-group" classList={{ open: open() }}>
-      <Show when={summary()}>
-        <button type="button" class="work-summary" onClick={toggle}>
-          {summary()}
-        </button>
-      </Show>
-      <Show when={props.live}>
-        <button type="button" class="work-flip" onClick={toggle} aria-label={flip()}>
-          <span class="work-flip-window">
-            <Show when={flip()} keyed>
-              {(label) => <span class="work-flip-line">{label}</span>}
-            </Show>
+      <button type="button" class="work-head" onClick={toggle} aria-expanded={open()}>
+        <Show when={summary()}>
+          <span class="work-summary">
+            <span class="work-summary-text">{summary()}</span>
+            <span class="work-summary-caret" aria-hidden="true">
+              ›
+            </span>
           </span>
-        </button>
-      </Show>
+        </Show>
+        <Show when={props.live}>
+          <span class="work-flip" aria-label={flipLine().label}>
+            <span class="work-flip-window">
+              <span class="work-flip-line" classList={{ animate: flipLine().animate }} data-label={flipLine().label}>
+                {flipLine().label}
+              </span>
+            </span>
+          </span>
+        </Show>
+      </button>
       <Show when={open()}>
         <div class="work-steps">
-          <For each={props.parts}>
+          <For each={parts()}>
             {(part) =>
               part.type === "tool" ? (
                 <ToolCard part={part as ToolPart} />

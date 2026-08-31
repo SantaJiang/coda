@@ -335,8 +335,7 @@ button {
   margin: 0 0 12px;
 }
 
-.work-summary,
-.work-flip {
+.work-head {
   display: block;
   width: 100%;
   margin: 0;
@@ -348,19 +347,50 @@ button {
 }
 
 .work-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
   color: var(--text-faint);
   font-size: 12px;
   line-height: 1.5;
 }
 
+.work-summary-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.work-summary-caret {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  transform: rotate(0deg);
+  transition: opacity 120ms ease, transform 120ms ease, color 120ms ease;
+}
+
+.work-group:hover .work-summary-caret,
+.work-group.open .work-summary-caret {
+  opacity: 1;
+  color: var(--text);
+}
+
+.work-group.open .work-summary-caret {
+  transform: rotate(90deg);
+}
+
 .work-flip {
+  display: block;
   margin-top: 2px;
   color: var(--text-muted);
   font-size: 13px;
 }
 
-.work-summary:hover,
-.work-flip:hover {
+.work-group:hover .work-summary,
+.work-group:hover .work-flip,
+.work-group.open .work-summary {
   color: var(--text);
 }
 
@@ -373,6 +403,9 @@ button {
 .work-flip-line {
   display: block;
   line-height: 1.4em;
+}
+
+.work-flip-line.animate {
   animation: work-flip 280ms ease;
 }
 

@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createMemo } from "solid-js"
+import { For, Index, Match, Show, Switch, createMemo, createSignal } from "solid-js"
 import { groupActivityBlocks } from "../lib/activity"
 import type {
   AgentPart,
@@ -85,6 +85,7 @@ function AssistantTurn(props: {
   partsByMessage: Record<string, Part[]>
   live: boolean
 }) {
+  const [opened, setOpened] = createSignal<Record<number, boolean>>({})
   const parts = createMemo(() => collectParts(props.assistants, props.partsByMessage))
   const blocks = createMemo(() => groupActivityBlocks(parts()))
   const error = createMemo(() => {
@@ -98,21 +99,23 @@ function AssistantTurn(props: {
         <Show when={props.live && blocks().length === 0}>
           <WorkGroup parts={[]} live />
         </Show>
-        <For each={blocks()}>
+        <Index each={blocks()}>
           {(block, index) => (
             <Show
-              when={block.kind === "work"}
+              when={block().kind === "work"}
               fallback={
-                <For each={block.parts}>{(part) => <MessagePartView part={part} />}</For>
+                <For each={block().parts}>{(part) => <MessagePartView part={part} />}</For>
               }
             >
               <WorkGroup
-                parts={block.parts}
-                live={props.live && index() === blocks().length - 1}
+                getParts={() => block().parts}
+                live={props.live && index === blocks().length - 1}
+                open={opened()[index] === true}
+                onToggle={() => setOpened((prev) => ({ ...prev, [index]: !prev[index] }))}
               />
             </Show>
           )}
-        </For>
+        </Index>
         <Show when={error()}>
           <div class="error-card">{error()}</div>
         </Show>
