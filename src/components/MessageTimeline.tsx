@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, on } from "solid-js"
 import { useApp } from "../store/app"
 import { ChatTurnView, groupTurns } from "./MessagePart"
+import { WorkGroup } from "./WorkGroup"
 
 export function MessageTimeline() {
   const app = useApp()
@@ -14,15 +15,6 @@ export function MessageTimeline() {
   })
 
   const turns = createMemo(() => groupTurns(messages()))
-  const lastTurnHasAnswer = createMemo(() => {
-    const last = turns()[turns().length - 1]
-    if (!last) return false
-    return last.assistants.some((message) =>
-      (app.state.parts[message.id] ?? []).some(
-        (part) => part.type === "text" && Boolean((part as { text?: string }).text?.trim()),
-      ),
-    )
-  })
 
   const onScroll = () => {
     if (!scroller) return
@@ -54,11 +46,8 @@ export function MessageTimeline() {
             />
           )}
         </For>
-        <Show when={app.busy() && !lastTurnHasAnswer()}>
-          <div class="working">
-            <span class="spinner" />
-            <span>正在思考与调用工具…</span>
-          </div>
+        <Show when={app.busy() && (turns()[turns().length - 1]?.assistants.length ?? 0) === 0}>
+          <WorkGroup parts={[]} live />
         </Show>
       </div>
     </div>

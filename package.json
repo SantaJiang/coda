@@ -17,6 +17,7 @@
     "@kobalte/core": "^0.13.11",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-http": "^2.5.9",
     "@tauri-apps/plugin-opener": "^2",
     "highlight.js": "^11.11.1",
     "marked": "^15.0.12",

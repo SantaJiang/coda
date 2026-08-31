@@ -182,11 +182,10 @@ export function updateConfiguredModel(model: ConfiguredModel, form: ModelForm): 
   return { ...next, id: model.id }
 }
 
-export function validateModelForm(form: ModelForm) {
-  if (!form.modelID.trim()) return "请填写模型 ID"
+export function validateProviderForm(form: Pick<ModelForm, "baseURL" | "apiKey" | "providerID" | "providerName" | "name">) {
   if (!form.baseURL.trim()) return "请填写接口地址"
   if (!form.apiKey.trim()) return "请填写 API Key"
-  if (!slugify(form.providerID || form.providerName || form.name || form.modelID)) return "请填写供应商 ID"
+  if (!slugify(form.providerID || form.providerName || form.name)) return "请选择或填写供应商"
   try {
     const url = new URL(form.baseURL.trim())
     if (url.protocol !== "http:" && url.protocol !== "https:") return "接口地址需要是 http 或 https"
@@ -194,6 +193,11 @@ export function validateModelForm(form: ModelForm) {
     return "接口地址不是合法 URL"
   }
   return null
+}
+
+export function validateModelForm(form: ModelForm) {
+  if (!form.modelID.trim()) return "请填写模型 ID"
+  return validateProviderForm(form)
 }
 
 export function variantKeys(model?: { variants?: Record<string, unknown> }) {

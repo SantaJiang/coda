@@ -106,6 +106,7 @@ type AppContextValue = {
   openModelSettings: () => void
   closeModelSettings: () => void
   saveConfiguredModel: (form: ModelForm, editingId?: string) => Promise<void>
+  saveConfiguredProvider: (form: ModelForm, modelIDs: string[]) => Promise<void>
   deleteConfiguredModel: (id: string) => Promise<void>
   pinDiscoveredModel: (key: string) => void
   unpinDiscoveredModel: (key: string) => void
@@ -369,6 +370,36 @@ export function AppProvider(props: ParentProps) {
     const saved = editingId ? next.find((item) => item.id === editingId) : next[next.length - 1]
     try {
       await applyConfiguredModels(next, saved ? `${saved.providerID}/${saved.modelID}` : null)
+      setState("modelSettingsOpen", false)
+    } catch (error) {
+      setState("modelSettingsError", error instanceof Error ? error.message : "同步到后端失败")
+    }
+  }
+
+  const saveConfiguredProvider = async (form: ModelForm, modelIDs: string[]) => {
+    setState("modelSettingsError", null)
+    const unique = [...new Set(modelIDs.map((item) => item.trim()).filter(Boolean))]
+    if (unique.length === 0) {
+      setState("modelSettingsError", "请至少勾选一个模型")
+      return
+    }
+    const sample = createConfiguredModel({ ...form, modelID: unique[0], name: unique[0] })
+    const providerID = sample.providerID
+    const existing = new Map(state.configuredModels.map((item) => [`${item.providerID}/${item.modelID}`, item]))
+    const others = state.configuredModels.filter((item) => item.providerID !== providerID)
+    const nextModels = unique.map((modelID) => {
+      const created = createConfiguredModel({
+        ...form,
+        providerID,
+        providerName: form.providerName.trim() || sample.providerName,
+        modelID,
+        name: modelID,
+      })
+      const prev = existing.get(`${providerID}/${modelID}`)
+      return prev ? { ...created, id: prev.id, name: prev.name === prev.modelID ? modelID : prev.name } : created
+    })
+    try {
+      await applyConfiguredModels([...others, ...nextModels], `${providerID}/${unique[0]}`)
       setState("modelSettingsOpen", false)
     } catch (error) {
       setState("modelSettingsError", error instanceof Error ? error.message : "同步到后端失败")
@@ -799,6 +830,7 @@ export function AppProvider(props: ParentProps) {
     openModelSettings,
     closeModelSettings,
     saveConfiguredModel,
+    saveConfiguredProvider,
     deleteConfiguredModel,
     pinDiscoveredModel,
     unpinDiscoveredModel,
