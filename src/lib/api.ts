@@ -1,6 +1,7 @@
 import { API_BASE, DEFAULT_AGENT } from "./config"
 import type { ComposerAttachment } from "./attachments"
 import type { ConfigPatch, ModelRef, ProviderList } from "./models"
+import type { PermissionRule } from "./permissions"
 import type {
   MessageWithParts,
   PermissionRequest,
@@ -101,15 +102,49 @@ export async function listSessions(directory: string) {
   return request<Session[]>("GET", "/session", { directory })
 }
 
-export async function createSession(directory: string, title: string | undefined, model: ModelRef, agent = DEFAULT_AGENT) {
+export async function createSession(
+  directory: string,
+  title?: string,
+  model?: ModelRef,
+  agent = DEFAULT_AGENT,
+  permission?: PermissionRule[],
+) {
   return request<Session>("POST", "/session", {
     directory,
     body: {
-      title,
+      ...(title !== undefined ? { title } : {}),
       agent,
-      model: { id: model.modelID, providerID: model.providerID },
+      ...(model ? { model: { id: model.modelID, providerID: model.providerID } } : {}),
+      ...(permission ? { permission } : {}),
     },
   })
+}
+
+export async function updateSessionTitle(directory: string, sessionID: string, title: string) {
+  return request<Session>("PATCH", `/session/${sessionID}`, {
+    directory,
+    body: { title },
+  })
+}
+
+export async function updateSessionPermission(directory: string, sessionID: string, permission: PermissionRule[]) {
+  return request<Session>("PATCH", `/session/${sessionID}`, {
+    directory,
+    body: { permission },
+  })
+}
+
+export async function deleteSession(directory: string, sessionID: string) {
+  return request<boolean>("DELETE", `/session/${sessionID}`, { directory })
+}
+
+export type VcsInfo = {
+  branch?: string | null
+  default_branch?: string | null
+}
+
+export async function getVcs(directory: string) {
+  return request<VcsInfo>("GET", "/instance/vcs", { directory })
 }
 
 export async function getSession(directory: string, sessionID: string) {

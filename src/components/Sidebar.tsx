@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js"
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
 import { useApp } from "../store/app"
 import type { Session } from "../lib/types"
 
@@ -36,6 +36,30 @@ function IconChat() {
   )
 }
 
+function IconMore() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="3.5" r="1.25" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+      <circle cx="8" cy="12.5" r="1.25" fill="currentColor" />
+    </svg>
+  )
+}
+
+function IconChatPlus() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M3 4.2A1.2 1.2 0 0 1 4.2 3h7.6A1.2 1.2 0 0 1 13 4.2v5.1A1.2 1.2 0 0 1 11.8 10.5H7l-3.2 2.3V4.2Z"
+        stroke="currentColor"
+        stroke-width="1.3"
+        stroke-linejoin="round"
+      />
+      <path d="M8 5.5v3M6.5 7h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+    </svg>
+  )
+}
+
 function IconChevron(props: { open: boolean }) {
   return (
     <svg
@@ -56,8 +80,68 @@ function sessionLabel(session: Session) {
   return title.replace(/^New session.*$/i, "新会话")
 }
 
+type CtxMenuState = {
+  session: Session
+  x: number
+  y: number
+}
+
 export function Sidebar() {
   const app = useApp()
+  const [moreMenuId, setMoreMenuId] = createSignal<string | null>(null)
+  const [ctxMenu, setCtxMenu] = createSignal<CtxMenuState | null>(null)
+  const [editingId, setEditingId] = createSignal<string | null>(null)
+  const [editingValue, setEditingValue] = createSignal("")
+  let ctxMenuRoot: HTMLDivElement | undefined
+
+  const toggleMoreMenu = (id: string) => {
+    setMoreMenuId((current) => (current === id ? null : id))
+    setCtxMenu(null)
+  }
+
+  const openSessionMenu = (event: MouseEvent, session: Session) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setEditingId(null)
+    setMoreMenuId(null)
+    setCtxMenu({ session, x: event.clientX, y: event.clientY })
+  }
+
+  const startRename = (session: Session) => {
+    setCtxMenu(null)
+    setEditingId(session.id)
+    setEditingValue(session.title?.trim() ?? "")
+  }
+
+  const commitRename = (session: Session) => {
+    if (editingId() !== session.id) return
+    const title = editingValue().trim()
+    setEditingId(null)
+    if (title && title !== session.title) void app.renameSession(session, title)
+  }
+
+  onMount(() => {
+    const onPointer = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (ctxMenuRoot && target && ctxMenuRoot.contains(target)) return
+      if (target instanceof Element && target.closest(".tree-more")) return
+      setCtxMenu(null)
+      setMoreMenuId(null)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setCtxMenu(null)
+        setMoreMenuId(null)
+        setEditingId(null)
+      }
+    }
+    document.addEventListener("pointerdown", onPointer)
+    document.addEventListener("keydown", onKey)
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", onPointer)
+      document.removeEventListener("keydown", onKey)
+    })
+  })
 
   return (
     <aside class="sidebar">
@@ -86,25 +170,65 @@ export function Sidebar() {
                 )
               return (
                 <div class="tree-project">
-                  <button
-                    type="button"
-                    class="tree-root"
-                    onClick={() => app.selectProject(project.id)}
-                  >
-                    <span
-                      class="chevron-hit"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        app.toggleProject(project.id)
-                      }}
+                  <div class="tree-root">
+                    <button
+                      type="button"
+                      class="tree-root-main"
+                      onClick={() => app.selectProject(project.id)}
                     >
-                      <IconChevron open={project.expanded} />
-                    </span>
-                    <IconFolder />
-                    <span class="truncate" title={project.path}>
-                      {project.name}
-                    </span>
-                  </button>
+                      <span
+                        class="chevron-hit"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          app.toggleProject(project.id)
+                        }}
+                      >
+                        <IconChevron open={project.expanded} />
+                      </span>
+                      <IconFolder />
+                      <span class="truncate" title={project.path}>
+                        {project.name}
+                      </span>
+                    </button>
+                    <div class="tree-root-actions" classList={{ open: moreMenuId() === project.id }}>
+                      <div class="tree-more">
+                        <button
+                          type="button"
+                          class="icon-btn tree-action"
+                          classList={{ open: moreMenuId() === project.id }}
+                          title="更多"
+                          aria-label="更多"
+                          onClick={() => toggleMoreMenu(project.id)}
+                        >
+                          <IconMore />
+                        </button>
+                        <Show when={moreMenuId() === project.id}>
+                          <div class="context-menu tree-more-menu" role="menu">
+                            <button
+                              type="button"
+                              class="context-menu-item danger"
+                              role="menuitem"
+                              onClick={() => {
+                                app.removeProject(project.id)
+                                setMoreMenuId(null)
+                              }}
+                            >
+                              移除项目
+                            </button>
+                          </div>
+                        </Show>
+                      </div>
+                      <button
+                        type="button"
+                        class="icon-btn tree-action"
+                        title="新建会话"
+                        aria-label="新建会话"
+                        onClick={() => void app.createSessionInProject(project)}
+                      >
+                        <IconChatPlus />
+                      </button>
+                    </div>
+                  </div>
                   <Show when={project.expanded}>
                     <div class="tree-children">
                       <Show when={sessions().length === 0}>
@@ -112,18 +236,50 @@ export function Sidebar() {
                       </Show>
                       <For each={sessions()}>
                         {(session) => (
-                          <button
-                            type="button"
+                          <div
                             class="tree-session"
                             classList={{ active: app.state.selectedSessionId === session.id }}
-                            onClick={() => void app.selectSession(session)}
                           >
-                            <IconChat />
-                            <span class="truncate">{sessionLabel(session)}</span>
-                            <Show when={app.state.status[session.id]?.type === "busy"}>
-                              <span class="pulse-dot" />
+                            <Show
+                              when={editingId() !== session.id}
+                              fallback={
+                                <input
+                                  ref={(element) => {
+                                    if (element) {
+                                      element.focus()
+                                      element.select()
+                                    }
+                                  }}
+                                  class="tree-rename"
+                                  value={editingValue()}
+                                  onInput={(event) => setEditingValue(event.currentTarget.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.preventDefault()
+                                      commitRename(session)
+                                    } else if (event.key === "Escape") {
+                                      event.stopPropagation()
+                                      setEditingId(null)
+                                    }
+                                  }}
+                                  onBlur={() => commitRename(session)}
+                                />
+                              }
+                            >
+                              <button
+                                type="button"
+                                class="tree-session-main"
+                                onContextMenu={(event) => openSessionMenu(event, session)}
+                                onClick={() => void app.selectSession(session)}
+                              >
+                                <IconChat />
+                                <span class="truncate">{sessionLabel(session)}</span>
+                                <Show when={app.state.status[session.id]?.type === "busy"}>
+                                  <span class="pulse-dot" />
+                                </Show>
+                              </button>
                             </Show>
-                          </button>
+                          </div>
                         )}
                       </For>
                     </div>
@@ -150,6 +306,37 @@ export function Sidebar() {
               : "后端未连接"}
         </span>
       </div>
+
+      <Show when={ctxMenu()}>
+        {(menu) => (
+          <div
+            ref={ctxMenuRoot}
+            class="context-menu"
+            style={{ position: "fixed", left: `${menu().x}px`, top: `${menu().y}px` }}
+            role="menu"
+          >
+            <button
+              type="button"
+              class="context-menu-item"
+              role="menuitem"
+              onClick={() => startRename(menu().session)}
+            >
+              重命名
+            </button>
+            <button
+              type="button"
+              class="context-menu-item danger"
+              role="menuitem"
+              onClick={() => {
+                void app.deleteSession(menu().session)
+                setCtxMenu(null)
+              }}
+            >
+              删除
+            </button>
+          </div>
+        )}
+      </Show>
     </aside>
   )
 }

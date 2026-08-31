@@ -30,11 +30,20 @@ import {
 } from "../lib/models"
 import { PLAN_AGENT, DEFAULT_AGENT } from "../lib/config"
 import {
+  autoReplyForMode,
+  loadPermissionMode,
+  permissionPreset,
+  permissionRuleset,
+  savePermissionMode,
+  type PermissionMode,
+} from "../lib/permissions"
+import {
   attachmentFromBrowserFile,
   attachmentFromPath,
   type ComposerAttachment,
 } from "../lib/attachments"
 import {
+  clearLastProject,
   createProject,
   loadLastProject,
   loadProjects,
@@ -86,6 +95,8 @@ export type AppState = {
   planMode: boolean
   plusMenuOpen: boolean
   variantMenuOpen: boolean
+  permissionMenuOpen: boolean
+  permissionMode: PermissionMode
   selectedVariant: string | null
   modelVariants: Record<string, string[]>
   attachments: ComposerAttachment[]
@@ -120,14 +131,23 @@ type AppContextValue = {
   openVariantMenu: () => void
   closeVariantMenu: () => void
   setVariant: (value: string | null) => void
+  permissionLabel: () => string
+  openPermissionMenu: () => void
+  closePermissionMenu: () => void
+  setPermissionMode: (mode: PermissionMode) => Promise<void>
   addFiles: () => Promise<void>
   addFolder: () => Promise<void>
   removeAttachment: (id: string) => void
   addProject: () => Promise<void>
   toggleProject: (id: string) => void
   selectProject: (id: string) => void
+  removeProject: (id: string) => void
+  closeProject: () => void
+  createSessionInProject: (project: Project) => Promise<void>
   startDraft: () => void
   selectSession: (session: Session) => Promise<void>
+  renameSession: (session: Session, title: string) => Promise<void>
+  deleteSession: (session: Session) => Promise<void>
   send: (text?: string) => Promise<void>
   abort: () => Promise<void>
   replyPermission: (id: string, reply: "once" | "always" | "reject") => Promise<void>
@@ -176,6 +196,8 @@ const initial: AppState = {
   planMode: false,
   plusMenuOpen: false,
   variantMenuOpen: false,
+  permissionMenuOpen: false,
+  permissionMode: loadPermissionMode(),
   selectedVariant: null,
   modelVariants: {},
   attachments: [],
@@ -248,6 +270,7 @@ export function AppProvider(props: ParentProps) {
     setState({
       modelMenuOpen: false,
       variantMenuOpen: false,
+      permissionMenuOpen: false,
       selectedVariant: nextVariant,
     })
   }
@@ -257,6 +280,7 @@ export function AppProvider(props: ParentProps) {
       modelMenuOpen: true,
       plusMenuOpen: false,
       variantMenuOpen: false,
+      permissionMenuOpen: false,
     })
     void refreshDiscovered()
   }
@@ -284,6 +308,7 @@ export function AppProvider(props: ParentProps) {
       plusMenuOpen: true,
       modelMenuOpen: false,
       variantMenuOpen: false,
+      permissionMenuOpen: false,
     })
   const closePlusMenu = () => setState("plusMenuOpen", false)
 
@@ -292,8 +317,60 @@ export function AppProvider(props: ParentProps) {
       variantMenuOpen: true,
       plusMenuOpen: false,
       modelMenuOpen: false,
+      permissionMenuOpen: false,
     })
   const closeVariantMenu = () => setState("variantMenuOpen", false)
+
+  const permissionLabel = () => permissionPreset(state.permissionMode).label
+
+  const openPermissionMenu = () =>
+    setState({
+      permissionMenuOpen: true,
+      plusMenuOpen: false,
+      modelMenuOpen: false,
+      variantMenuOpen: false,
+    })
+  const closePermissionMenu = () => setState("permissionMenuOpen", false)
+
+  const applySessionPermission = async (directory: string, sessionID: string, mode = state.permissionMode) => {
+    await api.updateSessionPermission(directory, sessionID, permissionRuleset(mode))
+  }
+
+  const autoReplyPending = async (mode: PermissionMode, sessionID?: string) => {
+    const project = selectedProject()
+    if (!project) return
+    const pending = Object.values(state.permissions).filter(
+      (item) => item && (!sessionID || item.sessionID === sessionID),
+    )
+    for (const item of pending) {
+      const reply = autoReplyForMode(mode, item.permission)
+      if (!reply) continue
+      await api.replyPermission(project.path, item.id, reply)
+      setState(
+        produce((draft) => {
+          delete draft.permissions[item.id]
+        }),
+      )
+    }
+  }
+
+  const setPermissionMode = async (mode: PermissionMode) => {
+    setState({
+      permissionMode: mode,
+      permissionMenuOpen: false,
+    })
+    savePermissionMode(mode)
+    const session = selectedSession()
+    const project = selectedProject()
+    if (session && project) {
+      try {
+        await applySessionPermission(project.path, session.id, mode)
+        await autoReplyPending(mode, session.id)
+      } catch (error) {
+        setState("error", error instanceof Error ? error.message : "更新权限失败")
+      }
+    }
+  }
 
   const setVariant = (value: string | null) => {
     setState({
@@ -517,6 +594,85 @@ export function AppProvider(props: ParentProps) {
     saveLastProject(id)
   }
 
+  const removeProject = (id: string) => {
+    const projects = state.projects.filter((project) => project.id !== id)
+    setState("projects", projects)
+    saveProjects(projects)
+    if (state.selectedProjectId === id) {
+      setState({
+        selectedProjectId: projects[0]?.id ?? null,
+        selectedSessionId: null,
+        draft: true,
+        error: null,
+      })
+      if (projects[0]) saveLastProject(projects[0].id)
+      else clearLastProject()
+    }
+  }
+
+  const closeProject = () => {
+    setState({
+      selectedProjectId: null,
+      selectedSessionId: null,
+      draft: true,
+      error: null,
+    })
+    clearLastProject()
+  }
+
+  const createSessionInProject = async (project: Project) => {
+    try {
+      const session = await api.createSession(
+        project.path,
+        undefined,
+        selectedModel(),
+        currentAgent(),
+        permissionRuleset(state.permissionMode),
+      )
+      setState("sessionsByProject", project.path, (list = []) => upsertById(list, session))
+      setState({
+        selectedProjectId: project.id,
+        selectedSessionId: session.id,
+        draft: false,
+        error: null,
+      })
+      saveLastProject(project.id)
+      await loadSessionDetail(session)
+    } catch (error) {
+      setState("error", error instanceof Error ? error.message : "新建会话失败")
+    }
+  }
+
+  const renameSession = async (session: Session, title: string) => {
+    const trimmed = title.trim()
+    if (!trimmed || trimmed === session.title) return
+    try {
+      const updated = await api.updateSessionTitle(session.directory, session.id, trimmed)
+      setState("sessionsByProject", session.directory, (list = []) =>
+        list.map((item) => (item.id === session.id ? updated : item)),
+      )
+    } catch (error) {
+      setState("error", error instanceof Error ? error.message : "重命名失败")
+    }
+  }
+
+  const deleteSession = async (session: Session) => {
+    try {
+      await api.deleteSession(session.directory, session.id)
+      setState("sessionsByProject", session.directory, (list = []) =>
+        list.filter((item) => item.id !== session.id),
+      )
+      if (state.selectedSessionId === session.id) {
+        setState({
+          selectedSessionId: null,
+          draft: true,
+        })
+      }
+    } catch (error) {
+      setState("error", error instanceof Error ? error.message : "删除会话失败")
+    }
+  }
+
   const startDraft = () => {
     if (!selectedProject()) return
     setState({
@@ -568,12 +724,20 @@ export function AppProvider(props: ParentProps) {
       let session = selectedSession()
       const title = content || files[0]?.filename || "新会话"
       if (!session) {
-        session = await api.createSession(project.path, sessionTitle(title), model, currentAgent())
+        session = await api.createSession(
+          project.path,
+          sessionTitle(title),
+          model,
+          currentAgent(),
+          permissionRuleset(state.permissionMode),
+        )
         setState("sessionsByProject", project.path, (list = []) => upsertById(list, session!))
         setState({
           selectedSessionId: session.id,
           draft: false,
         })
+      } else {
+        await applySessionPermission(project.path, session.id)
       }
       await api.promptAsync(project.path, session.id, {
         text: content,
@@ -674,6 +838,7 @@ export function AppProvider(props: ParentProps) {
         const props = eventProps(event)
         const directory = parsed.directory
 
+        const autoReplies: Array<{ id: string; reply: "once" | "always" | "reject"; directory: string }> = []
         setState(
           produce((draft) => {
             if (event.type === "session.created" || event.type === "session.updated") {
@@ -767,7 +932,19 @@ export function AppProvider(props: ParentProps) {
               const permission = (props as unknown as PermissionRequest).id
                 ? (props as unknown as PermissionRequest)
                 : ((props.permission ?? props.request ?? props) as PermissionRequest)
-              if (permission?.id) draft.permissions[permission.id] = permission
+              if (permission?.id) {
+                const reply = autoReplyForMode(draft.permissionMode, permission.permission)
+                const path =
+                  directory ||
+                  Object.entries(draft.sessionsByProject).find(([, sessions]) =>
+                    sessions.some((item) => item.id === permission.sessionID),
+                  )?.[0]
+                if (reply && path) {
+                  autoReplies.push({ id: permission.id, reply, directory: path })
+                } else {
+                  draft.permissions[permission.id] = permission
+                }
+              }
             }
             if (event.type === "permission.replied") {
               const requestID = (props.requestID as string) ?? (props.id as string)
@@ -792,6 +969,9 @@ export function AppProvider(props: ParentProps) {
             }
           }),
         )
+        for (const item of autoReplies) {
+          void api.replyPermission(item.directory, item.id, item.reply)
+        }
       },
       (connected) => {
         setState("connection", connected ? "connected" : "disconnected")
@@ -844,14 +1024,23 @@ export function AppProvider(props: ParentProps) {
     openVariantMenu,
     closeVariantMenu,
     setVariant,
+    permissionLabel,
+    openPermissionMenu,
+    closePermissionMenu,
+    setPermissionMode,
     addFiles,
     addFolder,
     removeAttachment,
     addProject,
     toggleProject,
     selectProject,
+    removeProject,
+    closeProject,
+    createSessionInProject,
     startDraft,
     selectSession,
+    renameSession,
+    deleteSession,
     send,
     abort,
     replyPermission,

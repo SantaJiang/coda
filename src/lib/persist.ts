@@ -34,6 +34,10 @@ export function saveLastProject(id: string) {
   localStorage.setItem(STORAGE_KEYS.lastProject, id)
 }
 
+export function clearLastProject() {
+  localStorage.removeItem(STORAGE_KEYS.lastProject)
+}
+
 export function createProject(path: string): Project {
   return {
     id: uid("prj"),

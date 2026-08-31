@@ -3,6 +3,7 @@ import { useApp } from "../store/app"
 import { AttachmentStrip } from "./AttachmentStrip"
 import { ComposerPlus } from "./ComposerPlus"
 import { ModelMenu } from "./ModelMenu"
+import { PermissionMenu } from "./PermissionMenu"
 import { VariantMenu } from "./VariantMenu"
 
 export function Composer() {
@@ -70,6 +71,7 @@ export function Composer() {
           </Show>
           <ModelMenu />
           <VariantMenu />
+          <PermissionMenu />
         </div>
         <button
           type="button"

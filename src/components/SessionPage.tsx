@@ -1,6 +1,7 @@
 import { Show } from "solid-js"
 import { useApp } from "../store/app"
 import { Composer } from "./Composer"
+import { ContextBar } from "./ContextBar"
 import { MessageTimeline } from "./MessageTimeline"
 import { PermissionDock } from "./PermissionDock"
 import { QuestionDock } from "./QuestionDock"
@@ -20,9 +21,10 @@ export function SessionPage() {
         fallback={
           <div class="empty">
             <div class="wordmark">Coda</div>
-            <p>精简的桌面 Agent。选择左侧项目，然后开始一段会话。</p>
+            <p>选择左侧项目，然后开始一段会话。</p>
             <div class="empty-composer">
               <Composer />
+              <ContextBar />
             </div>
           </div>
         }
@@ -36,6 +38,7 @@ export function SessionPage() {
           <PermissionDock />
           <TodoDock />
           <Composer />
+          <ContextBar />
         </div>
       </Show>
     </section>
