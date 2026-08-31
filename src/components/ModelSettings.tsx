@@ -90,7 +90,7 @@ export function ModelSettings() {
             </button>
           </header>
 
-          <p class="dialog-hint">添加 OpenAI 兼容接口。Coda 负责选用哪些模型，OpenCode 负责实际调用。</p>
+          <p class="dialog-hint">添加 OpenAI 兼容接口。Coda 负责选用哪些模型，后端负责实际调用。</p>
 
           <section class="model-list">
             <div class="model-list-title">已添加</div>
@@ -123,7 +123,7 @@ export function ModelSettings() {
 
           <section class="model-list discovered">
             <button type="button" class="model-list-toggle" onClick={() => setShowDiscovered((open) => !open)}>
-              OpenCode 已连接（{app.state.discoveredModels.length}）
+              已连接（{app.state.discoveredModels.length}）
             </button>
             <Show when={showDiscovered()}>
               <Show

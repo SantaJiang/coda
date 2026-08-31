@@ -55,7 +55,7 @@ export function ModelMenu() {
                     onClick={() => app.selectModel(model.key)}
                   >
                     <span class="model-menu-name">{model.name}</span>
-                    <Show when={model.source === "opencode"}>
+                    <Show when={model.source === "discovered"}>
                       <span class="model-menu-tag">已连接</span>
                     </Show>
                   </button>

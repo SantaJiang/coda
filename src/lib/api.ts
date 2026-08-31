@@ -1,5 +1,6 @@
 import { API_BASE, DEFAULT_AGENT } from "./config"
-import type { ModelRef, OpenCodeConfigPatch, ProviderList } from "./models"
+import type { ComposerAttachment } from "./attachments"
+import type { ConfigPatch, ModelRef, ProviderList } from "./models"
 import type {
   MessageWithParts,
   PermissionRequest,
@@ -22,7 +23,7 @@ function directoryHeaders(directory?: string): Record<string, string> {
     Accept: "application/json",
   }
   if (directory) {
-    headers["x-opencode-directory"] = encodeURIComponent(directory)
+    headers["x-coda-directory"] = encodeURIComponent(directory)
   }
   return headers
 }
@@ -100,12 +101,12 @@ export async function listSessions(directory: string) {
   return request<Session[]>("GET", "/session", { directory })
 }
 
-export async function createSession(directory: string, title: string | undefined, model: ModelRef) {
+export async function createSession(directory: string, title: string | undefined, model: ModelRef, agent = DEFAULT_AGENT) {
   return request<Session>("POST", "/session", {
     directory,
     body: {
       title,
-      agent: DEFAULT_AGENT,
+      agent,
       model: { id: model.modelID, providerID: model.providerID },
     },
   })
@@ -119,16 +120,40 @@ export async function listMessages(directory: string, sessionID: string) {
   return request<MessageWithParts[]>("GET", `/session/${sessionID}/message`, { directory })
 }
 
-export async function promptAsync(directory: string, sessionID: string, text: string, model: ModelRef) {
+export async function promptAsync(
+  directory: string,
+  sessionID: string,
+  options: {
+    text: string
+    model: ModelRef
+    agent?: string
+    variant?: string
+    files?: ComposerAttachment[]
+  },
+) {
+  const parts: Array<{ type: "text"; text: string } | { type: "file"; mime: string; filename?: string; url: string }> =
+    []
+  if (options.text.trim()) {
+    parts.push({ type: "text", text: options.text })
+  }
+  for (const file of options.files ?? []) {
+    parts.push({
+      type: "file",
+      mime: file.mime,
+      filename: file.filename,
+      url: file.url,
+    })
+  }
   return request<void>("POST", `/session/${sessionID}/prompt_async`, {
     directory,
     body: {
-      agent: DEFAULT_AGENT,
+      agent: options.agent ?? DEFAULT_AGENT,
       model: {
-        providerID: model.providerID,
-        modelID: model.modelID,
+        providerID: options.model.providerID,
+        modelID: options.model.modelID,
       },
-      parts: [{ type: "text", text }],
+      ...(options.variant ? { variant: options.variant } : {}),
+      parts,
     },
   })
 }
@@ -137,7 +162,7 @@ export async function listProviders(directory?: string) {
   return request<ProviderList>("GET", "/provider", { directory })
 }
 
-export async function patchGlobalConfig(body: OpenCodeConfigPatch) {
+export async function patchGlobalConfig(body: ConfigPatch) {
   return request<unknown>("PATCH", "/global/config", { body })
 }
 

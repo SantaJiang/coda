@@ -18,7 +18,8 @@ export type SelectableModel = {
   providerID: string
   modelID: string
   name: string
-  source: "coda" | "opencode"
+  source: "coda" | "discovered"
+  variants: string[]
 }
 
 export type ModelForm = {
@@ -30,7 +31,7 @@ export type ModelForm = {
   apiKey: string
 }
 
-export type OpenCodeProviderConfig = {
+export type BackendProviderConfig = {
   name?: string
   npm?: string
   options?: {
@@ -51,16 +52,23 @@ export type OpenCodeProviderConfig = {
   >
 }
 
-export type OpenCodeConfigPatch = {
+export type ConfigPatch = {
   model?: string
-  provider?: Record<string, OpenCodeProviderConfig>
+  provider?: Record<string, BackendProviderConfig>
 }
 
 export type ProviderList = {
   all: Array<{
     id: string
     name: string
-    models: Record<string, { id?: string; name?: string }>
+    models: Record<
+      string,
+      {
+        id?: string
+        name?: string
+        variants?: Record<string, unknown>
+      }
+    >
   }>
   default: Record<string, string>
   connected: string[]
@@ -188,6 +196,16 @@ export function validateModelForm(form: ModelForm) {
   return null
 }
 
+export function variantKeys(model?: { variants?: Record<string, unknown> }) {
+  return Object.keys(model?.variants ?? {})
+}
+
+export function formatVariantLabel(id: string) {
+  if (!id || id === "default") return "Default"
+  if (id === "xhigh") return "xHigh"
+  return id.charAt(0).toUpperCase() + id.slice(1)
+}
+
 export function toSelectable(model: ConfiguredModel): SelectableModel {
   return {
     key: modelKey(model.providerID, model.modelID),
@@ -195,6 +213,7 @@ export function toSelectable(model: ConfiguredModel): SelectableModel {
     modelID: model.modelID,
     name: model.name,
     source: "coda",
+    variants: [],
   }
 }
 
@@ -210,17 +229,35 @@ export function discoveredFromProviderList(list: ProviderList): SelectableModel[
         providerID: provider.id,
         modelID,
         name: model.name || modelID,
-        source: "opencode",
+        source: "discovered",
+        variants: variantKeys(model),
       })
     }
   }
   return result
 }
 
+export function variantsByKey(list: ProviderList) {
+  const map: Record<string, string[]> = {}
+  for (const provider of list.all ?? []) {
+    for (const [id, model] of Object.entries(provider.models ?? {})) {
+      const modelID = model.id || id
+      const keys = variantKeys(model)
+      if (keys.length) map[modelKey(provider.id, modelID)] = keys
+    }
+  }
+  return map
+}
+
 export function mergeSelectables(configured: ConfiguredModel[], discovered: SelectableModel[]) {
   const coda = configured.map(toSelectable)
-  const seen = new Set(coda.map((item) => item.key))
-  return [...coda, ...discovered.filter((item) => !seen.has(item.key))]
+  const extras = new Map(discovered.map((item) => [item.key, item]))
+  const merged = coda.map((item) => {
+    const extra = extras.get(item.key)
+    return extra?.variants.length ? { ...item, variants: extra.variants } : item
+  })
+  const seen = new Set(merged.map((item) => item.key))
+  return [...merged, ...discovered.filter((item) => !seen.has(item.key))]
 }
 
 export function resolveSelectedKey(configured: ConfiguredModel[], selectables: SelectableModel[], stored: string | null) {
@@ -229,9 +266,9 @@ export function resolveSelectedKey(configured: ConfiguredModel[], selectables: S
   return first ? modelKey(first.providerID, first.modelID) : null
 }
 
-export function toOpenCodePatch(models: ConfiguredModel[], selectedKey: string | null): OpenCodeConfigPatch | null {
+export function toBackendPatch(models: ConfiguredModel[], selectedKey: string | null): ConfigPatch | null {
   if (models.length === 0) return null
-  const provider: Record<string, OpenCodeProviderConfig> = {}
+  const provider: Record<string, BackendProviderConfig> = {}
   for (const model of models) {
     const current = provider[model.providerID] ?? {
       name: model.providerName || model.providerID,

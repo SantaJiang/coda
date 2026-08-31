@@ -12,6 +12,7 @@ import { eventProps, subscribeEvents } from "../lib/events"
 import {
   createConfiguredModel,
   discoveredFromProviderList,
+  formatVariantLabel,
   loadConfiguredModels,
   loadPinnedModelKeys,
   loadSelectedModelKey,
@@ -20,17 +21,27 @@ import {
   saveConfiguredModels,
   savePinnedModelKeys,
   saveSelectedModelKey,
-  toOpenCodePatch,
+  toBackendPatch,
   updateConfiguredModel,
+  variantsByKey,
   type ConfiguredModel,
   type ModelForm,
   type SelectableModel,
 } from "../lib/models"
+import { PLAN_AGENT, DEFAULT_AGENT } from "../lib/config"
+import {
+  attachmentFromBrowserFile,
+  attachmentFromPath,
+  type ComposerAttachment,
+} from "../lib/attachments"
 import {
   createProject,
   loadLastProject,
   loadProjects,
+  pickAttachmentFolder,
+  pickBrowserFiles,
   pickDirectory,
+  pickFiles,
   saveLastProject,
   saveProjects,
 } from "../lib/persist"
@@ -72,6 +83,12 @@ export type AppState = {
   modelMenuOpen: boolean
   modelSettingsOpen: boolean
   modelSettingsError: string | null
+  planMode: boolean
+  plusMenuOpen: boolean
+  variantMenuOpen: boolean
+  selectedVariant: string | null
+  modelVariants: Record<string, string[]>
+  attachments: ComposerAttachment[]
 }
 
 type AppContextValue = {
@@ -93,6 +110,18 @@ type AppContextValue = {
   pinDiscoveredModel: (key: string) => void
   unpinDiscoveredModel: (key: string) => void
   refreshDiscovered: () => Promise<void>
+  currentAgent: () => string
+  currentVariants: () => string[]
+  variantLabel: () => string
+  setPlanMode: (on: boolean) => void
+  openPlusMenu: () => void
+  closePlusMenu: () => void
+  openVariantMenu: () => void
+  closeVariantMenu: () => void
+  setVariant: (value: string | null) => void
+  addFiles: () => Promise<void>
+  addFolder: () => Promise<void>
+  removeAttachment: (id: string) => void
   addProject: () => Promise<void>
   toggleProject: (id: string) => void
   selectProject: (id: string) => void
@@ -143,6 +172,12 @@ const initial: AppState = {
   modelMenuOpen: false,
   modelSettingsOpen: false,
   modelSettingsError: null,
+  planMode: false,
+  plusMenuOpen: false,
+  variantMenuOpen: false,
+  selectedVariant: null,
+  modelVariants: {},
+  attachments: [],
 }
 
 export function AppProvider(props: ParentProps) {
@@ -182,7 +217,7 @@ export function AppProvider(props: ParentProps) {
     setState("configuredModels", models)
     persistSelection(nextKey)
     saveConfiguredModels(models)
-    const patch = toOpenCodePatch(models, nextKey)
+    const patch = toBackendPatch(models, nextKey)
     if (!patch) return
     await api.patchGlobalConfig(patch)
   }
@@ -192,6 +227,7 @@ export function AppProvider(props: ParentProps) {
       const list = await api.listProviders(selectedProject()?.path)
       const discovered = discoveredFromProviderList(list)
       setState("discoveredModels", discovered)
+      setState("modelVariants", variantsByKey(list))
       const extras = discovered.filter((item) => state.pinnedModelKeys.includes(item.key))
       const nextKey = resolveSelectedKey(
         state.configuredModels,
@@ -206,14 +242,109 @@ export function AppProvider(props: ParentProps) {
 
   const selectModel = (key: string) => {
     persistSelection(key)
-    setState("modelMenuOpen", false)
+    const variants = state.modelVariants[key] ?? []
+    const nextVariant = state.selectedVariant && variants.includes(state.selectedVariant) ? state.selectedVariant : null
+    setState({
+      modelMenuOpen: false,
+      variantMenuOpen: false,
+      selectedVariant: nextVariant,
+    })
   }
 
   const openModelMenu = () => {
-    setState("modelMenuOpen", true)
+    setState({
+      modelMenuOpen: true,
+      plusMenuOpen: false,
+      variantMenuOpen: false,
+    })
     void refreshDiscovered()
   }
   const closeModelMenu = () => setState("modelMenuOpen", false)
+
+  const currentAgent = () => (state.planMode ? PLAN_AGENT : DEFAULT_AGENT)
+
+  const currentVariants = () => {
+    const key = state.selectedModelKey
+    if (!key) return []
+    return state.modelVariants[key] ?? selectedModel()?.variants ?? []
+  }
+
+  const variantLabel = () => formatVariantLabel(state.selectedVariant ?? "default")
+
+  const setPlanMode = (on: boolean) => {
+    setState({
+      planMode: on,
+      plusMenuOpen: false,
+    })
+  }
+
+  const openPlusMenu = () =>
+    setState({
+      plusMenuOpen: true,
+      modelMenuOpen: false,
+      variantMenuOpen: false,
+    })
+  const closePlusMenu = () => setState("plusMenuOpen", false)
+
+  const openVariantMenu = () =>
+    setState({
+      variantMenuOpen: true,
+      plusMenuOpen: false,
+      modelMenuOpen: false,
+    })
+  const closeVariantMenu = () => setState("variantMenuOpen", false)
+
+  const setVariant = (value: string | null) => {
+    setState({
+      selectedVariant: value,
+      variantMenuOpen: false,
+    })
+  }
+
+  const addFiles = async () => {
+    setState("plusMenuOpen", false)
+    const picked = await pickFiles()
+    if (picked === "fallback") {
+      const files = await pickBrowserFiles()
+      if (!files.length) return
+      const extra: ComposerAttachment[] = []
+      for (const file of files) extra.push(await attachmentFromBrowserFile(file))
+      setState("attachments", [...state.attachments, ...extra])
+      return
+    }
+    if (!picked.length) return
+    const next = [...state.attachments]
+    for (const path of picked) {
+      const item = attachmentFromPath(path, "file")
+      if (next.some((entry) => entry.url === item.url)) continue
+      next.push(item)
+    }
+    setState("attachments", next)
+  }
+
+  const addFolder = async () => {
+    setState("plusMenuOpen", false)
+    const picked = await pickAttachmentFolder()
+    if (picked === "fallback") {
+      const files = await pickBrowserFiles({ directory: true })
+      if (!files.length) return
+      const extra: ComposerAttachment[] = []
+      for (const file of files) extra.push(await attachmentFromBrowserFile(file))
+      setState("attachments", [...state.attachments, ...extra])
+      return
+    }
+    if (!picked) return
+    const item = attachmentFromPath(picked, "directory")
+    if (state.attachments.some((entry) => entry.url === item.url)) return
+    setState("attachments", [...state.attachments, item])
+  }
+
+  const removeAttachment = (id: string) => {
+    setState(
+      "attachments",
+      state.attachments.filter((item) => item.id !== id),
+    )
+  }
 
   const openModelSettings = () => {
     setState({
@@ -240,7 +371,7 @@ export function AppProvider(props: ParentProps) {
       await applyConfiguredModels(next, saved ? `${saved.providerID}/${saved.modelID}` : null)
       setState("modelSettingsOpen", false)
     } catch (error) {
-      setState("modelSettingsError", error instanceof Error ? error.message : "同步到 OpenCode 失败")
+      setState("modelSettingsError", error instanceof Error ? error.message : "同步到后端失败")
     }
   }
 
@@ -380,11 +511,12 @@ export function AppProvider(props: ParentProps) {
   const send = async (text?: string) => {
     const content = (text ?? state.composer).trim()
     const project = selectedProject()
+    const files = state.attachments
     if (!project) {
       setState("error", "请先添加一个项目文件夹")
       return
     }
-    if (!content) {
+    if (!content && files.length === 0) {
       if (busy()) {
         await abort()
       }
@@ -403,16 +535,24 @@ export function AppProvider(props: ParentProps) {
     setState("error", null)
     try {
       let session = selectedSession()
+      const title = content || files[0]?.filename || "新会话"
       if (!session) {
-        session = await api.createSession(project.path, sessionTitle(content), model)
+        session = await api.createSession(project.path, sessionTitle(title), model, currentAgent())
         setState("sessionsByProject", project.path, (list = []) => upsertById(list, session!))
         setState({
           selectedSessionId: session.id,
           draft: false,
         })
       }
-      await api.promptAsync(project.path, session.id, content, model)
+      await api.promptAsync(project.path, session.id, {
+        text: content,
+        model,
+        agent: currentAgent(),
+        variant: state.selectedVariant ?? undefined,
+        files,
+      })
       setState("composer", "")
+      setState("attachments", [])
       setState("status", session.id, { type: "busy" })
     } catch (error) {
       setState("error", error instanceof Error ? error.message : "发送失败")
@@ -492,7 +632,7 @@ export function AppProvider(props: ParentProps) {
       const ok = await api.healthcheck().catch(() => false)
       if (!ok) return
       setState("connection", "connected")
-      const patch = toOpenCodePatch(loadConfiguredModels(), loadSelectedModelKey())
+      const patch = toBackendPatch(loadConfiguredModels(), loadSelectedModelKey())
       if (patch) await api.patchGlobalConfig(patch).catch(() => undefined)
       await refreshDiscovered()
     })()
@@ -638,6 +778,12 @@ export function AppProvider(props: ParentProps) {
     saveProjects(state.projects)
   })
 
+  createEffect(() => {
+    const selected = state.selectedVariant
+    if (!selected) return
+    if (!currentVariants().includes(selected)) setState("selectedVariant", null)
+  })
+
   const value: AppContextValue = {
     state,
     setState,
@@ -657,6 +803,18 @@ export function AppProvider(props: ParentProps) {
     pinDiscoveredModel,
     unpinDiscoveredModel,
     refreshDiscovered,
+    currentAgent,
+    currentVariants,
+    variantLabel,
+    setPlanMode,
+    openPlusMenu,
+    closePlusMenu,
+    openVariantMenu,
+    closeVariantMenu,
+    setVariant,
+    addFiles,
+    addFolder,
+    removeAttachment,
     addProject,
     toggleProject,
     selectProject,

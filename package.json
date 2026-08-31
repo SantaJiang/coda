@@ -1,7 +1,7 @@
 {
   "name": "coda",
   "version": "0.1.0",
-  "description": "Coda — 基于 OpenCode 的精简桌面 Agent 客户端",
+  "description": "Coda — 精简桌面 Agent 客户端",
   "type": "module",
   "scripts": {
     "start": "vite",
@@ -9,7 +9,8 @@
     "dev:watch": "bash scripts/vite-dev.sh",
     "build": "vite build",
     "serve": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "pack": "bash scripts/pack.sh"
   },
   "license": "MIT",
   "dependencies": {

@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-OPENCODE_ROOT="${OPENCODE_ROOT:-$ROOT/../opencode}"
 PORT="${CODA_PORT:-4096}"
 MODE="${1:-tauri}"
 LOG_DIR="$ROOT/.coda"
@@ -18,13 +17,71 @@ if [[ -f "$ROOT/config/local.env" ]]; then
   set +a
 fi
 
-export OPENCODE_CONFIG="$ROOT/config/opencode.json"
-export OPENCODE_CONFIG_DIR="$LOG_DIR/opencode"
+find_backend_root() {
+  if [[ -n "${CODA_BACKEND_ROOT:-}" && -d "$CODA_BACKEND_ROOT" ]]; then
+    echo "$CODA_BACKEND_ROOT"
+    return 0
+  fi
+  if [[ -d "$ROOT/backend" ]]; then
+    echo "$ROOT/backend"
+    return 0
+  fi
+  local dir pkg
+  for dir in "$ROOT"/../*; do
+    [[ -d "$dir" ]] || continue
+    if [[ -f "$dir/src/cli/cmd/serve.ts" ]]; then
+      echo "$dir"
+      return 0
+    fi
+    for pkg in "$dir/packages/"*; do
+      if [[ -f "$pkg/src/cli/cmd/serve.ts" ]]; then
+        echo "$dir"
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
+backend_pkg_dir() {
+  local root="$1"
+  if [[ -d "$root/packages/coda" && -f "$root/packages/coda/src/index.ts" ]]; then
+    echo "$root/packages/coda"
+    return 0
+  fi
+  local pkg
+  for pkg in "$root/packages/"*; do
+    if [[ -f "$pkg/src/cli/cmd/serve.ts" && -f "$pkg/src/index.ts" ]]; then
+      echo "$pkg"
+      return 0
+    fi
+  done
+  if [[ -f "$root/src/cli/cmd/serve.ts" && -f "$root/src/index.ts" ]]; then
+    echo "$root"
+    return 0
+  fi
+  return 1
+}
+
+BACKEND_ROOT="$(find_backend_root || true)"
+if [[ -z "${BACKEND_ROOT:-}" ]]; then
+  echo "找不到 Coda 后端。"
+  echo "请把后端放到 $ROOT/backend，或设置 CODA_BACKEND_ROOT。"
+  exit 1
+fi
+
+PKG_DIR="$(backend_pkg_dir "$BACKEND_ROOT" || true)"
+if [[ -z "${PKG_DIR:-}" ]]; then
+  echo "后端仓库 $BACKEND_ROOT 里找不到可启动的 serve 入口。"
+  exit 1
+fi
+
+export CODA_CONFIG="${CODA_CONFIG:-$ROOT/config/coda.json}"
+export CODA_CONFIG_DIR="${CODA_CONFIG_DIR:-$LOG_DIR/backend}"
 export CODA_PORT="$PORT"
 
-if [[ ! -d "$OPENCODE_ROOT" ]]; then
-  echo "找不到 OpenCode 仓库：$OPENCODE_ROOT"
-  echo "请把官方 opencode 放在 Coda 的同级目录，或设置 OPENCODE_ROOT。"
+if [[ ! -d "$BACKEND_ROOT" ]]; then
+  echo "找不到后端目录：$BACKEND_ROOT"
   exit 1
 fi
 
@@ -58,9 +115,9 @@ trap cleanup EXIT INT TERM
 echo "==> 安装 Coda 依赖"
 bun install --cwd "$ROOT"
 
-if [[ ! -d "$OPENCODE_ROOT/node_modules" ]]; then
-  echo "==> 安装 OpenCode 依赖（首次会比较久）"
-  bun install --cwd "$OPENCODE_ROOT"
+if [[ ! -d "$BACKEND_ROOT/node_modules" ]]; then
+  echo "==> 安装后端依赖（首次会比较久）"
+  bun install --cwd "$BACKEND_ROOT"
 fi
 
 echo "==> 启动前端（由 Tauri / Vite 热更新，不再单独生产构建）"
@@ -68,10 +125,10 @@ echo "==> 启动前端（由 Tauri / Vite 热更新，不再单独生产构建�
 kill_port "$PORT"
 kill_port 1420
 
-echo "==> 启动 OpenCode 后端  http://127.0.0.1:$PORT"
+echo "==> 启动 Coda 后端  http://127.0.0.1:$PORT"
 (
-  cd "$OPENCODE_ROOT"
-  bun --cwd "$OPENCODE_ROOT/packages/opencode" --conditions=browser src/index.ts serve --port "$PORT" --hostname 127.0.0.1
+  cd "$BACKEND_ROOT"
+  bun --cwd "$PKG_DIR" --conditions=browser src/index.ts serve --port "$PORT" --hostname 127.0.0.1
 ) >"$BACKEND_LOG" 2>&1 &
 echo $! >"$BACKEND_PID_FILE"
 

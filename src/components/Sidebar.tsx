@@ -89,7 +89,6 @@ export function Sidebar() {
                   <button
                     type="button"
                     class="tree-root"
-                    classList={{ active: app.state.selectedProjectId === project.id }}
                     onClick={() => app.selectProject(project.id)}
                   >
                     <span

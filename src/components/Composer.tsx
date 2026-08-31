@@ -1,6 +1,9 @@
-import { createEffect, createMemo, createSignal } from "solid-js"
+import { Show, createEffect, createMemo, createSignal } from "solid-js"
 import { useApp } from "../store/app"
+import { AttachmentStrip } from "./AttachmentStrip"
+import { ComposerPlus } from "./ComposerPlus"
 import { ModelMenu } from "./ModelMenu"
+import { VariantMenu } from "./VariantMenu"
 
 export function Composer() {
   const app = useApp()
@@ -14,6 +17,13 @@ export function Composer() {
     if (app.busy()) return "Agent 正在工作，Enter 可停止…"
     return "发给 Agent 一条消息"
   })
+
+  const canSend = createMemo(
+    () =>
+      !!app.selectedProject() &&
+      !app.blocked() &&
+      (app.busy() || !!app.state.composer.trim() || app.state.attachments.length > 0),
+  )
 
   const resize = () => {
     if (!area) return
@@ -37,6 +47,7 @@ export function Composer() {
 
   return (
     <div class="composer">
+      <AttachmentStrip />
       <textarea
         ref={area}
         rows={rows()}
@@ -47,12 +58,24 @@ export function Composer() {
         onKeyDown={onKeyDown}
       />
       <div class="composer-bar">
-        <ModelMenu />
+        <div class="composer-left">
+          <ComposerPlus />
+          <Show when={app.state.planMode}>
+            <div class="plan-chip">
+              <span>Plan</span>
+              <button type="button" class="plan-chip-x" aria-label="退出 Plan" onClick={() => app.setPlanMode(false)}>
+                ×
+              </button>
+            </div>
+          </Show>
+          <ModelMenu />
+          <VariantMenu />
+        </div>
         <button
           type="button"
           class="send-btn"
           classList={{ stop: app.busy() }}
-          disabled={!app.selectedProject() || app.blocked() || (!app.state.composer.trim() && !app.busy())}
+          disabled={!canSend()}
           onClick={() => (app.busy() && !app.state.composer.trim() ? void app.abort() : void app.send())}
         >
           {app.busy() && !app.state.composer.trim() ? "停止" : "发送"}

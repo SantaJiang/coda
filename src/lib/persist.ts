@@ -58,3 +58,49 @@ export async function pickDirectory(): Promise<string | null> {
     return fallback?.trim() || null
   }
 }
+
+export function pickBrowserFiles(options?: { directory?: boolean }) {
+  return new Promise<File[]>((resolve) => {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.multiple = !options?.directory
+    if (options?.directory) input.setAttribute("webkitdirectory", "")
+    else input.multiple = true
+    input.addEventListener("change", () => {
+      resolve(Array.from(input.files ?? []))
+    })
+    input.addEventListener("cancel", () => resolve([]))
+    input.click()
+  })
+}
+
+export async function pickFiles(): Promise<string[] | "fallback"> {
+  try {
+    const dialog = await import("@tauri-apps/plugin-dialog")
+    const selected = await dialog.open({
+      multiple: true,
+      directory: false,
+      title: "选择文件",
+    })
+    if (Array.isArray(selected)) return selected.filter((item): item is string => typeof item === "string" && !!item)
+    if (typeof selected === "string" && selected) return [selected]
+    return []
+  } catch {
+    return "fallback"
+  }
+}
+
+export async function pickAttachmentFolder(): Promise<string | null | "fallback"> {
+  try {
+    const dialog = await import("@tauri-apps/plugin-dialog")
+    const selected = await dialog.open({
+      directory: true,
+      multiple: false,
+      title: "选择文件夹",
+    })
+    if (typeof selected === "string" && selected) return selected
+    return null
+  } catch {
+    return "fallback"
+  }
+}

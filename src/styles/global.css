@@ -170,7 +170,6 @@ button {
 
 .tree-root:hover,
 .tree-session:hover,
-.tree-root.active,
 .tree-session.active {
   background: var(--bg-active);
   color: var(--text);
@@ -243,23 +242,9 @@ button {
   background: var(--bg);
 }
 
-.session-header {
-  flex: 0 0 auto;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 20px 0 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.session-title {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
 .session-error {
+  flex: 0 0 auto;
+  padding: 8px 16px 0;
   color: var(--danger);
   font-size: 12px;
 }
@@ -381,7 +366,145 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-top: 6px;
+}
+
+.composer-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.plus-picker {
+  position: relative;
+}
+
+.plus-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.plus-btn:hover,
+.plus-btn.open {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.plus-menu {
+  min-width: 148px;
+}
+
+.plus-files {
+  position: relative;
+}
+
+.plus-caret {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.plus-submenu {
+  position: absolute;
+  left: calc(100% + 4px);
+  bottom: 0;
+  min-width: 128px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  z-index: 21;
+}
+
+.plan-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
+  background: #355a7a;
+  color: #e4f1fb;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.plan-chip-x {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: inherit;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.plan-chip-x:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.attachment-card {
+  position: relative;
+  min-width: 112px;
+  max-width: 176px;
+  padding: 10px 28px 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-hover);
+}
+
+.attachment-name {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.attachment-type {
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.attachment-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #3a3a3a;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.attachment-remove:hover {
+  background: #4a4a4a;
+  color: var(--text);
 }
 
 .model-picker {
@@ -441,7 +564,8 @@ button {
 }
 
 .model-menu-item:hover,
-.model-menu-item.active {
+.model-menu-item.active,
+.model-menu-item.open {
   background: var(--bg-hover);
 }
 
