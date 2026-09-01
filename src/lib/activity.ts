@@ -221,12 +221,6 @@ export function activitySummary(parts: Part[]) {
     return ""
   }
 
-  const live = isWorkLive(parts)
-  const running = [...tools].reverse().find(
-    (part) => part.state.status === "pending" || part.state.status === "running",
-  )
-  const liveBucket = running ? bucketOf(running.tool) : null
-
   const files = {
     edit: new Set<string>(),
     explore: new Set<string>(),
@@ -250,48 +244,56 @@ export function activitySummary(parts: Part[]) {
   const edit = files.edit.size || counts.edit
   const explore = files.explore.size || counts.explore
   const bits: string[] = []
-
-  const exploringLive = live && (liveBucket === "explore" || liveBucket === "search")
-  const editingLive = live && liveBucket === "edit"
-
-  if (edit) {
-    bits.push(
-      editingLive
-        ? plural(edit, "Editing 1 file", `Editing ${edit} files`)
-        : plural(edit, "edited 1 file", `edited ${edit} files`),
-    )
-  }
-  if (explore) {
-    bits.push(
-      exploringLive
-        ? plural(explore, "Exploring 1 file", `Exploring ${explore} files`)
-        : plural(explore, "explored 1 file", `explored ${explore} files`),
-    )
-  }
-  if (counts.search) {
-    if (exploringLive && !explore) {
-      bits.push(plural(counts.search, "Exploring 1 search", `Exploring ${counts.search} searches`))
-    } else {
-      bits.push(plural(counts.search, "1 search", `${counts.search} searches`))
-    }
-  }
+  if (edit) bits.push(plural(edit, "edited 1 file", `edited ${edit} files`))
+  if (explore) bits.push(plural(explore, "explored 1 file", `explored ${explore} files`))
+  if (counts.search) bits.push(plural(counts.search, "1 search", `${counts.search} searches`))
   if (counts.lint) bits.push(plural(counts.lint, "1 lint", `${counts.lint} lints`))
-  if (counts.browser) {
-    bits.push(
-      live && liveBucket === "browser"
-        ? plural(counts.browser, "Browsing", `Browsing ${counts.browser} actions`)
-        : plural(counts.browser, "1 browser action", `${counts.browser} browser actions`),
-    )
-  }
-  if (counts.command) {
-    bits.push(
-      live && liveBucket === "command"
-        ? plural(counts.command, "Running 1 command", `Running ${counts.command} commands`)
-        : plural(counts.command, "ran 1 command", `ran ${counts.command} commands`),
-    )
-  }
-
+  if (counts.browser) bits.push(plural(counts.browser, "1 browser action", `${counts.browser} browser actions`))
+  if (counts.command) bits.push(plural(counts.command, "ran 1 command", `ran ${counts.command} commands`))
   return capitalize(bits.join(", "))
+}
+
+export function activityStatus(parts: Part[]): string {
+  const tools = parts.filter((part): part is ToolPart => part.type === "tool")
+  const running = [...tools].reverse().find(
+    (part) => part.state.status === "pending" || part.state.status === "running",
+  )
+  if (running) return liveStepLabel(running)
+
+  let lastReasoning = -1
+  let lastTool = -1
+  parts.forEach((part, index) => {
+    if (part.type === "reasoning") lastReasoning = index
+    if (part.type === "tool") lastTool = index
+  })
+  if (lastReasoning > lastTool) return "Thought"
+  return "Thinking"
+}
+
+function liveStepLabel(part: ToolPart) {
+  const name = part.tool.toLowerCase()
+  const input = part.state.input ?? {}
+  const fileInfo = fileFromTool(part)
+  const file = fileInfo?.name ?? ""
+  const pattern = String(input.pattern ?? input.glob ?? "")
+  const command = String(input.command ?? "")
+  const query = String(input.query ?? "")
+  const title = "title" in part.state ? part.state.title : undefined
+
+  if (name === "read") return file ? `Read ${file}` : "Read"
+  if (name === "glob") return pattern ? `Explored ${truncate(pattern, 40)}` : "Explored"
+  if (name === "list" || name === "ls") return file ? `Explored ${file}` : "Explored"
+  if (name === "grep") return pattern ? `Search ${truncate(pattern, 40)}` : "Search"
+  if (name === "websearch") return query ? `Search ${truncate(query, 40)}` : "Search"
+  if (name === "webfetch") return "Search"
+  if (name === "edit" || name === "write" || name === "multiedit") {
+    return file ? `Edited ${file}` : "Edited"
+  }
+  if (name === "bash" || name === "shell") return command ? `Ran ${truncate(command, 40)}` : "Ran"
+  if (name.includes("lint")) return "Explored"
+  if (title) return String(title)
+  if (file) return `${capitalize(name)} ${file}`
+  return capitalize(name)
 }
 
 function thoughtLabel(parts: Part[]) {

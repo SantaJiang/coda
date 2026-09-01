@@ -1,5 +1,5 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
-import { activityDiff, activitySummary, isWorkLive, stepBody, stepLabel } from "../lib/activity"
+import { activityDiff, activityStatus, activitySummary, stepBody, stepLabel } from "../lib/activity"
 import type { Part, ReasoningPart } from "../lib/types"
 import { MarkdownView } from "./MarkdownView"
 import { Icon } from "./Icon"
@@ -13,8 +13,8 @@ export function WorkGroup(props: {
 }) {
   const [localOpen, setLocalOpen] = createSignal(false)
   const parts = createMemo(() => (props.getParts ? props.getParts() : (props.parts ?? [])))
-  const live = createMemo(() => props.live && isWorkLive(parts()))
-  const summary = createMemo(() => activitySummary(parts()) || (props.live ? "Thinking" : ""))
+  const summary = createMemo(() => activitySummary(parts()))
+  const status = createMemo(() => activityStatus(parts()))
   const diff = createMemo(() => activityDiff(parts()))
   const open = () => (props.onToggle ? Boolean(props.open) : localOpen())
   const toggle = (event?: MouseEvent) => {
@@ -26,10 +26,7 @@ export function WorkGroup(props: {
   }
 
   return (
-    <div
-      class="work-group"
-      classList={{ open: open(), live: live() || (props.live && !parts().length) }}
-    >
+    <div class="work-group" classList={{ open: open(), live: props.live }}>
       <Show when={summary()}>
         <button
           type="button"
@@ -57,6 +54,11 @@ export function WorkGroup(props: {
             </Show>
           </span>
         </button>
+      </Show>
+      <Show when={props.live}>
+        <div class="work-status" aria-label={status()}>
+          <span class="work-status-wave">{status()}</span>
+        </div>
       </Show>
       <Show when={open()}>
         <div class="work-steps">

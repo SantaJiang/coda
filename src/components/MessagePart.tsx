@@ -3,6 +3,7 @@ import {
   changedFiles,
   formatWorkedFor,
   groupActivityBlocks,
+  isWorkLive,
   splitProcessAndAnswer,
   workDurationMs,
   type ActivityBlock,
@@ -104,7 +105,11 @@ function ActivityBlocks(props: {
         >
           <WorkGroup
             getParts={() => block().parts}
-            live={props.live}
+            live={
+              props.live &&
+              (isWorkLive(block().parts) ||
+                (index === props.getBlocks().length - 1 && block().kind === "work"))
+            }
             open={props.opened()[index] === true}
             onToggle={() => props.onToggle(index)}
           />
