@@ -19,7 +19,8 @@
         "minWidth": 960,
         "minHeight": 640,
         "decorations": true,
-        "titleBarStyle": "Visible"
+        "titleBarStyle": "Visible",
+        "theme": "Dark"
       }
     ],
     "security": {

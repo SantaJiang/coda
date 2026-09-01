@@ -12,7 +12,7 @@ function IconPlus() {
 
 function IconFolder() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path
         d="M2.5 5.5v7a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H8L6.7 3.7A1 1 0 0 0 6 3.4H3.5a1 1 0 0 0-1 1.1Z"
         stroke="currentColor"
@@ -25,9 +25,9 @@ function IconFolder() {
 
 function IconChat() {
   return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path
-        d="M3 4.2A1.2 1.2 0 0 1 4.2 3h7.6A1.2 1.2 0 0 1 13 4.2v5.1A1.2 1.2 0 0 1 11.8 10.5H7l-3.2 2.3V4.2Z"
+        d="M3 3.6A1.6 1.6 0 0 1 4.6 2h6.8A1.6 1.6 0 0 1 13 3.6v5.3A1.6 1.6 0 0 1 11.4 10.5H7.2L3.8 13.2V3.6Z"
         stroke="currentColor"
         stroke-width="1.3"
         stroke-linejoin="round"
@@ -42,20 +42,6 @@ function IconMore() {
       <circle cx="3.5" cy="8" r="1.25" fill="currentColor" />
       <circle cx="8" cy="8" r="1.25" fill="currentColor" />
       <circle cx="12.5" cy="8" r="1.25" fill="currentColor" />
-    </svg>
-  )
-}
-
-function IconChatPlus() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M3 4.2A1.2 1.2 0 0 1 4.2 3h7.6A1.2 1.2 0 0 1 13 4.2v5.1A1.2 1.2 0 0 1 11.8 10.5H7l-3.2 2.3V4.2Z"
-        stroke="currentColor"
-        stroke-width="1.3"
-        stroke-linejoin="round"
-      />
-      <path d="M8 5.5v3M6.5 7h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
     </svg>
   )
 }
@@ -185,7 +171,9 @@ export function Sidebar() {
                       >
                         <IconChevron open={project.expanded} />
                       </span>
-                      <IconFolder />
+                      <span class="tree-icon">
+                        <IconFolder />
+                      </span>
                       <span class="truncate" title={project.path}>
                         {project.name}
                       </span>
@@ -225,7 +213,7 @@ export function Sidebar() {
                         aria-label="新建会话"
                         onClick={() => void app.createSessionInProject(project)}
                       >
-                        <IconChatPlus />
+                        <IconPlus />
                       </button>
                     </div>
                   </div>
@@ -272,7 +260,9 @@ export function Sidebar() {
                                 onContextMenu={(event) => openSessionMenu(event, session)}
                                 onClick={() => void app.selectSession(session)}
                               >
-                                <IconChat />
+                                <span class="tree-icon">
+                                  <IconChat />
+                                </span>
                                 <span class="truncate">{sessionLabel(session)}</span>
                                 <Show when={app.state.status[session.id]?.type === "busy"}>
                                   <span class="pulse-dot" />

@@ -1,5 +1,12 @@
-import { For, Index, Match, Show, Switch, createMemo, createSignal } from "solid-js"
-import { groupActivityBlocks } from "../lib/activity"
+import { For, Index, Match, Show, Switch, type JSX, createEffect, createMemo, createSignal } from "solid-js"
+import {
+  changedFiles,
+  formatWorkedFor,
+  groupActivityBlocks,
+  splitProcessAndAnswer,
+  workDurationMs,
+  type ActivityBlock,
+} from "../lib/activity"
 import type {
   AgentPart,
   FilePart,
@@ -10,6 +17,7 @@ import type {
 } from "../lib/types"
 import { MarkdownView } from "./MarkdownView"
 import { WorkGroup } from "./WorkGroup"
+import { ChangedFiles } from "./ChangedFiles"
 
 const HIDDEN = new Set(["step-start", "step-finish", "patch", "snapshot", "compaction"])
 
@@ -80,6 +88,50 @@ function UserBubble(props: { message: Message; parts: Part[] }) {
   )
 }
 
+function ActivityBlocks(props: {
+  getBlocks: () => ActivityBlock[]
+  live: boolean
+  opened: () => Record<number, boolean>
+  onToggle: (index: number) => void
+}) {
+  return (
+    <Index each={props.getBlocks()}>
+      {(block, index) => (
+        <Show
+          when={block().kind === "work"}
+          fallback={<For each={block().parts}>{(part) => <MessagePartView part={part} />}</For>}
+        >
+          <WorkGroup
+            getParts={() => block().parts}
+            live={props.live}
+            open={props.opened()[index] === true}
+            onToggle={() => props.onToggle(index)}
+          />
+        </Show>
+      )}
+    </Index>
+  )
+}
+
+function WorkedFor(props: { durationMs: number; children: JSX.Element }) {
+  const [open, setOpen] = createSignal(false)
+  return (
+    <div class="worked-for" classList={{ open: open() }}>
+      <button type="button" class="work-head" onClick={() => setOpen((value) => !value)} aria-expanded={open()}>
+        <span class="work-summary">
+          <span class="work-summary-text">{formatWorkedFor(props.durationMs)}</span>
+          <span class="work-summary-caret" aria-hidden="true">
+            ›
+          </span>
+        </span>
+      </button>
+      <Show when={open()}>
+        <div class="worked-for-body">{props.children}</div>
+      </Show>
+    </div>
+  )
+}
+
 function AssistantTurn(props: {
   assistants: Message[]
   partsByMessage: Record<string, Part[]>
@@ -88,9 +140,20 @@ function AssistantTurn(props: {
   const [opened, setOpened] = createSignal<Record<number, boolean>>({})
   const parts = createMemo(() => collectParts(props.assistants, props.partsByMessage))
   const blocks = createMemo(() => groupActivityBlocks(parts()))
+  const split = createMemo(() => splitProcessAndAnswer(blocks()))
+  const hasWork = createMemo(() => split().process.some((block) => block.kind === "work"))
+  const durationMs = createMemo(() => workDurationMs(props.assistants, parts()))
+  const files = createMemo(() => changedFiles(parts()))
   const error = createMemo(() => {
     const last = [...props.assistants].reverse().find((message) => message.role === "assistant")
     return last?.role === "assistant" ? last.error?.data?.message : undefined
+  })
+  const toggle = (index: number) => {
+    setOpened((prev) => ({ ...prev, [index]: !prev[index] }))
+  }
+
+  createEffect(() => {
+    if (!props.live) setOpened({})
   })
 
   return (
@@ -99,25 +162,39 @@ function AssistantTurn(props: {
         <Show when={props.live && blocks().length === 0}>
           <WorkGroup parts={[]} live />
         </Show>
-        <Index each={blocks()}>
-          {(block, index) => (
-            <Show
-              when={block().kind === "work"}
-              fallback={
-                <For each={block().parts}>{(part) => <MessagePartView part={part} />}</For>
-              }
-            >
-              <WorkGroup
-                getParts={() => block().parts}
-                live={props.live && index === blocks().length - 1}
-                open={opened()[index] === true}
-                onToggle={() => setOpened((prev) => ({ ...prev, [index]: !prev[index] }))}
+        <Show
+          when={!props.live && hasWork()}
+          fallback={
+            <ActivityBlocks
+              getBlocks={() => blocks()}
+              live={props.live}
+              opened={opened}
+              onToggle={toggle}
+            />
+          }
+        >
+          <>
+            <WorkedFor durationMs={durationMs()}>
+              <ActivityBlocks
+                getBlocks={() => split().process}
+                live={false}
+                opened={opened}
+                onToggle={toggle}
               />
-            </Show>
-          )}
-        </Index>
+            </WorkedFor>
+            <ActivityBlocks
+              getBlocks={() => split().answer}
+              live={false}
+              opened={() => ({})}
+              onToggle={() => undefined}
+            />
+          </>
+        </Show>
         <Show when={error()}>
           <div class="error-card">{error()}</div>
+        </Show>
+        <Show when={!props.live && files().length > 0}>
+          <ChangedFiles files={files()} />
         </Show>
       </div>
     </article>
