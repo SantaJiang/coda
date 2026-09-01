@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal } from "solid-js"
+import { Show, createEffect, createMemo } from "solid-js"
 import { useApp } from "../store/app"
 import { AttachmentStrip } from "./AttachmentStrip"
 import { ComposerPlus } from "./ComposerPlus"
@@ -6,10 +6,11 @@ import { ModelMenu } from "./ModelMenu"
 import { PermissionMenu } from "./PermissionMenu"
 import { VariantMenu } from "./VariantMenu"
 
+const COMPOSER_MAX_HEIGHT = 220
+
 export function Composer() {
   const app = useApp()
   let area: HTMLTextAreaElement | undefined
-  const [rows, setRows] = createSignal(1)
 
   const placeholder = createMemo(() => {
     if (!app.selectedProject()) return "先添加一个项目文件夹"
@@ -28,10 +29,12 @@ export function Composer() {
 
   const resize = () => {
     if (!area) return
+    if (!app.state.composer) {
+      area.style.height = ""
+      return
+    }
     area.style.height = "auto"
-    const next = Math.min(area.scrollHeight, 220)
-    area.style.height = `${next}px`
-    setRows(Math.min(8, Math.max(1, Math.round(next / 22))))
+    area.style.height = `${Math.min(area.scrollHeight, COMPOSER_MAX_HEIGHT)}px`
   }
 
   createEffect(() => {
@@ -51,7 +54,7 @@ export function Composer() {
       <AttachmentStrip />
       <textarea
         ref={area}
-        rows={rows()}
+        rows={1}
         value={app.state.composer}
         disabled={!app.selectedProject() || app.blocked()}
         placeholder={placeholder()}

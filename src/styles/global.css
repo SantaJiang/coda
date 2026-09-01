@@ -829,6 +829,7 @@ button.ctx-pill:hover {
 .composer-region {
   flex: 0 0 auto;
   width: min(760px, calc(100% - 32px));
+  min-width: 0;
   margin: 0 auto 14px;
   display: flex;
   flex-direction: column;
@@ -855,6 +856,7 @@ button.ctx-pill:hover {
   font-size: var(--font-chat);
   line-height: var(--line-chat);
   min-height: 44px;
+  overflow-y: auto;
 }
 
 .composer-bar {
@@ -1392,11 +1394,15 @@ button.ctx-pill:hover {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 10px 12px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .dock-title {
   font-size: 13px;
   margin-bottom: 8px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .dock-patterns {
@@ -1404,6 +1410,7 @@ button.ctx-pill:hover {
   flex-direction: column;
   gap: 4px;
   margin-bottom: 10px;
+  min-width: 0;
 }
 
 .dock-patterns code,
@@ -1413,6 +1420,14 @@ button.ctx-pill:hover {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.dock-patterns code {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .dock-actions {
