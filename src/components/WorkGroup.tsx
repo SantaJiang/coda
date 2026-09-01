@@ -1,8 +1,26 @@
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { activityDiff, activityStatus, activitySummary, stepBody, stepLabel } from "../lib/activity"
 import type { Part, ReasoningPart } from "../lib/types"
 import { MarkdownView } from "./MarkdownView"
 import { Icon } from "./Icon"
+
+const IDLE_HOLD_MS = 680
+const TOOL_HOLD_MS = 90
+const FLIP_MS = 320
+
+function isIdleStatus(label: string) {
+  return label === "Thinking" || label === "Thought"
+}
+
+function sameStatus(a: string, b: string) {
+  if (!a || !b) return false
+  if (a === b) return true
+  return isIdleStatus(a) && isIdleStatus(b)
+}
+
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+}
 
 export function WorkGroup(props: {
   parts?: Part[]
@@ -12,9 +30,9 @@ export function WorkGroup(props: {
   onToggle?: () => void
 }) {
   const [localOpen, setLocalOpen] = createSignal(false)
+  const [line, setLine] = createSignal({ current: "", previous: "", flipping: false, tick: 0 })
   const parts = createMemo(() => (props.getParts ? props.getParts() : (props.parts ?? [])))
   const summary = createMemo(() => activitySummary(parts()))
-  const status = createMemo(() => activityStatus(parts()))
   const diff = createMemo(() => activityDiff(parts()))
   const open = () => (props.onToggle ? Boolean(props.open) : localOpen())
   const toggle = (event?: MouseEvent) => {
@@ -24,6 +42,62 @@ export function WorkGroup(props: {
     if (props.onToggle) props.onToggle()
     else setLocalOpen((value) => !value)
   }
+
+  let shown = ""
+  let tick = 0
+  let pending: number | undefined
+  let flipTimer: number | undefined
+
+  const commit = (next: string, animate: boolean) => {
+    if (sameStatus(next, shown)) return
+    const previous = shown
+    shown = next
+    window.clearTimeout(flipTimer)
+    const shouldFlip = Boolean(animate && previous && !prefersReducedMotion())
+    if (shouldFlip) tick += 1
+    setLine({
+      current: next,
+      previous: shouldFlip ? previous : "",
+      flipping: shouldFlip,
+      tick,
+    })
+    if (!shouldFlip) return
+    flipTimer = window.setTimeout(() => {
+      if (shown !== next) return
+      setLine({ current: next, previous: "", flipping: false, tick })
+    }, FLIP_MS)
+  }
+
+  createEffect(
+    on(
+      () => (props.live ? activityStatus(parts()) : ""),
+      (next) => {
+        window.clearTimeout(pending)
+        pending = undefined
+        if (!next) {
+          shown = ""
+          setLine({ current: "", previous: "", flipping: false, tick })
+          return
+        }
+        if (sameStatus(next, shown)) return
+        if (!shown) {
+          commit(next, false)
+          return
+        }
+        const delay = isIdleStatus(next) ? IDLE_HOLD_MS : TOOL_HOLD_MS
+        pending = window.setTimeout(() => {
+          const latest = props.live ? activityStatus(parts()) : ""
+          if (!latest || sameStatus(latest, shown)) return
+          commit(latest, true)
+        }, delay)
+      },
+    ),
+  )
+
+  onCleanup(() => {
+    window.clearTimeout(pending)
+    window.clearTimeout(flipTimer)
+  })
 
   return (
     <div class="work-group" classList={{ open: open(), live: props.live }}>
@@ -55,9 +129,20 @@ export function WorkGroup(props: {
           </span>
         </button>
       </Show>
-      <Show when={props.live}>
-        <div class="work-status" aria-label={status()}>
-          <span class="work-status-wave">{status()}</span>
+      <Show when={props.live && line().current}>
+        <div class="work-status" aria-label={line().current}>
+          <For each={[line().tick]}>
+            {() => (
+              <div class="work-status-flip" classList={{ flipping: line().flipping }}>
+                <Show when={line().previous}>
+                  <span class="work-status-line out">{line().previous}</span>
+                </Show>
+                <span class="work-status-line in">
+                  <span class="work-status-wave">{line().current}</span>
+                </span>
+              </div>
+            )}
+          </For>
         </div>
       </Show>
       <Show when={open()}>
