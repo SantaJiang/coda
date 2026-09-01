@@ -5,6 +5,7 @@ import { ComposerPlus } from "./ComposerPlus"
 import { ModelMenu } from "./ModelMenu"
 import { PermissionMenu } from "./PermissionMenu"
 import { VariantMenu } from "./VariantMenu"
+import { Icon } from "./Icon"
 
 const COMPOSER_MAX_HEIGHT = 220
 
@@ -68,7 +69,7 @@ export function Composer() {
             <div class="plan-chip">
               <span>Plan</span>
               <button type="button" class="plan-chip-x" aria-label="退出 Plan" onClick={() => app.setPlanMode(false)}>
-                ×
+                <Icon name="times" />
               </button>
             </div>
           </Show>

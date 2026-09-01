@@ -2,6 +2,7 @@ import { For, Show, createMemo, createSignal } from "solid-js"
 import { activityDiff, activitySummary, isWorkLive, stepBody, stepLabel } from "../lib/activity"
 import type { Part, ReasoningPart } from "../lib/types"
 import { MarkdownView } from "./MarkdownView"
+import { Icon } from "./Icon"
 
 export function WorkGroup(props: {
   parts?: Part[]
@@ -52,9 +53,7 @@ export function WorkGroup(props: {
               )}
             </Show>
             <Show when={parts().length}>
-              <span class="work-summary-caret" aria-hidden="true">
-                ›
-              </span>
+              <Icon name="caret-right" class="work-summary-caret" />
             </Show>
           </span>
         </button>

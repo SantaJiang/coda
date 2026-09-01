@@ -1,5 +1,6 @@
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { useApp } from "../store/app"
+import { Icon } from "./Icon"
 
 export function ComposerPlus() {
   const app = useApp()
@@ -42,7 +43,7 @@ export function ComposerPlus() {
         aria-label="更多"
         onClick={toggle}
       >
-        +
+        <Icon name="plus" />
       </button>
       <Show when={app.state.plusMenuOpen}>
         <div class="model-menu plus-menu" role="menu">
@@ -67,7 +68,7 @@ export function ComposerPlus() {
               onClick={() => setFilesOpen((open) => !open)}
             >
               <span>Files</span>
-              <span class="plus-caret">›</span>
+              <Icon name="chevron-right" class="plus-caret" />
             </button>
             <Show when={filesOpen()}>
               <div class="plus-submenu" role="menu">

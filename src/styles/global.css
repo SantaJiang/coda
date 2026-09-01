@@ -1,3 +1,23 @@
+@font-face {
+  font-family: "FontAwesome";
+  src: url("../assets/fontawesome-webfont.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.fa {
+  display: inline-block;
+  font-family: FontAwesome;
+  font-weight: normal;
+  font-style: normal;
+  font-size: inherit;
+  line-height: 1;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 :root {
   color-scheme: dark;
   --accent: #d4a574;
@@ -140,6 +160,10 @@ button {
   color: var(--text-muted);
 }
 
+.icon-btn .fa {
+  font-size: 13px;
+}
+
 .icon-btn:hover {
   background: var(--bg-hover);
   color: var(--text);
@@ -206,12 +230,8 @@ button {
   flex-shrink: 0;
 }
 
-.tree-icon svg {
-  display: block;
-  width: 16px;
-  height: 16px;
-  overflow: visible;
-  flex-shrink: 0;
+.tree-icon .fa {
+  font-size: 13px;
 }
 
 .tree-root-main .truncate,
@@ -355,6 +375,10 @@ button.ctx-pill:hover {
   flex-shrink: 0;
 }
 
+.ctx-icon .fa {
+  font-size: 13px;
+}
+
 .ctx-folder {
   display: grid;
   place-items: center;
@@ -376,6 +400,10 @@ button.ctx-pill:hover {
   font-size: 11px;
   line-height: 1;
   padding: 0;
+}
+
+.ctx-x .fa {
+  font-size: 11px;
 }
 
 .ctx-project:hover .ctx-x {
@@ -408,6 +436,7 @@ button.ctx-pill:hover {
 .tree-chevron {
   flex-shrink: 0;
   color: var(--text-faint);
+  font-size: 12px;
   transition: transform 120ms ease;
 }
 
@@ -836,6 +865,14 @@ button.ctx-pill:hover {
   gap: 8px;
 }
 
+.composer-region > .context-bar {
+  margin-top: -3px;
+}
+
+.empty-composer > .context-bar {
+  margin-top: 5px;
+}
+
 .composer {
   position: relative;
   background: var(--bg-elevated);
@@ -882,12 +919,14 @@ button.ctx-pill:hover {
 .plus-btn {
   width: 28px;
   height: 28px;
+  display: grid;
+  place-items: center;
   padding: 0;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--text-faint);
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
 }
 
@@ -908,7 +947,7 @@ button.ctx-pill:hover {
 .plus-caret {
   margin-left: auto;
   color: var(--text-faint);
-  font-size: 16px;
+  font-size: 13px;
   line-height: 1;
 }
 
@@ -942,13 +981,19 @@ button.ctx-pill:hover {
 .plan-chip-x {
   width: 16px;
   height: 16px;
+  display: grid;
+  place-items: center;
   padding: 0;
   border: none;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.16);
   color: inherit;
   font-size: 12px;
-  line-height: 16px;
+  line-height: 1;
+}
+
+.plan-chip-x .fa {
+  font-size: 11px;
 }
 
 .plan-chip-x:hover {
@@ -990,13 +1035,19 @@ button.ctx-pill:hover {
   right: 6px;
   width: 16px;
   height: 16px;
+  display: grid;
+  place-items: center;
   padding: 0;
   border: none;
   border-radius: 50%;
   background: var(--bg-chip);
   color: var(--text-muted);
   font-size: 11px;
-  line-height: 16px;
+  line-height: 1;
+}
+
+.attachment-remove .fa {
+  font-size: 11px;
 }
 
 .attachment-remove:hover {

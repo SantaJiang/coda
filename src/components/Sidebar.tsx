@@ -1,65 +1,7 @@
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
 import { useApp } from "../store/app"
 import type { Session } from "../lib/types"
-
-function IconPlus() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-    </svg>
-  )
-}
-
-function IconFolder() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M2.5 5.5v7a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H8L6.7 3.7A1 1 0 0 0 6 3.4H3.5a1 1 0 0 0-1 1.1Z"
-        stroke="currentColor"
-        stroke-width="1.3"
-        stroke-linejoin="round"
-      />
-    </svg>
-  )
-}
-
-function IconChat() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M3 3.6A1.6 1.6 0 0 1 4.6 2h6.8A1.6 1.6 0 0 1 13 3.6v5.3A1.6 1.6 0 0 1 11.4 10.5H7.2L3.8 13.2V3.6Z"
-        stroke="currentColor"
-        stroke-width="1.3"
-        stroke-linejoin="round"
-      />
-    </svg>
-  )
-}
-
-function IconMore() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="3.5" cy="8" r="1.25" fill="currentColor" />
-      <circle cx="8" cy="8" r="1.25" fill="currentColor" />
-      <circle cx="12.5" cy="8" r="1.25" fill="currentColor" />
-    </svg>
-  )
-}
-
-function IconChevron(props: { open: boolean }) {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 12 12"
-      class="tree-chevron"
-      style={{ transform: props.open ? "rotate(90deg)" : "rotate(0deg)" }}
-      aria-hidden="true"
-    >
-      <path d="M4 2.5 8 6 4 9.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" />
-    </svg>
-  )
-}
+import { Icon } from "./Icon"
 
 function sessionLabel(session: Session) {
   const title = session.title?.trim() || "未命名会话"
@@ -132,14 +74,14 @@ export function Sidebar() {
   return (
     <aside class="sidebar">
       <button class="new-session" type="button" onClick={() => app.startDraft()} disabled={!app.selectedProject()}>
-        <IconPlus />
+        <Icon name="plus" />
         <span>新会话</span>
       </button>
 
       <div class="projects-head">
         <span>项目</span>
         <button class="icon-btn" type="button" title="添加项目文件夹" onClick={() => void app.addProject()}>
-          <IconPlus />
+          <Icon name="plus" />
         </button>
       </div>
 
@@ -169,10 +111,14 @@ export function Sidebar() {
                           app.toggleProject(project.id)
                         }}
                       >
-                        <IconChevron open={project.expanded} />
+                        <Icon
+                          name="caret-right"
+                          class="tree-chevron"
+                          style={{ transform: project.expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+                        />
                       </span>
                       <span class="tree-icon">
-                        <IconFolder />
+                        <Icon name="folder" />
                       </span>
                       <span class="truncate" title={project.path}>
                         {project.name}
@@ -188,7 +134,7 @@ export function Sidebar() {
                           aria-label="更多"
                           onClick={() => toggleMoreMenu(project.id)}
                         >
-                          <IconMore />
+                          <Icon name="ellipsis-v" />
                         </button>
                         <Show when={moreMenuId() === project.id}>
                           <div class="context-menu tree-more-menu" role="menu">
@@ -213,7 +159,7 @@ export function Sidebar() {
                         aria-label="新建会话"
                         onClick={() => void app.createSessionInProject(project)}
                       >
-                        <IconPlus />
+                        <Icon name="plus" />
                       </button>
                     </div>
                   </div>
@@ -261,7 +207,7 @@ export function Sidebar() {
                                 onClick={() => void app.selectSession(session)}
                               >
                                 <span class="tree-icon">
-                                  <IconChat />
+                                  <Icon name="comments" />
                                 </span>
                                 <span class="truncate">{sessionLabel(session)}</span>
                                 <Show when={app.state.status[session.id]?.type === "busy"}>

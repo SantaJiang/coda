@@ -8,6 +8,7 @@ import {
 import { CUSTOM_PRESET_ID, PROVIDER_PRESETS, presetByBaseURL, presetById } from "../lib/presets"
 import { listRemoteModels, type RemoteModel } from "../lib/remote-models"
 import { useApp } from "../store/app"
+import { Icon } from "./Icon"
 
 export function ModelSettings() {
   const app = useApp()
@@ -171,7 +172,7 @@ export function ModelSettings() {
           <header class="dialog-head">
             <h2 id="model-settings-title">配置模型</h2>
             <button type="button" class="icon-btn" onClick={() => app.closeModelSettings()} aria-label="关闭">
-              ✕
+              <Icon name="times" />
             </button>
           </header>
 

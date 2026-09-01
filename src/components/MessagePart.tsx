@@ -18,6 +18,7 @@ import type {
 import { MarkdownView } from "./MarkdownView"
 import { WorkGroup } from "./WorkGroup"
 import { ChangedFiles } from "./ChangedFiles"
+import { Icon } from "./Icon"
 
 const HIDDEN = new Set(["step-start", "step-finish", "patch", "snapshot", "compaction"])
 
@@ -120,9 +121,7 @@ function WorkedFor(props: { durationMs: number; children: JSX.Element }) {
       <button type="button" class="work-head" onClick={() => setOpen((value) => !value)} aria-expanded={open()}>
         <span class="work-summary">
           <span class="work-summary-text">{formatWorkedFor(props.durationMs)}</span>
-          <span class="work-summary-caret" aria-hidden="true">
-            ›
-          </span>
+          <Icon name="caret-right" class="work-summary-caret" />
         </span>
       </button>
       <Show when={open()}>

@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js"
 import { useApp } from "../store/app"
+import { Icon } from "./Icon"
 
 export function AttachmentStrip() {
   const app = useApp()
@@ -16,7 +17,7 @@ export function AttachmentStrip() {
                 aria-label={`移除 ${item.filename}`}
                 onClick={() => app.removeAttachment(item.id)}
               >
-                ×
+                <Icon name="times" />
               </button>
               <div class="attachment-name truncate">{item.filename}</div>
               <div class="attachment-type">{item.label}</div>
