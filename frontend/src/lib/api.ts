@@ -144,7 +144,7 @@ export type VcsInfo = {
 }
 
 export async function getVcs(directory: string) {
-  return request<VcsInfo>("GET", "/instance/vcs", { directory })
+  return request<VcsInfo>("GET", "/vcs", { directory })
 }
 
 export async function getSession(directory: string, sessionID: string) {

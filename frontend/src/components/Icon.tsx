@@ -5,7 +5,7 @@ const GLYPHS: Record<string, string> = {
   folder: "\uf07b",
   comments: "\uf086",
   "ellipsis-v": "\uf142",
-  "caret-right": "\uf0da",
+  "ellipsis-h": "\uf141",
   "chevron-right": "\uf054",
   times: "\uf00d",
   "code-fork": "\uf126",

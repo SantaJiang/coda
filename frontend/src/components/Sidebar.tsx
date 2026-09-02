@@ -112,7 +112,7 @@ export function Sidebar() {
                         }}
                       >
                         <Icon
-                          name="caret-right"
+                          name="chevron-right"
                           class="tree-chevron"
                           style={{ transform: project.expanded ? "rotate(90deg)" : "rotate(0deg)" }}
                         />
@@ -134,7 +134,7 @@ export function Sidebar() {
                           aria-label="更多"
                           onClick={() => toggleMoreMenu(project.id)}
                         >
-                          <Icon name="ellipsis-v" />
+                          <Icon name="ellipsis-h" />
                         </button>
                         <Show when={moreMenuId() === project.id}>
                           <div class="context-menu tree-more-menu" role="menu">
@@ -157,7 +157,10 @@ export function Sidebar() {
                         class="icon-btn tree-action"
                         title="新建会话"
                         aria-label="新建会话"
-                        onClick={() => void app.createSessionInProject(project)}
+                        onClick={() => {
+                          app.selectProject(project.id)
+                          app.startDraft()
+                        }}
                       >
                         <Icon name="plus" />
                       </button>
@@ -206,9 +209,6 @@ export function Sidebar() {
                                 onContextMenu={(event) => openSessionMenu(event, session)}
                                 onClick={() => void app.selectSession(session)}
                               >
-                                <span class="tree-icon">
-                                  <Icon name="comments" />
-                                </span>
                                 <span class="truncate">{sessionLabel(session)}</span>
                                 <Show when={app.state.status[session.id]?.type === "busy"}>
                                   <span class="pulse-dot" />

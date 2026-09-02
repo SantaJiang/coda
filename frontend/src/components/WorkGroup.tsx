@@ -124,7 +124,7 @@ export function WorkGroup(props: {
               )}
             </Show>
             <Show when={parts().length}>
-              <Icon name="caret-right" class="work-summary-caret" />
+              <Icon name="chevron-right" class="work-summary-caret" />
             </Show>
           </span>
         </button>

@@ -126,7 +126,7 @@ function WorkedFor(props: { durationMs: number; children: JSX.Element }) {
       <button type="button" class="work-head" onClick={() => setOpen((value) => !value)} aria-expanded={open()}>
         <span class="work-summary">
           <span class="work-summary-text">{formatWorkedFor(props.durationMs)}</span>
-          <Icon name="caret-right" class="work-summary-caret" />
+          <Icon name="chevron-right" class="work-summary-caret" />
         </span>
       </button>
       <Show when={open()}>

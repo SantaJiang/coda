@@ -143,7 +143,6 @@ type AppContextValue = {
   selectProject: (id: string) => void
   removeProject: (id: string) => void
   closeProject: () => void
-  createSessionInProject: (project: Project) => Promise<void>
   startDraft: () => void
   selectSession: (session: Session) => Promise<void>
   renameSession: (session: Session, title: string) => Promise<void>
@@ -620,29 +619,6 @@ export function AppProvider(props: ParentProps) {
     clearLastProject()
   }
 
-  const createSessionInProject = async (project: Project) => {
-    try {
-      const session = await api.createSession(
-        project.path,
-        undefined,
-        selectedModel(),
-        currentAgent(),
-        permissionRuleset(state.permissionMode),
-      )
-      setState("sessionsByProject", project.path, (list = []) => upsertById(list, session))
-      setState({
-        selectedProjectId: project.id,
-        selectedSessionId: session.id,
-        draft: false,
-        error: null,
-      })
-      saveLastProject(project.id)
-      await loadSessionDetail(session)
-    } catch (error) {
-      setState("error", error instanceof Error ? error.message : "新建会话失败")
-    }
-  }
-
   const renameSession = async (session: Session, title: string) => {
     const trimmed = title.trim()
     if (!trimmed || trimmed === session.title) return
@@ -1036,7 +1012,6 @@ export function AppProvider(props: ParentProps) {
     selectProject,
     removeProject,
     closeProject,
-    createSessionInProject,
     startDraft,
     selectSession,
     renameSession,
