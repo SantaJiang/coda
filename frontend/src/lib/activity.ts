@@ -253,12 +253,29 @@ export function activitySummary(parts: Part[]) {
   return capitalize(bits.join(", "))
 }
 
-export function activityStatus(parts: Part[]): string {
+const WAIT_AFTER_MS = 2000
+
+function waitSeconds(value: unknown) {
+  const ms = Number(value)
+  if (!Number.isFinite(ms) || ms <= 0) return 0
+  return Math.max(1, Math.round(ms / 1000))
+}
+
+function waitLabelFor(part: ToolPart, now: number) {
+  const seconds = waitSeconds(part.state.input?.timeout)
+  if (!seconds) return ""
+  const time = "time" in part.state ? part.state.time : undefined
+  const start = time?.start ? toMs(time.start) : Number.NaN
+  if (!Number.isFinite(start) || now - start < WAIT_AFTER_MS) return ""
+  return `Waiting up to ${seconds}s for ${part.tool.toLowerCase()}`
+}
+
+export function activityStatus(parts: Part[], now = Date.now()): string {
   const tools = parts.filter((part): part is ToolPart => part.type === "tool")
   const running = [...tools].reverse().find(
     (part) => part.state.status === "pending" || part.state.status === "running",
   )
-  if (running) return liveStepLabel(running)
+  if (running) return liveStepLabel(running, now)
 
   let lastReasoning = -1
   let lastTool = -1
@@ -270,7 +287,7 @@ export function activityStatus(parts: Part[]): string {
   return "Thinking"
 }
 
-function liveStepLabel(part: ToolPart) {
+function liveStepLabel(part: ToolPart, now: number) {
   const name = part.tool.toLowerCase()
   const input = part.state.input ?? {}
   const fileInfo = fileFromTool(part)
@@ -289,7 +306,11 @@ function liveStepLabel(part: ToolPart) {
   if (name === "edit" || name === "write" || name === "multiedit") {
     return file ? `Edited ${file}` : "Edited"
   }
-  if (name === "bash" || name === "shell") return command ? `Ran ${truncate(command, 40)}` : "Ran"
+  if (name === "bash" || name === "shell") {
+    const waiting = waitLabelFor(part, now)
+    if (waiting) return waiting
+    return command ? `Ran ${truncate(command, 40)}` : "Ran"
+  }
   if (name.includes("lint")) return "Explored"
   if (title) return String(title)
   if (file) return `${capitalize(name)} ${file}`

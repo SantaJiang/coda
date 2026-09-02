@@ -31,6 +31,7 @@ export function WorkGroup(props: {
 }) {
   const [localOpen, setLocalOpen] = createSignal(false)
   const [line, setLine] = createSignal({ current: "", previous: "", flipping: false, tick: 0 })
+  const [clock, setClock] = createSignal(0)
   const parts = createMemo(() => (props.getParts ? props.getParts() : (props.parts ?? [])))
   const summary = createMemo(() => activitySummary(parts()))
   const diff = createMemo(() => activityDiff(parts()))
@@ -68,9 +69,21 @@ export function WorkGroup(props: {
     }, FLIP_MS)
   }
 
+  createEffect(() => {
+    if (!props.live) {
+      setClock(0)
+      return
+    }
+    const id = window.setInterval(() => setClock((value) => value + 1), 500)
+    onCleanup(() => window.clearInterval(id))
+  })
+
   createEffect(
     on(
-      () => (props.live ? activityStatus(parts()) : ""),
+      () => {
+        clock()
+        return props.live ? activityStatus(parts(), Date.now()) : ""
+      },
       (next) => {
         window.clearTimeout(pending)
         pending = undefined
