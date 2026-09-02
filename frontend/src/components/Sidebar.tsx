@@ -241,6 +241,9 @@ export function Sidebar() {
               ? "正在连接"
               : "后端未连接"}
         </span>
+        <button class="icon-btn" type="button" title="设置" aria-label="设置" onClick={() => app.openSettings()}>
+          <Icon name="cog" />
+        </button>
       </div>
 
       <Show when={ctxMenu()}>

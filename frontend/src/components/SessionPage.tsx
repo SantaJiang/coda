@@ -5,6 +5,7 @@ import { ContextBar } from "./ContextBar"
 import { MessageTimeline } from "./MessageTimeline"
 import { PermissionDock } from "./PermissionDock"
 import { QuestionDock } from "./QuestionDock"
+import { QueueDock } from "./QueueDock"
 import { TodoDock } from "./TodoDock"
 
 export function SessionPage() {
@@ -20,8 +21,6 @@ export function SessionPage() {
         when={app.selectedSession()}
         fallback={
           <div class="empty">
-            <div class="wordmark">Coda</div>
-            <p>选择左侧项目，然后开始一段会话。</p>
             <div class="empty-composer">
               <Composer />
               <ContextBar />
@@ -37,6 +36,7 @@ export function SessionPage() {
           <QuestionDock />
           <PermissionDock />
           <TodoDock />
+          <QueueDock />
           <Composer />
           <ContextBar />
         </div>

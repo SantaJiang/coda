@@ -2,6 +2,7 @@ import { AppProvider } from "./store/app"
 import { Sidebar } from "./components/Sidebar"
 import { SessionPage } from "./components/SessionPage"
 import { ModelSettings } from "./components/ModelSettings"
+import { Settings } from "./components/Settings"
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
         <SessionPage />
       </div>
       <ModelSettings />
+      <Settings />
     </AppProvider>
   )
 }

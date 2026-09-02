@@ -8,6 +8,11 @@ const GLYPHS: Record<string, string> = {
   "ellipsis-h": "\uf141",
   "chevron-right": "\uf054",
   times: "\uf00d",
+  cog: "\uf013",
+  copy: "\uf0c5",
+  "paper-plane": "\uf1d8",
+  pencil: "\uf040",
+  trash: "\uf014",
   "code-fork": "\uf126",
 }
 

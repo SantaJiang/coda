@@ -1,4 +1,5 @@
-import { Show, createEffect, createMemo } from "solid-js"
+import { Show, createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { isSendHotkey } from "../lib/settings"
 import { useApp } from "../store/app"
 import { AttachmentStrip } from "./AttachmentStrip"
 import { ComposerPlus } from "./ComposerPlus"
@@ -17,15 +18,19 @@ export function Composer() {
     if (!app.selectedProject()) return "先添加一个项目文件夹"
     if (!app.selectedModel()) return "先配置一个模型"
     if (app.blocked()) return "请先处理权限或提问"
-    if (app.busy()) return "Agent 正在工作，Enter 可停止…"
+    if (app.busy()) return "Agent 正在工作，Esc 可停止…"
     return "发给 Agent 一条消息"
   })
+
+  const hasDraft = createMemo(
+    () => !!app.state.composer.trim() || app.state.attachments.length > 0,
+  )
 
   const canSend = createMemo(
     () =>
       !!app.selectedProject() &&
       !app.blocked() &&
-      (app.busy() || !!app.state.composer.trim() || app.state.attachments.length > 0),
+      (hasDraft() || app.busy()),
   )
 
   const resize = () => {
@@ -43,8 +48,38 @@ export function Composer() {
     queueMicrotask(resize)
   })
 
+  const overlayOpen = () =>
+    app.state.settingsOpen ||
+    app.state.modelSettingsOpen ||
+    app.state.modelMenuOpen ||
+    app.state.plusMenuOpen ||
+    app.state.variantMenuOpen ||
+    app.state.permissionMenuOpen
+
+  const stopIfBusy = () => {
+    if (!app.busy() || overlayOpen()) return false
+    void app.abort()
+    return true
+  }
+
+  onMount(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest(".dialog-overlay, .context-menu, .model-menu")) return
+      if (target?.closest("input, textarea, select") && !target.closest(".composer")) return
+      if (stopIfBusy()) event.preventDefault()
+    }
+    document.addEventListener("keydown", onKey)
+    onCleanup(() => document.removeEventListener("keydown", onKey))
+  })
+
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Escape" && !event.isComposing) {
+      if (app.busy() && !overlayOpen()) event.preventDefault()
+      return
+    }
+    if (isSendHotkey(event, app.state.sendShortcut)) {
       event.preventDefault()
       void app.send()
     }
@@ -80,11 +115,11 @@ export function Composer() {
         <button
           type="button"
           class="send-btn"
-          classList={{ stop: app.busy() }}
+          classList={{ stop: app.busy() && !hasDraft() }}
           disabled={!canSend()}
-          onClick={() => (app.busy() && !app.state.composer.trim() ? void app.abort() : void app.send())}
+          onClick={() => (app.busy() && !hasDraft() ? void app.abort() : void app.send())}
         >
-          {app.busy() && !app.state.composer.trim() ? "停止" : "发送"}
+          {app.busy() && !hasDraft() ? "停止" : "发送"}
         </button>
       </div>
     </div>

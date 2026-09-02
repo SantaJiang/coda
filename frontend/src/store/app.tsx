@@ -43,6 +43,11 @@ import {
   type ComposerAttachment,
 } from "../lib/attachments"
 import {
+  loadSendShortcut,
+  saveSendShortcut,
+  type SendShortcut,
+} from "../lib/settings"
+import {
   clearLastProject,
   createProject,
   loadLastProject,
@@ -68,6 +73,15 @@ import type {
 } from "../lib/types"
 
 export type ConnectionState = "connecting" | "connected" | "disconnected"
+
+export type QueuedMessage = {
+  id: string
+  text: string
+  attachments: ComposerAttachment[]
+  agent: string
+  model: { providerID: string; modelID: string }
+  variant: string | null
+}
 
 export type AppState = {
   connection: ConnectionState
@@ -97,9 +111,12 @@ export type AppState = {
   variantMenuOpen: boolean
   permissionMenuOpen: boolean
   permissionMode: PermissionMode
+  settingsOpen: boolean
+  sendShortcut: SendShortcut
   selectedVariant: string | null
   modelVariants: Record<string, string[]>
   attachments: ComposerAttachment[]
+  queuedBySession: Record<string, QueuedMessage[]>
 }
 
 type AppContextValue = {
@@ -135,6 +152,9 @@ type AppContextValue = {
   openPermissionMenu: () => void
   closePermissionMenu: () => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
+  openSettings: () => void
+  closeSettings: () => void
+  setSendShortcut: (shortcut: SendShortcut) => void
   addFiles: () => Promise<void>
   addFolder: () => Promise<void>
   removeAttachment: (id: string) => void
@@ -149,6 +169,9 @@ type AppContextValue = {
   deleteSession: (session: Session) => Promise<void>
   send: (text?: string) => Promise<void>
   abort: () => Promise<void>
+  sendQueuedNow: (id: string) => Promise<void>
+  editQueued: (id: string) => void
+  removeQueued: (id: string) => void
   replyPermission: (id: string, reply: "once" | "always" | "reject") => Promise<void>
   replyQuestion: (id: string, answers: string[][]) => Promise<void>
   rejectQuestion: (id: string) => Promise<void>
@@ -162,6 +185,10 @@ function upsertById<T extends { id: string }>(list: T[], item: T) {
   const next = list.slice()
   next[index] = item
   return next
+}
+
+function queueId() {
+  return `q_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
 }
 
 function sessionTitle(text: string) {
@@ -197,13 +224,18 @@ const initial: AppState = {
   variantMenuOpen: false,
   permissionMenuOpen: false,
   permissionMode: loadPermissionMode(),
+  settingsOpen: false,
+  sendShortcut: loadSendShortcut(),
   selectedVariant: null,
   modelVariants: {},
   attachments: [],
+  queuedBySession: {},
 }
 
 export function AppProvider(props: ParentProps) {
   const [state, setState] = createStore<AppState>(initial)
+  let skipQueueFlush = false
+  let sendAfterIdle: QueuedMessage | null = null
 
   const selectedProject = () => state.projects.find((project) => project.id === state.selectedProjectId)
 
@@ -330,6 +362,23 @@ export function AppProvider(props: ParentProps) {
       variantMenuOpen: false,
     })
   const closePermissionMenu = () => setState("permissionMenuOpen", false)
+
+  const openSettings = () => {
+    setState({
+      settingsOpen: true,
+      modelMenuOpen: false,
+      plusMenuOpen: false,
+      variantMenuOpen: false,
+      permissionMenuOpen: false,
+    })
+  }
+
+  const closeSettings = () => setState("settingsOpen", false)
+
+  const setSendShortcut = (shortcut: SendShortcut) => {
+    setState("sendShortcut", shortcut)
+    saveSendShortcut(shortcut)
+  }
 
   const applySessionPermission = async (directory: string, sessionID: string, mode = state.permissionMode) => {
     await api.updateSessionPermission(directory, sessionID, permissionRuleset(mode))
@@ -644,6 +693,7 @@ export function AppProvider(props: ParentProps) {
           draft: true,
         })
       }
+      setState("queuedBySession", session.id, [])
     } catch (error) {
       setState("error", error instanceof Error ? error.message : "删除会话失败")
     }
@@ -671,6 +721,90 @@ export function AppProvider(props: ParentProps) {
     await loadSessionDetail(session)
   }
 
+  const queuedFor = (sessionID: string | null | undefined) =>
+    (sessionID ? state.queuedBySession[sessionID] : undefined) ?? []
+
+  const promptSession = async (
+    session: Session,
+    project: Project,
+    payload: {
+      text: string
+      files: ComposerAttachment[]
+      model: { providerID: string; modelID: string }
+      agent: string
+      variant?: string | null
+    },
+  ) => {
+    await applySessionPermission(project.path, session.id)
+    await api.promptAsync(project.path, session.id, {
+      text: payload.text,
+      model: payload.model,
+      agent: payload.agent,
+      variant: payload.variant ?? undefined,
+      files: payload.files,
+    })
+    setState("status", session.id, { type: "busy" })
+  }
+
+  const dispatchQueued = async (sessionID: string, item: QueuedMessage) => {
+    const project =
+      selectedProject() ??
+      state.projects.find((entry) => (state.sessionsByProject[entry.path] ?? []).some((session) => session.id === sessionID))
+    const session = project
+      ? (state.sessionsByProject[project.path] ?? []).find((entry) => entry.id === sessionID)
+      : undefined
+    if (!project || !session) return false
+    setState("sending", true)
+    try {
+      await promptSession(session, project, {
+        text: item.text,
+        files: item.attachments,
+        model: item.model,
+        agent: item.agent,
+        variant: item.variant,
+      })
+      return true
+    } catch (error) {
+      setState("error", error instanceof Error ? error.message : "发送排队消息失败")
+      return false
+    } finally {
+      setState("sending", false)
+    }
+  }
+
+  const flushQueue = async (sessionID: string) => {
+    if (state.sending) return
+    if (state.status[sessionID]?.type === "busy") return
+    if (
+      Object.values(state.permissions).some((item) => item?.sessionID === sessionID) ||
+      Object.values(state.questions).some((item) => item?.sessionID === sessionID)
+    ) {
+      return
+    }
+
+    if (sendAfterIdle) {
+      const item = sendAfterIdle
+      sendAfterIdle = null
+      skipQueueFlush = false
+      const ok = await dispatchQueued(sessionID, item)
+      if (!ok) {
+        setState("queuedBySession", sessionID, [item, ...queuedFor(sessionID)])
+      }
+      return
+    }
+
+    if (skipQueueFlush) {
+      skipQueueFlush = false
+      return
+    }
+
+    const [next, ...rest] = queuedFor(sessionID)
+    if (!next) return
+    setState("queuedBySession", sessionID, rest)
+    const ok = await dispatchQueued(sessionID, next)
+    if (!ok) setState("queuedBySession", sessionID, [next, ...queuedFor(sessionID)])
+  }
+
   const send = async (text?: string) => {
     const content = (text ?? state.composer).trim()
     const project = selectedProject()
@@ -679,18 +813,32 @@ export function AppProvider(props: ParentProps) {
       setState("error", "请先添加一个项目文件夹")
       return
     }
-    if (!content && files.length === 0) {
-      if (busy()) {
-        await abort()
-      }
-      return
-    }
+    if (!content && files.length === 0) return
     if (blocked()) return
 
     const model = selectedModel()
     if (!model) {
       setState("error", "请先配置一个模型")
       openModelSettings()
+      return
+    }
+
+    if (busy()) {
+      const session = selectedSession()
+      if (!session) return
+      setState("queuedBySession", session.id, [
+        ...queuedFor(session.id),
+        {
+          id: queueId(),
+          text: content,
+          attachments: files,
+          agent: currentAgent(),
+          model: { providerID: model.providerID, modelID: model.modelID },
+          variant: state.selectedVariant,
+        },
+      ])
+      setState("composer", "")
+      setState("attachments", [])
       return
     }
 
@@ -736,11 +884,73 @@ export function AppProvider(props: ParentProps) {
     const session = selectedSession()
     const project = selectedProject()
     if (!session || !project) return
+    skipQueueFlush = true
+    sendAfterIdle = null
     try {
       await api.abortSession(project.path, session.id)
     } catch (error) {
+      skipQueueFlush = false
       setState("error", error instanceof Error ? error.message : "停止失败")
     }
+  }
+
+  const sendQueuedNow = async (id: string) => {
+    const session = selectedSession()
+    const project = selectedProject()
+    if (!session || !project) return
+    const list = queuedFor(session.id)
+    const item = list.find((entry) => entry.id === id)
+    if (!item) return
+    setState(
+      "queuedBySession",
+      session.id,
+      list.filter((entry) => entry.id !== id),
+    )
+    skipQueueFlush = false
+    sendAfterIdle = item
+    try {
+      await api.abortSession(project.path, session.id)
+    } catch (error) {
+      sendAfterIdle = null
+      setState("queuedBySession", session.id, [item, ...queuedFor(session.id)])
+      setState("error", error instanceof Error ? error.message : "停止失败")
+    }
+  }
+
+  const editQueued = (id: string) => {
+    const sessionID = state.selectedSessionId
+    if (!sessionID) return
+    const item = queuedFor(sessionID).find((entry) => entry.id === id)
+    if (!item) return
+    const remaining = queuedFor(sessionID).filter((entry) => entry.id !== id)
+    const currentText = state.composer.trim()
+    const currentFiles = state.attachments
+    if (currentText || currentFiles.length > 0) {
+      const model = selectedModel()
+      remaining.push({
+        id: queueId(),
+        text: currentText,
+        attachments: currentFiles,
+        agent: currentAgent(),
+        model: model
+          ? { providerID: model.providerID, modelID: model.modelID }
+          : item.model,
+        variant: state.selectedVariant,
+      })
+    }
+    setState("queuedBySession", sessionID, remaining)
+    setState("composer", item.text)
+    setState("attachments", item.attachments)
+  }
+
+  const removeQueued = (id: string) => {
+    const sessionID = state.selectedSessionId
+    if (!sessionID) return
+    setState(
+      "queuedBySession",
+      sessionID,
+      queuedFor(sessionID).filter((entry) => entry.id !== id),
+    )
   }
 
   const replyPermission = async (id: string, reply: "once" | "always" | "reject") => {
@@ -815,6 +1025,7 @@ export function AppProvider(props: ParentProps) {
         const directory = parsed.directory
 
         const autoReplies: Array<{ id: string; reply: "once" | "always" | "reject"; directory: string }> = []
+        const idleSessions: string[] = []
         setState(
           produce((draft) => {
             if (event.type === "session.created" || event.type === "session.updated") {
@@ -836,6 +1047,7 @@ export function AppProvider(props: ParentProps) {
                 draft.selectedSessionId = null
                 draft.draft = true
               }
+              if (sessionID) delete draft.queuedBySession[sessionID]
             }
             if (event.type === "message.updated") {
               const info = props.info as Message | undefined
@@ -897,7 +1109,10 @@ export function AppProvider(props: ParentProps) {
             }
             if (event.type === "session.idle") {
               const sessionID = props.sessionID as string
-              if (sessionID) draft.status[sessionID] = { type: "idle" }
+              if (sessionID) {
+                draft.status[sessionID] = { type: "idle" }
+                idleSessions.push(sessionID)
+              }
             }
             if (event.type === "todo.updated") {
               const sessionID = props.sessionID as string
@@ -947,6 +1162,9 @@ export function AppProvider(props: ParentProps) {
         )
         for (const item of autoReplies) {
           void api.replyPermission(item.directory, item.id, item.reply)
+        }
+        for (const sessionID of new Set(idleSessions)) {
+          void flushQueue(sessionID)
         }
       },
       (connected) => {
@@ -1004,6 +1222,9 @@ export function AppProvider(props: ParentProps) {
     openPermissionMenu,
     closePermissionMenu,
     setPermissionMode,
+    openSettings,
+    closeSettings,
+    setSendShortcut,
     addFiles,
     addFolder,
     removeAttachment,
@@ -1018,6 +1239,9 @@ export function AppProvider(props: ParentProps) {
     deleteSession,
     send,
     abort,
+    sendQueuedNow,
+    editQueued,
+    removeQueued,
     replyPermission,
     replyQuestion,
     rejectQuestion,

@@ -7,4 +7,5 @@ export const STORAGE_KEYS = {
   projects: "coda.projects",
   lastProject: "coda.lastProject",
   permissionMode: "coda.permissionMode",
+  sendShortcut: "coda.sendShortcut",
 } as const
