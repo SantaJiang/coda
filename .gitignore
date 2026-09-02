@@ -1,6 +1,6 @@
 node_modules
 dist
-src-tauri/target
+frontend/src-tauri/target
 config/local.env
 .coda
 .DS_Store

@@ -1,6 +1,11 @@
 # Coda
 
-精简桌面 Agent 客户端：Tauri 2 + SolidJS 原生 UI，后端以 HTTP + SSE 提供 Agent 能力。
+精简桌面 Agent 客户端。仓库按两个子模块组织：
+
+| 目录 | 说明 |
+|---|---|
+| `frontend/` | Tauri 2 + SolidJS 桌面 UI |
+| `backend/` | Agent HTTP + SSE 服务（git 子模块） |
 
 ## 启动
 
@@ -20,6 +25,12 @@ chmod +x ./run.sh
 ```
 
 首次打开没有预置模型。在输入框左下角点「配置模型」，添加一个 OpenAI 兼容接口（Base URL、API Key、模型 ID）即可。
+
+克隆后如果 `backend/` 是空的，先拉子模块：
+
+```bash
+git submodule update --init --recursive
+```
 
 ## 打包
 

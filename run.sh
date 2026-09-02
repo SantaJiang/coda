@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+FRONTEND="$ROOT/frontend"
 PORT="${CODA_PORT:-4096}"
 MODE="${1:-tauri}"
 LOG_DIR="$ROOT/.coda"
@@ -26,20 +27,6 @@ find_backend_root() {
     echo "$ROOT/backend"
     return 0
   fi
-  local dir pkg
-  for dir in "$ROOT"/../*; do
-    [[ -d "$dir" ]] || continue
-    if [[ -f "$dir/src/cli/cmd/serve.ts" ]]; then
-      echo "$dir"
-      return 0
-    fi
-    for pkg in "$dir/packages/"*; do
-      if [[ -f "$pkg/src/cli/cmd/serve.ts" ]]; then
-        echo "$dir"
-        return 0
-      fi
-    done
-  done
   return 1
 }
 
@@ -66,7 +53,8 @@ backend_pkg_dir() {
 BACKEND_ROOT="$(find_backend_root || true)"
 if [[ -z "${BACKEND_ROOT:-}" ]]; then
   echo "找不到 Coda 后端。"
-  echo "请把后端放到 $ROOT/backend，或设置 CODA_BACKEND_ROOT。"
+  echo "请初始化 git 子模块：git submodule update --init --recursive"
+  echo "或设置 CODA_BACKEND_ROOT。"
   exit 1
 fi
 
@@ -76,14 +64,14 @@ if [[ -z "${PKG_DIR:-}" ]]; then
   exit 1
 fi
 
+if [[ ! -d "$FRONTEND" || ! -f "$FRONTEND/package.json" ]]; then
+  echo "找不到前端目录：$FRONTEND"
+  exit 1
+fi
+
 export CODA_CONFIG="${CODA_CONFIG:-$ROOT/config/coda.json}"
 export CODA_CONFIG_DIR="${CODA_CONFIG_DIR:-$LOG_DIR/backend}"
 export CODA_PORT="$PORT"
-
-if [[ ! -d "$BACKEND_ROOT" ]]; then
-  echo "找不到后端目录：$BACKEND_ROOT"
-  exit 1
-fi
 
 kill_port() {
   local port="$1"
@@ -112,8 +100,19 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-echo "==> 安装 Coda 依赖"
-bun install --cwd "$ROOT"
+clean_stale_rust_target() {
+  local target="$FRONTEND/src-tauri/target"
+  [[ -d "$target" ]] || return 0
+  # 目录搬迁后，Cargo 仍会按旧的绝对 OUT_DIR 去读 Tauri 权限文件
+  if [[ ! -d "$ROOT/src-tauri" ]] && grep -Rql "/coda/src-tauri/" "$target"/debug/build/coda-* "$target"/debug/build/tauri-* 2>/dev/null; then
+    echo "==> 清理过期的 Rust 构建缓存"
+    rm -rf "$target"
+  fi
+}
+
+echo "==> 安装前端依赖"
+bun install --cwd "$FRONTEND"
+clean_stale_rust_target
 
 if [[ ! -d "$BACKEND_ROOT/node_modules" ]]; then
   echo "==> 安装后端依赖（首次会比较久）"
@@ -152,8 +151,8 @@ echo "后端已就绪。"
 
 if [[ "$MODE" == "--web" || "$MODE" == "web" ]]; then
   echo "==> 启动 Vite 前端  http://localhost:1420"
-  bun run --cwd "$ROOT" dev
+  bun run --cwd "$FRONTEND" dev
 else
   echo "==> 启动 Tauri 桌面端"
-  bun run --cwd "$ROOT" tauri dev
+  bun run --cwd "$FRONTEND" tauri dev
 fi
