@@ -32,17 +32,93 @@ export type ChatTurn = {
   assistants: Message[]
 }
 
-export function groupTurns(messages: Message[]): ChatTurn[] {
-  const turns: ChatTurn[] = []
+export type TimelineItem =
+  | ({ kind: "turn" } & ChatTurn)
+  | { kind: "compaction"; status: "running" | "done"; summary?: string }
+
+function partsOf(messageID: string, partsByMessage: Record<string, Part[]>) {
+  return partsByMessage[messageID] ?? []
+}
+
+function isCompactionUser(message: Message, partsByMessage: Record<string, Part[]>) {
+  return partsOf(message.id, partsByMessage).some((part) => part.type === "compaction")
+}
+
+function isSystemUser(message: Message, partsByMessage: Record<string, Part[]>) {
+  if (message.role !== "user") return false
+  const parts = partsOf(message.id, partsByMessage)
+  if (!parts.length) return false
+  return !parts.some(isVisiblePart)
+}
+
+function isCompactionAssistant(message: Message) {
+  if (message.role !== "assistant") return false
+  const info = message as AssistantMessage
+  return info.summary === true || info.agent === "compaction" || info.mode === "compaction"
+}
+
+function assistantSettled(message: Message) {
+  if (message.role !== "assistant") return false
+  const info = message as AssistantMessage
+  return Boolean(info.time.completed) || Boolean(info.error)
+}
+
+function assistantPlainText(message: Message, partsByMessage: Record<string, Part[]>) {
+  return partsOf(message.id, partsByMessage)
+    .filter((part): part is TextPart => part.type === "text")
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join("\n\n")
+}
+
+export function groupTurns(messages: Message[], partsByMessage: Record<string, Part[]> = {}): TimelineItem[] {
+  const items: TimelineItem[] = []
+  let turn: ChatTurn | undefined
+
+  const flush = () => {
+    if (!turn) return
+    if (turn.user || turn.assistants.length) items.push({ kind: "turn", ...turn })
+    turn = undefined
+  }
+
   for (const message of messages) {
     if (message.role === "user") {
-      turns.push({ user: message, assistants: [] })
+      if (isCompactionUser(message, partsByMessage)) {
+        flush()
+        items.push({ kind: "compaction", status: "running" })
+        continue
+      }
+      if (isSystemUser(message, partsByMessage)) {
+        flush()
+        continue
+      }
+      flush()
+      turn = { user: message, assistants: [] }
       continue
     }
-    if (turns.length === 0) turns.push({ assistants: [] })
-    turns[turns.length - 1].assistants.push(message)
+
+    const pending = items[items.length - 1]
+    const absorb =
+      isCompactionAssistant(message) ||
+      (pending?.kind === "compaction" && pending.status === "running" && !turn)
+    if (absorb) {
+      flush()
+      const status = assistantSettled(message) ? "done" : "running"
+      const summary = assistantPlainText(message, partsByMessage) || undefined
+      if (pending?.kind === "compaction" && pending.status === "running") {
+        pending.status = status
+        if (summary) pending.summary = summary
+      } else {
+        items.push({ kind: "compaction", status, summary })
+      }
+      continue
+    }
+
+    if (!turn) turn = { assistants: [] }
+    turn.assistants.push(message)
   }
-  return turns
+  flush()
+  return items
 }
 
 function isVisiblePart(part: Part) {
@@ -305,6 +381,53 @@ function AssistantTurn(props: {
         )}
       </Show>
     </article>
+  )
+}
+
+export function CompactionMark(props: { live: boolean; summary?: string }) {
+  const [open, setOpen] = createSignal(false)
+  const summary = () => props.summary?.trim() ?? ""
+  const expandable = () => !props.live && Boolean(summary())
+
+  return (
+    <div class="compaction-mark" classList={{ live: props.live, open: open() }}>
+      <Show
+        when={props.live}
+        fallback={
+          <>
+            <Show
+              when={expandable()}
+              fallback={
+                <div class="work-summary">
+                  <span class="work-summary-text">Context compacted</span>
+                </div>
+              }
+            >
+              <button
+                type="button"
+                class="work-head"
+                onClick={() => setOpen((value) => !value)}
+                aria-expanded={open()}
+              >
+                <span class="work-summary">
+                  <span class="work-summary-text">Context compacted</span>
+                  <Icon name="chevron-right" class="work-summary-caret" />
+                </span>
+              </button>
+            </Show>
+            <Show when={open() && summary()}>
+              <div class="compaction-body">
+                <MarkdownView text={summary()} />
+              </div>
+            </Show>
+          </>
+        }
+      >
+        <div class="compaction-live">
+          <span class="work-status-wave">Compacting context</span>
+        </div>
+      </Show>
+    </div>
   )
 }
 

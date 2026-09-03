@@ -62,6 +62,7 @@ export type AssistantMessage = {
   providerID?: string
   agent?: string
   mode?: string
+  summary?: boolean
   cost?: number
 }
 

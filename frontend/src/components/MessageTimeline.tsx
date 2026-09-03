@@ -1,6 +1,6 @@
-import { Index, Show, createEffect, createMemo, on } from "solid-js"
+import { Index, Match, Show, Switch, createEffect, createMemo, on } from "solid-js"
 import { useApp } from "../store/app"
-import { ChatTurnView, groupTurns } from "./MessagePart"
+import { ChatTurnView, CompactionMark, groupTurns } from "./MessagePart"
 import { WorkGroup } from "./WorkGroup"
 
 export function MessageTimeline() {
@@ -14,7 +14,12 @@ export function MessageTimeline() {
     return app.state.messages[id] ?? []
   })
 
-  const turns = createMemo(() => groupTurns(messages()))
+  const items = createMemo(() => groupTurns(messages(), app.state.parts))
+  const last = createMemo(() => items()[items().length - 1])
+  const waiting = createMemo(() => {
+    const item = last()
+    return Boolean(app.busy() && item?.kind === "turn" && item.assistants.length === 0)
+  })
 
   const onScroll = () => {
     if (!scroller) return
@@ -37,16 +42,33 @@ export function MessageTimeline() {
   return (
     <div class="timeline" ref={scroller} onScroll={onScroll}>
       <div class="timeline-inner">
-        <Index each={turns()}>
-          {(turn, index) => (
-            <ChatTurnView
-              turn={turn()}
-              partsByMessage={app.state.parts}
-              live={app.busy() && index === turns().length - 1}
-            />
+        <Index each={items()}>
+          {(item, index) => (
+            <Switch>
+              <Match when={item().kind === "compaction"}>
+                <CompactionMark
+                  live={
+                    app.busy() &&
+                    index === items().length - 1 &&
+                    item().kind === "compaction" &&
+                    item().status === "running"
+                  }
+                  summary={item().kind === "compaction" ? item().summary : undefined}
+                />
+              </Match>
+              <Match when={item().kind === "turn" ? item() : false}>
+                {(turn) => (
+                  <ChatTurnView
+                    turn={turn()}
+                    partsByMessage={app.state.parts}
+                    live={app.busy() && index === items().length - 1}
+                  />
+                )}
+              </Match>
+            </Switch>
           )}
         </Index>
-        <Show when={app.busy() && (turns()[turns().length - 1]?.assistants.length ?? 0) === 0}>
+        <Show when={waiting()}>
           <WorkGroup parts={[]} live />
         </Show>
       </div>

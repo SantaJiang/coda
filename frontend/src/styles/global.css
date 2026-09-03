@@ -705,6 +705,25 @@ button.ctx-pill:hover {
   margin: 0 0 12px;
 }
 
+.compaction-mark {
+  margin: 0 0 16px;
+}
+
+.compaction-live {
+  height: 1.4em;
+  overflow: hidden;
+  font-size: var(--font-chat);
+  line-height: 1.4em;
+  animation: work-fade-in 220ms ease;
+}
+
+.compaction-body {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-chat);
+  line-height: var(--line-chat);
+}
+
 .work-status {
   height: 1.4em;
   overflow: hidden;
@@ -812,7 +831,8 @@ button.ctx-pill:hover {
   .work-status,
   .work-steps,
   .worked-for,
-  .changed-files {
+  .changed-files,
+  .compaction-live {
     animation: none;
   }
 
@@ -872,12 +892,15 @@ button.ctx-pill:hover {
 
 .work-group:hover .work-summary-caret,
 .work-group.open .work-summary-caret,
-.worked-for .work-summary-caret {
+.worked-for .work-summary-caret,
+.compaction-mark:hover .work-summary-caret,
+.compaction-mark.open .work-summary-caret {
   opacity: 1;
 }
 
 .work-group.open .work-summary-caret,
-.worked-for.open .work-summary-caret {
+.worked-for.open .work-summary-caret,
+.compaction-mark.open .work-summary-caret {
   transform: rotate(90deg);
 }
 

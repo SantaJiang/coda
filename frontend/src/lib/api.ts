@@ -179,6 +179,7 @@ export async function promptAsync(
       url: file.url,
     })
   }
+  if (!parts.length) return
   return request<void>("POST", `/session/${sessionID}/prompt_async`, {
     directory,
     body: {

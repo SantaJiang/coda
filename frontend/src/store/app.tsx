@@ -757,6 +757,7 @@ export function AppProvider(props: ParentProps) {
   }
 
   const dispatchQueued = async (sessionID: string, item: QueuedMessage) => {
+    if (!item.text.trim() && item.attachments.length === 0) return true
     const project =
       selectedProject() ??
       state.projects.find((entry) => (state.sessionsByProject[entry.path] ?? []).some((session) => session.id === sessionID))
