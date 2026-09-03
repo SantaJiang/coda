@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { activityDiff, activityStatus, activitySummary, stepBody, stepLabel } from "../lib/activity"
 import type { Part, ReasoningPart } from "../lib/types"
+import { useApp } from "../store/app"
 import { MarkdownView } from "./MarkdownView"
 import { Icon } from "./Icon"
 
@@ -9,13 +10,18 @@ const TOOL_HOLD_MS = 90
 const FLIP_MS = 320
 
 function isIdleStatus(label: string) {
-  return label === "Thinking" || label === "Thought"
+  return (
+    label === "Thinking" ||
+    label === "Thought" ||
+    label.startsWith("Thinking ·") ||
+    label.startsWith("Thought ·")
+  )
 }
 
 function sameStatus(a: string, b: string) {
   if (!a || !b) return false
   if (a === b) return true
-  return isIdleStatus(a) && isIdleStatus(b)
+  return (a === "Thinking" && b === "Thought") || (a === "Thought" && b === "Thinking")
 }
 
 function prefersReducedMotion() {
@@ -32,7 +38,13 @@ export function WorkGroup(props: {
   const [localOpen, setLocalOpen] = createSignal(false)
   const [line, setLine] = createSignal({ current: "", previous: "", flipping: false, tick: 0 })
   const [clock, setClock] = createSignal(0)
+  const app = useApp()
   const parts = createMemo(() => (props.getParts ? props.getParts() : (props.parts ?? [])))
+  const currentTodo = createMemo(() => {
+    const id = app.state.selectedSessionId
+    if (!id) return ""
+    return (app.state.todos[id] ?? []).find((item) => item.status === "in_progress")?.content ?? ""
+  })
   const summary = createMemo(() => activitySummary(parts()))
   const diff = createMemo(() => activityDiff(parts()))
   const open = () => (props.onToggle ? Boolean(props.open) : localOpen())
@@ -82,7 +94,8 @@ export function WorkGroup(props: {
     on(
       () => {
         clock()
-        return props.live ? activityStatus(parts(), Date.now()) : ""
+        currentTodo()
+        return props.live ? activityStatus(parts(), Date.now(), currentTodo()) : ""
       },
       (next) => {
         window.clearTimeout(pending)
@@ -99,7 +112,7 @@ export function WorkGroup(props: {
         }
         const delay = isIdleStatus(next) ? IDLE_HOLD_MS : TOOL_HOLD_MS
         pending = window.setTimeout(() => {
-          const latest = props.live ? activityStatus(parts()) : ""
+          const latest = props.live ? activityStatus(parts(), Date.now(), currentTodo()) : ""
           if (!latest || sameStatus(latest, shown)) return
           commit(latest, true)
         }, delay)
@@ -175,9 +188,11 @@ function WorkStep(props: { part: Part }) {
   const [open, setOpen] = createSignal(false)
   const label = createMemo(() => stepLabel(props.part))
   const body = createMemo(() => stepBody(props.part).trim())
-  const running = () =>
-    props.part.type === "tool" &&
-    (props.part.state.status === "pending" || props.part.state.status === "running")
+  const running = () => {
+    if (props.part.type !== "tool") return false
+    const status = (props.part as { state?: { status?: string } }).state?.status
+    return status === "pending" || status === "running"
+  }
 
   return (
     <div class="work-step" classList={{ open: open(), running: running() }}>

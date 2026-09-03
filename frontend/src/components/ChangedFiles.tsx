@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
 import type { ChangedFile } from "../lib/activity"
+import { highlightDiff, languageFromPath } from "../lib/highlight"
 
 function fileKind(name: string) {
   const ext = name.split(".").pop()?.toLowerCase() ?? ""
@@ -21,6 +22,11 @@ function FileGlyph(props: { name: string }) {
       {kind().label}
     </span>
   )
+}
+
+function PatchView(props: { path: string; patch: string }) {
+  const html = createMemo(() => highlightDiff(props.patch, languageFromPath(props.path)))
+  return <div class="changed-file-patch" innerHTML={html()} />
 }
 
 export function ChangedFiles(props: { files: ChangedFile[] }) {
@@ -66,7 +72,7 @@ export function ChangedFiles(props: { files: ChangedFile[] }) {
                   </span>
                 </button>
                 <Show when={(review() || openPath() === file.path) && file.patch}>
-                  <pre class="changed-file-patch">{file.patch}</pre>
+                  <PatchView path={file.path} patch={file.patch ?? ""} />
                 </Show>
               </div>
             )}

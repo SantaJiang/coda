@@ -1,9 +1,8 @@
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { For, Show, createMemo } from "solid-js"
 import { useApp } from "../store/app"
 
 export function TodoDock() {
   const app = useApp()
-  const [collapsed, setCollapsed] = createSignal(false)
   const todos = createMemo(() => {
     const id = app.state.selectedSessionId
     if (!id) return []
@@ -13,25 +12,23 @@ export function TodoDock() {
 
   return (
     <Show when={todos().length > 0}>
-      <div class="dock dock-todo">
-        <button type="button" class="todo-head" onClick={() => setCollapsed((value) => !value)}>
-          <span>
-            任务 {done()}/{todos().length}
-          </span>
-          <span class="muted">{collapsed() ? "展开" : "收起"}</span>
-        </button>
-        <Show when={!collapsed()}>
-          <ul class="todo-list">
-            <For each={todos()}>
-              {(todo) => (
-                <li classList={{ done: todo.status === "completed", active: todo.status === "in_progress" }}>
-                  <span class="todo-mark" />
-                  <span>{todo.content}</span>
-                </li>
-              )}
-            </For>
-          </ul>
-        </Show>
+      <div class="plan-panel">
+        <header class="plan-head">
+          <div class="plan-title">计划</div>
+          <div class="plan-count">
+            {done()}/{todos().length}
+          </div>
+        </header>
+        <ol class="plan-list">
+          <For each={todos()}>
+            {(todo, index) => (
+              <li classList={{ done: todo.status === "completed", active: todo.status === "in_progress" }}>
+                <span class="plan-index">{index() + 1}</span>
+                <span class="plan-text">{todo.content}</span>
+              </li>
+            )}
+          </For>
+        </ol>
       </div>
     </Show>
   )

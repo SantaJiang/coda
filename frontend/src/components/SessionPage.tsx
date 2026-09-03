@@ -10,6 +10,11 @@ import { TodoDock } from "./TodoDock"
 
 export function SessionPage() {
   const app = useApp()
+  const hasPlan = () => {
+    const id = app.state.selectedSessionId
+    if (!id) return false
+    return (app.state.todos[id] ?? []).length > 0
+  }
 
   return (
     <section class="session">
@@ -28,17 +33,22 @@ export function SessionPage() {
           </div>
         }
       >
-        <MessageTimeline />
-      </Show>
-
-      <Show when={app.selectedSession()}>
-        <div class="composer-region">
-          <QuestionDock />
-          <PermissionDock />
-          <TodoDock />
-          <QueueDock />
-          <Composer />
-          <ContextBar />
+        <div class="session-body">
+          <div class="session-main">
+            <MessageTimeline />
+            <div class="composer-region">
+              <QuestionDock />
+              <PermissionDock />
+              <QueueDock />
+              <Composer />
+              <ContextBar />
+            </div>
+          </div>
+          <Show when={hasPlan()}>
+            <aside class="session-aside">
+              <TodoDock />
+            </aside>
+          </Show>
         </div>
       </Show>
     </section>

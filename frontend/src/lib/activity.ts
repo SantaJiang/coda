@@ -40,12 +40,16 @@ export function splitProcessAndAnswer(blocks: ActivityBlock[]) {
   }
 }
 
+function asTool(part: Part): ToolPart | undefined {
+  if (part.type !== "tool") return undefined
+  return part as ToolPart
+}
+
 export function isWorkLive(parts: Part[]) {
-  return parts.some(
-    (part) =>
-      part.type === "tool" &&
-      (part.state.status === "pending" || part.state.status === "running"),
-  )
+  return parts.some((part) => {
+    const tool = asTool(part)
+    return tool?.state.status === "pending" || tool?.state.status === "running"
+  })
 }
 
 function toolPath(part: ToolPart) {
@@ -261,16 +265,83 @@ function waitSeconds(value: unknown) {
   return Math.max(1, Math.round(ms / 1000))
 }
 
-function waitLabelFor(part: ToolPart, now: number) {
+function waitLabelFor(part: ToolPart, now: number, action = "") {
   const seconds = waitSeconds(part.state.input?.timeout)
   if (!seconds) return ""
   const time = "time" in part.state ? part.state.time : undefined
   const start = time?.start ? toMs(time.start) : Number.NaN
   if (!Number.isFinite(start) || now - start < WAIT_AFTER_MS) return ""
-  return `Waiting up to ${seconds}s for ${part.tool.toLowerCase()}`
+  return action ? `Waiting up to ${seconds}s · ${action}` : `Waiting up to ${seconds}s for ${part.tool.toLowerCase()}`
 }
 
-export function activityStatus(parts: Part[], now = Date.now()): string {
+function withDetail(verb: string, detail: string) {
+  return detail ? `${verb} ${detail}` : verb
+}
+
+function humanizePhrase(raw: string) {
+  const text = raw
+    .replace(/\.(?:js|ts|mjs|cjs|jsx|tsx|sh|py|rb|php)$/i, "")
+    .replace(/[-_./]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (!text) return raw.trim()
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+function knownCommandAction(bin: string, arg: string) {
+  const name = `${bin} ${arg}`.toLowerCase()
+  if (/\b(test|tests|spec|vitest|jest|pytest|mocha)\b/.test(name)) return "tests"
+  if (/\b(lint|eslint|prettier|fmt|format)\b/.test(name)) return "lint"
+  if (/\b(build|compile|tsc)\b/.test(name)) return "build"
+  if (/\b(install|ci)\b/.test(name)) return "install"
+  if (/\b(dev|serve|start)\b/.test(name)) return "dev server"
+  return ""
+}
+
+function commandAction(command: string) {
+  const compact = command.replace(/\s+/g, " ").trim()
+  if (!compact) return ""
+  const stripped = compact.replace(/^(?:[A-Z_][A-Z0-9_]*=\S+\s+)+/, "")
+  const pkg = stripped.match(/^(npm|pnpm|yarn|bunx?)\s+(?:run\s+)?(\S+)/)
+  if (pkg) {
+    const script = pkg[2]
+    if (script.startsWith("-")) return truncate(stripped, 42)
+    return knownCommandAction(pkg[1], script) || humanizePhrase(script)
+  }
+  const make = stripped.match(/^make\s+(\S+)/)
+  if (make) return humanizePhrase(make[1])
+  const cargo = stripped.match(/^cargo\s+(\S+)/)
+  if (cargo) return knownCommandAction("cargo", cargo[1]) || humanizePhrase(cargo[1])
+  const go = stripped.match(/^go\s+(\S+)/)
+  if (go) return knownCommandAction("go", go[1]) || humanizePhrase(go[1])
+  const tokens = stripped.split(" ")
+  const bin = basename(tokens[0] ?? "")
+  const arg = tokens.find((token, index) => index > 0 && !token.startsWith("-")) ?? ""
+  return knownCommandAction(bin, arg) || (arg && !looksLikePath(arg) ? humanizePhrase(arg) : truncate(stripped, 42))
+}
+
+function toolHeadline(part: ToolPart) {
+  const title = "title" in part.state && part.state.title ? String(part.state.title).trim() : ""
+  const meta = "metadata" in part.state ? asRecord(part.state.metadata) : undefined
+  const fromMeta = String(meta?.title ?? meta?.description ?? "").trim()
+  const raw = title || fromMeta
+  if (!raw) return ""
+  const lower = raw.toLowerCase()
+  if (["bash", "shell", "run", "command", "running", "tool"].includes(lower)) return ""
+  if (/^(npm|pnpm|yarn|bunx?|cargo|go|python|node|bash|sh|zsh)\s/.test(lower)) return commandAction(raw)
+  return raw
+}
+
+function hostFromUrl(value: string) {
+  try {
+    return new URL(value).hostname || truncate(value, 40)
+  } catch {
+    return truncate(value, 40)
+  }
+}
+
+export function activityStatus(parts: Part[], now = Date.now(), currentTodo = ""): string {
   const tools = parts.filter((part): part is ToolPart => part.type === "tool")
   const running = [...tools].reverse().find(
     (part) => part.state.status === "pending" || part.state.status === "running",
@@ -283,8 +354,10 @@ export function activityStatus(parts: Part[], now = Date.now()): string {
     if (part.type === "reasoning") lastReasoning = index
     if (part.type === "tool") lastTool = index
   })
-  if (lastReasoning > lastTool) return "Thought"
-  return "Thinking"
+  const idle =
+    lastTool >= 0 ? "Planning next moves" : lastReasoning > lastTool ? "Thought" : "Thinking"
+  const topic = currentTodo.trim()
+  return topic ? `${idle} · ${truncate(topic, 40)}` : idle
 }
 
 function liveStepLabel(part: ToolPart, now: number) {
@@ -292,27 +365,36 @@ function liveStepLabel(part: ToolPart, now: number) {
   const input = part.state.input ?? {}
   const fileInfo = fileFromTool(part)
   const file = fileInfo?.name ?? ""
+  const path = String(input.path ?? input.target_directory ?? input.directory ?? "")
+  const folder = path ? basename(path) : ""
   const pattern = String(input.pattern ?? input.glob ?? "")
   const command = String(input.command ?? "")
   const query = String(input.query ?? "")
-  const title = "title" in part.state ? part.state.title : undefined
+  const url = String(input.url ?? "")
+  const headline = toolHeadline(part)
 
-  if (name === "read") return file ? `Read ${file}` : "Read"
-  if (name === "glob") return pattern ? `Explored ${truncate(pattern, 40)}` : "Explored"
-  if (name === "list" || name === "ls") return file ? `Explored ${file}` : "Explored"
-  if (name === "grep") return pattern ? `Search ${truncate(pattern, 40)}` : "Search"
-  if (name === "websearch") return query ? `Search ${truncate(query, 40)}` : "Search"
-  if (name === "webfetch") return "Search"
-  if (name === "edit" || name === "write" || name === "multiedit") {
-    return file ? `Edited ${file}` : "Edited"
+  if (name === "read") return withDetail("Reading", file)
+  if (name === "glob") return withDetail("Exploring", pattern ? truncate(pattern, 40) : folder)
+  if (name === "list" || name === "ls") return withDetail("Exploring", file || folder)
+  if (name === "grep") return withDetail("Searching", pattern ? truncate(pattern, 40) : "")
+  if (name === "websearch") return withDetail("Searching", query ? truncate(query, 40) : "the web")
+  if (name === "webfetch") return withDetail("Fetching", url ? hostFromUrl(url) : "")
+  if (name === "edit" || name === "write" || name === "multiedit" || name === "apply_patch" || name === "applypatch") {
+    return withDetail("Editing", file)
   }
   if (name === "bash" || name === "shell") {
-    const waiting = waitLabelFor(part, now)
+    const action = headline || commandAction(command)
+    const waiting = waitLabelFor(part, now, action)
     if (waiting) return waiting
-    return command ? `Ran ${truncate(command, 40)}` : "Ran"
+    return withDetail("Running", action)
   }
-  if (name.includes("lint")) return "Explored"
-  if (title) return String(title)
+  if (name === "task") {
+    const desc = headline || String(input.description ?? "")
+    return withDetail("Running", desc)
+  }
+  if (name === "skill") return withDetail("Loading", headline || String(input.name ?? input.skill ?? ""))
+  if (name.includes("lint")) return withDetail("Linting", file)
+  if (headline) return headline
   if (file) return `${capitalize(name)} ${file}`
   return capitalize(name)
 }
@@ -350,8 +432,12 @@ export function stepLabel(part: Part) {
   if (name === "list" || name === "ls") return path ? `Listed ${truncate(path, 48)}` : "Listed directory"
   if (name === "edit") return file ? `Edited ${file}` : "Edited file"
   if (name === "write") return file ? `Wrote ${file}` : "Wrote file"
-  if (name === "bash" || name === "shell") return command ? `Ran ${truncate(command)}` : "Ran command"
-  if (name === "webfetch") return url ? `Fetched ${truncate(url)}` : "Fetched page"
+  if (name === "bash" || name === "shell") {
+    const action = commandAction(command)
+    if (action && action !== truncate(command) && action !== truncate(command, 42)) return `Ran ${action}`
+    return command ? `Ran ${truncate(command)}` : "Ran command"
+  }
+  if (name === "webfetch") return url ? `Fetched ${hostFromUrl(url)}` : "Fetched page"
   if (name === "websearch") return query ? `Searched ${truncate(query)}` : "Searched web"
   if (title) return String(title)
   return tool.tool
@@ -382,10 +468,13 @@ export function workDurationMs(assistants: Message[], parts: Part[]) {
     if (info.time.completed) end.push(toMs(info.time.completed))
   }
   for (const part of parts) {
-    if (part.type !== "tool") continue
-    const time = "time" in part.state ? part.state.time : undefined
-    if (time?.start) start.push(toMs(time.start))
-    if (time && "end" in time && time.end) end.push(toMs(time.end))
+    const tool = asTool(part)
+    if (!tool || !("time" in tool.state) || !tool.state.time) continue
+    const time = tool.state.time
+    const started = Number(time.start)
+    const ended = "end" in time ? Number(time.end) : Number.NaN
+    if (Number.isFinite(started)) start.push(toMs(started))
+    if (Number.isFinite(ended)) end.push(toMs(ended))
   }
   if (!start.length) return 0
   const from = Math.min(...start)
