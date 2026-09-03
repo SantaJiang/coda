@@ -307,6 +307,21 @@ button {
   outline: none;
 }
 
+.tree-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 180ms ease;
+}
+
+.tree-collapse.open {
+  grid-template-rows: 1fr;
+}
+
+.tree-collapse > .tree-children {
+  overflow: hidden;
+  min-height: 0;
+}
+
 .context-menu {
   min-width: 140px;
   padding: 6px;
@@ -448,6 +463,16 @@ button.ctx-pill:hover {
   margin-left: auto;
   flex-shrink: 0;
   animation: pulse 1.2s ease-in-out infinite;
+}
+
+.alert-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(212, 165, 116, 0.18);
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .sidebar-foot {
@@ -1543,6 +1568,10 @@ button.ctx-pill:hover {
 
 .settings-dialog {
   width: min(420px, 100%);
+}
+
+.confirm-dialog {
+  width: min(380px, 100%);
 }
 
 .settings-group {

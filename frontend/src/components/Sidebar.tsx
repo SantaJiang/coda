@@ -1,6 +1,6 @@
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
 import { useApp } from "../store/app"
-import type { Session } from "../lib/types"
+import type { Project, Session } from "../lib/types"
 import { Icon } from "./Icon"
 
 function sessionLabel(session: Session) {
@@ -14,17 +14,33 @@ type CtxMenuState = {
   y: number
 }
 
+type ConfirmTarget = { kind: "project"; project: Project } | { kind: "session"; session: Session }
+
 export function Sidebar() {
   const app = useApp()
   const [moreMenuId, setMoreMenuId] = createSignal<string | null>(null)
   const [ctxMenu, setCtxMenu] = createSignal<CtxMenuState | null>(null)
   const [editingId, setEditingId] = createSignal<string | null>(null)
   const [editingValue, setEditingValue] = createSignal("")
+  const [confirmTarget, setConfirmTarget] = createSignal<ConfirmTarget | null>(null)
   let ctxMenuRoot: HTMLDivElement | undefined
 
   const toggleMoreMenu = (id: string) => {
     setMoreMenuId((current) => (current === id ? null : id))
     setCtxMenu(null)
+  }
+
+  const runConfirm = () => {
+    const target = confirmTarget()
+    if (!target) return
+    if (target.kind === "project") {
+      app.removeProject(target.project.id)
+      setMoreMenuId(null)
+    } else {
+      void app.deleteSession(target.session)
+      setCtxMenu(null)
+    }
+    setConfirmTarget(null)
   }
 
   const openSessionMenu = (event: MouseEvent, session: Session) => {
@@ -61,6 +77,7 @@ export function Sidebar() {
         setCtxMenu(null)
         setMoreMenuId(null)
         setEditingId(null)
+        setConfirmTarget(null)
       }
     }
     document.addEventListener("pointerdown", onPointer)
@@ -143,8 +160,8 @@ export function Sidebar() {
                               class="context-menu-item danger"
                               role="menuitem"
                               onClick={() => {
-                                app.removeProject(project.id)
                                 setMoreMenuId(null)
+                                setConfirmTarget({ kind: "project", project })
                               }}
                             >
                               移除项目
@@ -166,7 +183,7 @@ export function Sidebar() {
                       </button>
                     </div>
                   </div>
-                  <Show when={project.expanded}>
+                  <div class="tree-collapse" classList={{ open: project.expanded }} inert={!project.expanded}>
                     <div class="tree-children">
                       <Show when={sessions().length === 0}>
                         <div class="tree-empty nested">暂无会话</div>
@@ -213,13 +230,21 @@ export function Sidebar() {
                                 <Show when={app.state.status[session.id]?.type === "busy"}>
                                   <span class="pulse-dot" />
                                 </Show>
+                                <Show
+                                  when={
+                                    app.state.status[session.id]?.type !== "busy" &&
+                                    app.state.attention[session.id]
+                                  }
+                                >
+                                  <span class="alert-dot" title="该会话已执行完毕，点击查看结果" />
+                                </Show>
                               </button>
                             </Show>
                           </div>
                         )}
                       </For>
                     </div>
-                  </Show>
+                  </div>
                 </div>
               )
             }}
@@ -267,14 +292,58 @@ export function Sidebar() {
               class="context-menu-item danger"
               role="menuitem"
               onClick={() => {
-                void app.deleteSession(menu().session)
+                const session = menu().session
                 setCtxMenu(null)
+                setConfirmTarget({ kind: "session", session })
               }}
             >
               删除
             </button>
           </div>
         )}
+      </Show>
+
+      <Show when={confirmTarget()}>
+        {(target) => {
+          const current = target()
+          return (
+            <div
+              class="dialog-overlay"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setConfirmTarget(null)
+              }}
+            >
+              <div class="dialog confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+                <header class="dialog-head">
+                  <h2 id="confirm-title">{current.kind === "project" ? "移除项目" : "删除会话"}</h2>
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    aria-label="关闭"
+                    onClick={() => setConfirmTarget(null)}
+                  >
+                    <Icon name="times" />
+                  </button>
+                </header>
+                <p class="dialog-hint">
+                  {current.kind === "project" ? (
+                    <>确定将「{current.project.name}」从项目列表中移除？不会删除本地文件夹。</>
+                  ) : (
+                    <>确定删除会话「{sessionLabel(current.session)}」？删除后不可恢复。</>
+                  )}
+                </p>
+                <div class="dialog-actions">
+                  <button type="button" class="ghost-btn" autofocus onClick={() => setConfirmTarget(null)}>
+                    取消
+                  </button>
+                  <button type="button" class="send-btn stop" onClick={runConfirm}>
+                    {current.kind === "project" ? "移除" : "删除"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        }}
       </Show>
     </aside>
   )

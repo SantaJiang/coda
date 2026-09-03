@@ -93,6 +93,7 @@ export type AppState = {
   messages: Record<string, Message[]>
   parts: Record<string, Part[]>
   status: Record<string, SessionStatus>
+  attention: Record<string, boolean>
   todos: Record<string, Todo[]>
   permissions: Record<string, PermissionRequest>
   questions: Record<string, QuestionRequest>
@@ -206,6 +207,7 @@ const initial: AppState = {
   messages: {},
   parts: {},
   status: {},
+  attention: {},
   todos: {},
   permissions: {},
   questions: {},
@@ -643,8 +645,14 @@ export function AppProvider(props: ParentProps) {
   }
 
   const removeProject = (id: string) => {
+    const removed = state.projects.find((project) => project.id === id)
     const projects = state.projects.filter((project) => project.id !== id)
     setState("projects", projects)
+    if (removed) {
+      for (const session of state.sessionsByProject[removed.path] ?? []) {
+        setState("attention", session.id, false)
+      }
+    }
     saveProjects(projects)
     if (state.selectedProjectId === id) {
       setState({
@@ -693,6 +701,7 @@ export function AppProvider(props: ParentProps) {
           draft: true,
         })
       }
+      setState("attention", session.id, false)
       setState("queuedBySession", session.id, [])
     } catch (error) {
       setState("error", error instanceof Error ? error.message : "删除会话失败")
@@ -717,6 +726,7 @@ export function AppProvider(props: ParentProps) {
       draft: false,
       error: null,
     })
+    setState("attention", session.id, false)
     if (project) saveLastProject(project.id)
     await loadSessionDetail(session)
   }
@@ -1043,6 +1053,7 @@ export function AppProvider(props: ParentProps) {
               if (sessionID && path && draft.sessionsByProject[path]) {
                 draft.sessionsByProject[path] = draft.sessionsByProject[path].filter((item) => item.id !== sessionID)
               }
+              if (sessionID) delete draft.attention[sessionID]
               if (draft.selectedSessionId === sessionID) {
                 draft.selectedSessionId = null
                 draft.draft = true
@@ -1112,6 +1123,7 @@ export function AppProvider(props: ParentProps) {
               if (sessionID) {
                 draft.status[sessionID] = { type: "idle" }
                 idleSessions.push(sessionID)
+                if (draft.selectedSessionId !== sessionID) draft.attention[sessionID] = true
               }
             }
             if (event.type === "todo.updated") {
