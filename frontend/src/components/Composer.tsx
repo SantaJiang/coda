@@ -1,6 +1,7 @@
 import { Show, createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { isSendHotkey } from "../lib/settings"
 import { useApp } from "../store/app"
+import { isLocalProject } from "../lib/persist"
 import { AttachmentStrip } from "./AttachmentStrip"
 import { ComposerPlus } from "./ComposerPlus"
 import { ModelMenu } from "./ModelMenu"
@@ -19,6 +20,7 @@ export function Composer() {
     if (!app.selectedModel()) return "先配置一个模型"
     if (app.blocked()) return "请先处理权限或提问"
     if (app.busy()) return "Agent 正在工作，Esc 可停止…"
+    if (isLocalProject(app.selectedProject())) return "不问具体项目也可以，发给 Agent 一条消息"
     return "发给 Agent 一条消息"
   })
 

@@ -1,7 +1,67 @@
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Index, Show, createEffect, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useApp } from "../store/app"
 import type { Project, Session } from "../lib/types"
+import { isLocalProject } from "../lib/persist"
 import { Icon } from "./Icon"
+
+const COLLAPSE_MS = 200
+const COLLAPSE_EASE = "cubic-bezier(0.16, 1, 0.3, 1)"
+
+function TreeCollapse(props: { open: boolean; children: JSX.Element }) {
+  let el: HTMLDivElement | undefined
+  let running: Animation | undefined
+
+  const snap = (open: boolean) => {
+    if (!el) return
+    el.style.height = open ? "auto" : "0px"
+    el.style.overflow = "hidden"
+  }
+
+  const play = (open: boolean) => {
+    const node = el
+    if (!node) return
+    const from = node.getBoundingClientRect().height
+    running?.cancel()
+    running = undefined
+
+    const to = open ? node.scrollHeight : 0
+    if (Math.abs(from - to) < 0.5) {
+      snap(open)
+      return
+    }
+
+    node.style.overflow = "hidden"
+    node.style.height = `${from}px`
+    running = node.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+      duration: COLLAPSE_MS,
+      easing: COLLAPSE_EASE,
+      fill: "forwards",
+    })
+    running.onfinish = () => {
+      const anim = running
+      snap(open)
+      anim?.cancel()
+      running = undefined
+    }
+  }
+
+  onMount(() => snap(props.open))
+
+  createEffect((prev?: boolean) => {
+    const open = props.open
+    if (prev === undefined) return open
+    if (prev !== open) play(open)
+    return open
+  })
+
+  onCleanup(() => running?.cancel())
+
+  return (
+    <div ref={el} class="tree-collapse" classList={{ open: props.open }} inert={!props.open}>
+      <div class="tree-children">{props.children}</div>
+    </div>
+  )
+}
 
 function sessionLabel(session: Session) {
   const title = session.title?.trim() || "未命名会话"
@@ -105,12 +165,12 @@ export function Sidebar() {
       <div class="tree">
         <Show
           when={app.state.projects.length > 0}
-          fallback={<div class="tree-empty">点击右上角 + 添加一个本地文件夹</div>}
+          fallback={<div class="tree-empty">点击右上角 + 添加一个代码项目</div>}
         >
-          <For each={app.state.projects}>
+          <Index each={app.state.projects}>
             {(project) => {
               const sessions = () =>
-                [...(app.state.sessionsByProject[project.path] ?? [])].sort(
+                [...(app.state.sessionsByProject[project().path] ?? [])].sort(
                   (a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0),
                 )
               return (
@@ -119,63 +179,57 @@ export function Sidebar() {
                     <button
                       type="button"
                       class="tree-root-main"
-                      onClick={() => app.selectProject(project.id)}
+                      aria-expanded={project().expanded}
+                      title={project().expanded ? "叠起会话列表" : "展开会话列表"}
+                      onClick={() => app.toggleProject(project().id)}
                     >
-                      <span
-                        class="chevron-hit"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          app.toggleProject(project.id)
-                        }}
-                      >
-                        <Icon
-                          name="chevron-right"
-                          class="tree-chevron"
-                          style={{ transform: project.expanded ? "rotate(90deg)" : "rotate(0deg)" }}
-                        />
+                      <span class="chevron-hit" classList={{ open: project().expanded }}>
+                        <Icon name="chevron-right" class="tree-chevron" />
                       </span>
                       <span class="tree-icon">
-                        <Icon name="folder" />
+                        <Icon name={isLocalProject(project()) ? "home" : "folder"} />
                       </span>
-                      <span class="truncate" title={project.path}>
-                        {project.name}
+                      <span class="truncate" title={project().path}>
+                        {project().name}
                       </span>
                     </button>
-                    <div class="tree-root-actions" classList={{ open: moreMenuId() === project.id }}>
-                      <div class="tree-more">
-                        <button
-                          type="button"
-                          class="icon-btn tree-action"
-                          classList={{ open: moreMenuId() === project.id }}
-                          title="更多"
-                          aria-label="更多"
-                          onClick={() => toggleMoreMenu(project.id)}
-                        >
-                          <Icon name="ellipsis-h" />
-                        </button>
-                        <Show when={moreMenuId() === project.id}>
-                          <div class="context-menu tree-more-menu" role="menu">
-                            <button
-                              type="button"
-                              class="context-menu-item danger"
-                              role="menuitem"
-                              onClick={() => {
-                                setMoreMenuId(null)
-                                setConfirmTarget({ kind: "project", project })
-                              }}
-                            >
-                              移除项目
-                            </button>
-                          </div>
-                        </Show>
-                      </div>
+                    <div class="tree-root-actions" classList={{ open: moreMenuId() === project().id }}>
+                      <Show when={!isLocalProject(project())}>
+                        <div class="tree-more">
+                          <button
+                            type="button"
+                            class="icon-btn tree-action"
+                            classList={{ open: moreMenuId() === project().id }}
+                            title="更多"
+                            aria-label="更多"
+                            onClick={() => toggleMoreMenu(project().id)}
+                          >
+                            <Icon name="ellipsis-h" />
+                          </button>
+                          <Show when={moreMenuId() === project().id}>
+                            <div class="context-menu tree-more-menu" role="menu">
+                              <button
+                                type="button"
+                                class="context-menu-item danger"
+                                role="menuitem"
+                                onClick={() => {
+                                  setMoreMenuId(null)
+                                  setConfirmTarget({ kind: "project", project: project() })
+                                }}
+                              >
+                                移除项目
+                              </button>
+                            </div>
+                          </Show>
+                        </div>
+                      </Show>
                       <button
                         type="button"
                         class="icon-btn tree-action"
                         title="新建会话"
                         aria-label="新建会话"
                         onClick={() => {
-                          app.selectProject(project.id)
+                          app.selectProject(project().id)
                           app.startDraft()
                         }}
                       >
@@ -183,72 +237,70 @@ export function Sidebar() {
                       </button>
                     </div>
                   </div>
-                  <div class="tree-collapse" classList={{ open: project.expanded }} inert={!project.expanded}>
-                    <div class="tree-children">
-                      <Show when={sessions().length === 0}>
-                        <div class="tree-empty nested">暂无会话</div>
-                      </Show>
-                      <For each={sessions()}>
-                        {(session) => (
-                          <div
-                            class="tree-session"
-                            classList={{ active: app.state.selectedSessionId === session.id }}
-                          >
-                            <Show
-                              when={editingId() !== session.id}
-                              fallback={
-                                <input
-                                  ref={(element) => {
-                                    if (element) {
-                                      element.focus()
-                                      element.select()
-                                    }
-                                  }}
-                                  class="tree-rename"
-                                  value={editingValue()}
-                                  onInput={(event) => setEditingValue(event.currentTarget.value)}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter") {
-                                      event.preventDefault()
-                                      commitRename(session)
-                                    } else if (event.key === "Escape") {
-                                      event.stopPropagation()
-                                      setEditingId(null)
-                                    }
-                                  }}
-                                  onBlur={() => commitRename(session)}
-                                />
-                              }
-                            >
-                              <button
-                                type="button"
-                                class="tree-session-main"
-                                onContextMenu={(event) => openSessionMenu(event, session)}
-                                onClick={() => void app.selectSession(session)}
-                              >
-                                <span class="truncate">{sessionLabel(session)}</span>
-                                <Show when={app.state.status[session.id]?.type === "busy"}>
-                                  <span class="pulse-dot" />
-                                </Show>
-                                <Show
-                                  when={
-                                    app.state.status[session.id]?.type !== "busy" &&
-                                    app.state.attention[session.id]
+                  <TreeCollapse open={project().expanded}>
+                    <Show when={sessions().length === 0}>
+                      <div class="tree-empty nested">暂无会话</div>
+                    </Show>
+                    <For each={sessions()}>
+                      {(session) => (
+                        <div
+                          class="tree-session"
+                          classList={{ active: app.state.selectedSessionId === session.id }}
+                        >
+                          <Show
+                            when={editingId() !== session.id}
+                            fallback={
+                              <input
+                                ref={(element) => {
+                                  if (element) {
+                                    element.focus()
+                                    element.select()
                                   }
-                                >
-                                  <span class="alert-dot" title="该会话已执行完毕，点击查看结果" />
-                                </Show>
-                              </button>
-                            </Show>
-                          </div>
-                        )}
-                      </For>
-                    </div>
-                  </div>
+                                }}
+                                class="tree-rename"
+                                value={editingValue()}
+                                onInput={(event) => setEditingValue(event.currentTarget.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault()
+                                    commitRename(session)
+                                  } else if (event.key === "Escape") {
+                                    event.stopPropagation()
+                                    setEditingId(null)
+                                  }
+                                }}
+                                onBlur={() => commitRename(session)}
+                              />
+                            }
+                          >
+                            <button
+                              type="button"
+                              class="tree-session-main"
+                              onContextMenu={(event) => openSessionMenu(event, session)}
+                              onClick={() => void app.selectSession(session)}
+                            >
+                              <span class="truncate">{sessionLabel(session)}</span>
+                              <Show when={app.state.status[session.id]?.type === "busy"}>
+                                <span class="pulse-dot" />
+                              </Show>
+                              <Show
+                                when={
+                                  app.state.status[session.id]?.type !== "busy" &&
+                                  app.state.attention[session.id]
+                                }
+                              >
+                                <span class="alert-dot" title="该会话已执行完毕，点击查看结果" />
+                              </Show>
+                            </button>
+                          </Show>
+                        </div>
+                      )}
+                    </For>
+                  </TreeCollapse>
                 </div>
               )
             }}
-          </For>
+          </Index>
         </Show>
       </div>
 

@@ -98,6 +98,18 @@ export async function healthcheck() {
   return response.ok
 }
 
+export async function fetchHomeDir(): Promise<string | null> {
+  try {
+    const response = await fetch(`${API_BASE}/global/health`, { method: "GET" })
+    if (!response.ok) return null
+    const body = await parseBody(response)
+    const data = unwrap<{ home?: unknown }>(body)
+    return typeof data?.home === "string" && data.home.trim() ? data.home : null
+  } catch {
+    return null
+  }
+}
+
 export async function listSessions(directory: string) {
   return request<Session[]>("GET", "/session", { directory })
 }

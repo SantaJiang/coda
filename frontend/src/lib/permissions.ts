@@ -1,4 +1,6 @@
 import { STORAGE_KEYS } from "./config"
+import { isLocalProject } from "./persist"
+import type { Project } from "./types"
 
 export type PermissionAction = "allow" | "ask" | "deny"
 
@@ -71,6 +73,28 @@ export function permissionRuleset(mode: PermissionMode): PermissionRule[] {
     rule("read", "ask", "*.env.*"),
     rule("read", "allow", "*.env.example"),
   ]
+}
+
+function localSensitiveRules(): PermissionRule[] {
+  return [
+    rule("*", "ask", "*.ssh*"),
+    rule("*", "ask", "*.gnupg*"),
+    rule("*", "ask", "*.aws*"),
+    rule("edit", "ask", "*.env"),
+    rule("edit", "ask", "*.env.*"),
+    rule("write", "ask", "*.env"),
+    rule("write", "ask", "*.env.*"),
+  ]
+}
+
+export function localWorkspaceRuleset(mode: PermissionMode): PermissionRule[] {
+  const base = permissionRuleset(mode)
+  if (mode !== "default") return base
+  return [...base, ...localSensitiveRules()]
+}
+
+export function rulesetForProject(project: Project | undefined, mode: PermissionMode): PermissionRule[] {
+  return isLocalProject(project) ? localWorkspaceRuleset(mode) : permissionRuleset(mode)
 }
 
 export function permissionPreset(mode: PermissionMode) {

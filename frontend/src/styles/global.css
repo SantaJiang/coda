@@ -308,18 +308,20 @@ button {
 }
 
 .tree-collapse {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 180ms ease;
-}
-
-.tree-collapse.open {
-  grid-template-rows: 1fr;
+  overflow: hidden;
 }
 
 .tree-collapse > .tree-children {
-  overflow: hidden;
-  min-height: 0;
+  transform: translateY(-6px);
+  opacity: 0;
+  transition:
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tree-collapse.open > .tree-children {
+  transform: translateY(0);
+  opacity: 1;
 }
 
 .context-menu {
@@ -403,6 +405,10 @@ button.ctx-pill:hover {
   display: none;
 }
 
+.ctx-project.ctx-local:hover .ctx-folder {
+  display: grid;
+}
+
 .ctx-x {
   display: none;
   place-items: center;
@@ -452,7 +458,12 @@ button.ctx-pill:hover {
   flex-shrink: 0;
   color: var(--text-faint);
   font-size: 12px;
-  transition: transform 120ms ease;
+  transform: rotate(0deg);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.chevron-hit.open .tree-chevron {
+  transform: rotate(90deg);
 }
 
 .pulse-dot {

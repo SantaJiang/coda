@@ -3,6 +3,7 @@ import type { JSX } from "solid-js"
 const GLYPHS: Record<string, string> = {
   plus: "\uf067",
   folder: "\uf07b",
+  home: "\uf015",
   comments: "\uf086",
   "ellipsis-v": "\uf142",
   "ellipsis-h": "\uf141",

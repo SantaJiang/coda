@@ -3,6 +3,7 @@ export type Project = {
   path: string
   name: string
   expanded: boolean
+  kind?: "local" | "folder"
 }
 
 export type Session = {

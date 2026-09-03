@@ -1,6 +1,7 @@
 import { Show, createEffect, createSignal, onCleanup } from "solid-js"
 import { useApp } from "../store/app"
 import * as api from "../lib/api"
+import { isLocalProject } from "../lib/persist"
 import { Icon } from "./Icon"
 
 export function ContextBar() {
@@ -9,7 +10,7 @@ export function ContextBar() {
 
   createEffect(() => {
     const project = app.selectedProject()
-    if (!project) {
+    if (!project || isLocalProject(project)) {
       setBranch("")
       return
     }
@@ -43,20 +44,26 @@ export function ContextBar() {
         }
       >
         {(project) => (
-          <div class="ctx-pill ctx-project" title={project().path}>
+          <div
+            class="ctx-pill ctx-project"
+            classList={{ "ctx-local": isLocalProject(project()) }}
+            title={isLocalProject(project()) ? `本机 · ${project().path}` : project().path}
+          >
             <span class="ctx-icon">
               <span class="ctx-folder">
-                <Icon name="folder" />
+                <Icon name={isLocalProject(project()) ? "home" : "folder"} />
               </span>
-              <button
-                type="button"
-                class="ctx-x"
-                aria-label="关闭当前项目"
-                title="关闭当前项目"
-                onClick={() => app.closeProject()}
-              >
-                <Icon name="times" />
-              </button>
+              <Show when={!isLocalProject(project())}>
+                <button
+                  type="button"
+                  class="ctx-x"
+                  aria-label="关闭当前项目"
+                  title="关闭当前项目"
+                  onClick={() => app.closeProject()}
+                >
+                  <Icon name="times" />
+                </button>
+              </Show>
             </span>
             <span class="ctx-label truncate">{project().name}</span>
           </div>
@@ -66,7 +73,9 @@ export function ContextBar() {
         <span class="ctx-icon">
           <Icon name="code-fork" />
         </span>
-        <span class="ctx-label truncate">{app.selectedProject() ? branch() || "—" : "—"}</span>
+        <span class="ctx-label truncate">
+          {app.selectedProject() && !isLocalProject(app.selectedProject()) ? branch() || "—" : "—"}
+        </span>
       </div>
     </div>
   )

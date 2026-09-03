@@ -33,7 +33,7 @@ import {
   autoReplyForMode,
   loadPermissionMode,
   permissionPreset,
-  permissionRuleset,
+  rulesetForProject,
   savePermissionMode,
   type PermissionMode,
 } from "../lib/permissions"
@@ -48,14 +48,20 @@ import {
   type SendShortcut,
 } from "../lib/settings"
 import {
-  clearLastProject,
+  createLocalProject,
   createProject,
+  ensureLocalProject,
+  hydrateProjects,
+  isLocalProject,
   loadLastProject,
   loadProjects,
   pickAttachmentFolder,
   pickBrowserFiles,
   pickDirectory,
   pickFiles,
+  pickSelectedProjectId,
+  resolveHomeDir,
+  samePath,
   saveLastProject,
   saveProjects,
 } from "../lib/persist"
@@ -383,7 +389,9 @@ export function AppProvider(props: ParentProps) {
   }
 
   const applySessionPermission = async (directory: string, sessionID: string, mode = state.permissionMode) => {
-    await api.updateSessionPermission(directory, sessionID, permissionRuleset(mode))
+    const project =
+      state.projects.find((item) => item.path === directory || samePath(item.path, directory)) ?? selectedProject()
+    await api.updateSessionPermission(directory, sessionID, rulesetForProject(project, mode))
   }
 
   const autoReplyPending = async (mode: PermissionMode, sessionID?: string) => {
@@ -609,7 +617,7 @@ export function AppProvider(props: ParentProps) {
   const addProject = async () => {
     const path = await pickDirectory()
     if (!path) return
-    const existing = state.projects.find((project) => project.path === path)
+    const existing = state.projects.find((project) => samePath(project.path, path))
     if (existing) {
       setState("selectedProjectId", existing.id)
       setState(
@@ -632,11 +640,13 @@ export function AppProvider(props: ParentProps) {
   }
 
   const toggleProject = (id: string) => {
-    const projects = state.projects.map((project) =>
-      project.id === id ? { ...project, expanded: !project.expanded } : project,
+    setState(
+      "projects",
+      (project) => project.id === id,
+      "expanded",
+      (expanded) => !expanded,
     )
-    setState("projects", projects)
-    saveProjects(projects)
+    saveProjects(state.projects)
   }
 
   const selectProject = (id: string) => {
@@ -646,34 +656,34 @@ export function AppProvider(props: ParentProps) {
 
   const removeProject = (id: string) => {
     const removed = state.projects.find((project) => project.id === id)
+    if (!removed || isLocalProject(removed)) return
     const projects = state.projects.filter((project) => project.id !== id)
     setState("projects", projects)
-    if (removed) {
-      for (const session of state.sessionsByProject[removed.path] ?? []) {
-        setState("attention", session.id, false)
-      }
+    for (const session of state.sessionsByProject[removed.path] ?? []) {
+      setState("attention", session.id, false)
     }
     saveProjects(projects)
     if (state.selectedProjectId === id) {
+      const fallback = pickSelectedProjectId(projects, null)
       setState({
-        selectedProjectId: projects[0]?.id ?? null,
+        selectedProjectId: fallback,
         selectedSessionId: null,
         draft: true,
         error: null,
       })
-      if (projects[0]) saveLastProject(projects[0].id)
-      else clearLastProject()
+      if (fallback) saveLastProject(fallback)
     }
   }
 
   const closeProject = () => {
+    const local = state.projects.find(isLocalProject)
     setState({
-      selectedProjectId: null,
+      selectedProjectId: local?.id ?? null,
       selectedSessionId: null,
       draft: true,
       error: null,
     })
-    clearLastProject()
+    if (local) saveLastProject(local.id)
   }
 
   const renameSession = async (session: Session, title: string) => {
@@ -719,7 +729,7 @@ export function AppProvider(props: ParentProps) {
   }
 
   const selectSession = async (session: Session) => {
-    const project = state.projects.find((item) => item.path === session.directory)
+    const project = state.projects.find((item) => samePath(item.path, session.directory))
     setState({
       selectedSessionId: session.id,
       selectedProjectId: project?.id ?? state.selectedProjectId,
@@ -821,7 +831,7 @@ export function AppProvider(props: ParentProps) {
     const project = selectedProject()
     const files = state.attachments
     if (!project) {
-      setState("error", "请先添加一个项目文件夹")
+      setState("error", "无法确定工作目录")
       return
     }
     if (!content && files.length === 0) return
@@ -864,7 +874,7 @@ export function AppProvider(props: ParentProps) {
           sessionTitle(title),
           model,
           currentAgent(),
-          permissionRuleset(state.permissionMode),
+          rulesetForProject(project, state.permissionMode),
         )
         setState("sessionsByProject", project.path, (list = []) => upsertById(list, session!))
         setState({
@@ -1001,19 +1011,38 @@ export function AppProvider(props: ParentProps) {
   }
 
   onMount(() => {
-    const projects = loadProjects()
+    const stored = loadProjects()
     const last = loadLastProject()
+    const initial = hydrateProjects(stored)
     const configured = loadConfiguredModels()
-    setState("projects", projects)
-    setState("selectedProjectId", last && projects.some((item) => item.id === last) ? last : projects[0]?.id ?? null)
+    const selectedId = pickSelectedProjectId(initial, last)
+    setState("projects", initial)
+    setState("selectedProjectId", selectedId)
+    if (selectedId && selectedId !== last) saveLastProject(selectedId)
     setState("draft", true)
     setState("configuredModels", configured)
     setState("pinnedModelKeys", loadPinnedModelKeys())
     persistSelection(resolveSelectedKey(configured, mergeSelectables(configured, []), loadSelectedModelKey()))
 
-    for (const project of projects) {
+    for (const project of initial) {
       void refreshProjectSessions(project)
     }
+
+    void resolveHomeDir().then((home) => {
+      if (!home) return
+      let nextSelected: string | null = null
+      setState(
+        produce((draft) => {
+          draft.projects = ensureLocalProject(draft.projects, home)
+          if (!draft.selectedProjectId || !draft.projects.some((project) => project.id === draft.selectedProjectId)) {
+            draft.selectedProjectId = pickSelectedProjectId(draft.projects, last)
+          }
+          nextSelected = draft.selectedProjectId
+        }),
+      )
+      if (nextSelected) saveLastProject(nextSelected)
+      void refreshProjectSessions(createLocalProject(home))
+    })
 
     const ping = window.setInterval(async () => {
       const ok = await api.healthcheck().catch(() => false)

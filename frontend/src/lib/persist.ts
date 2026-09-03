@@ -1,6 +1,9 @@
 import { STORAGE_KEYS } from "./config"
 import type { Project } from "./types"
 
+export const LOCAL_PROJECT_ID = "prj_local"
+export const LOCAL_PROJECT_NAME = "本机"
+
 function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
 }
@@ -9,6 +12,60 @@ export function basename(path: string) {
   const trimmed = path.replace(/[\\/]+$/, "")
   const parts = trimmed.split(/[\\/]/)
   return parts[parts.length - 1] || trimmed
+}
+
+export function samePath(left: string, right: string) {
+  const normalize = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "")
+  return normalize(left) === normalize(right)
+}
+
+export function isLocalProject(project: Project | undefined | null): boolean {
+  return !!project && (project.kind === "local" || project.id === LOCAL_PROJECT_ID)
+}
+
+export function createLocalProject(home: string, expanded = true): Project {
+  return {
+    id: LOCAL_PROJECT_ID,
+    path: home,
+    name: LOCAL_PROJECT_NAME,
+    expanded,
+    kind: "local",
+  }
+}
+
+export function ensureLocalProject(projects: Project[], home: string): Project[] {
+  const previous = projects.find(isLocalProject)
+  const local = createLocalProject(home, previous?.expanded ?? true)
+  const rest = projects.filter((project) => !isLocalProject(project) && !samePath(project.path, home))
+  return [local, ...rest]
+}
+
+export function hydrateProjects(stored: Project[], home?: string | null): Project[] {
+  if (home) return ensureLocalProject(stored, home)
+  const existing = stored.find(isLocalProject)
+  if (existing?.path) return ensureLocalProject(stored, existing.path)
+  return stored
+}
+
+export function pickSelectedProjectId(projects: Project[], last: string | null) {
+  if (last && projects.some((project) => project.id === last)) return last
+  return projects.find(isLocalProject)?.id ?? projects[0]?.id ?? null
+}
+
+export async function resolveHomeDir(): Promise<string | null> {
+  try {
+    const { homeDir } = await import("@tauri-apps/api/path")
+    const home = await homeDir()
+    if (typeof home === "string" && home.trim()) return home
+  } catch {
+    // browser / non-Tauri
+  }
+  try {
+    const { fetchHomeDir } = await import("./api")
+    return await fetchHomeDir()
+  } catch {
+    return null
+  }
 }
 
 export function loadProjects(): Project[] {
