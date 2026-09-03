@@ -15,7 +15,9 @@ const renderer = {
   },
   codespan({ text }: { text: string }) {
     const raw = text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
-    return `<code class="md-inline" data-kind="${inlineKind(raw)}">${escapeHtml(raw)}</code>`
+    const kind = inlineKind(raw)
+    const attr = kind ? ` data-kind="${kind}"` : ""
+    return `<code class="md-inline"${attr}>${escapeHtml(raw)}</code>`
   },
 }
 

@@ -57,7 +57,7 @@
   --hljs-number: #f78c6c;
   --hljs-comment: #637777;
   --hljs-function: #82aaff;
-  --hljs-variable: #ffcb6b;
+  --hljs-variable: #eeffff;
   font-family:
     "Inter",
     "SF Pro Text",
@@ -2277,40 +2277,17 @@ button.ctx-pill:hover {
 }
 
 .md-inline {
-  display: inline;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9em;
-  line-height: 1.35;
-  color: #e8c48a;
-  background: rgba(232, 196, 138, 0.1);
-  border: 1px solid rgba(232, 196, 138, 0.28);
+  font-size: 13px;
+  background: var(--bg-inline-code);
+  padding: 0 4px;
   border-radius: 4px;
-  padding: 0.05em 0.35em;
-  white-space: break-spaces;
 }
 
 .md-inline[data-kind="path"] {
   color: #82aaff;
   background: rgba(130, 170, 255, 0.1);
-  border-color: rgba(130, 170, 255, 0.28);
-}
-
-.md-inline[data-kind="string"] {
-  color: #c3e88d;
-  background: rgba(195, 232, 141, 0.1);
-  border-color: rgba(195, 232, 141, 0.28);
-}
-
-.md-inline[data-kind="number"] {
-  color: #f78c6c;
-  background: rgba(247, 140, 108, 0.1);
-  border-color: rgba(247, 140, 108, 0.28);
-}
-
-.md-inline[data-kind="keyword"] {
-  color: #c792ea;
-  background: rgba(199, 146, 234, 0.1);
-  border-color: rgba(199, 146, 234, 0.28);
+  border: 1px solid rgba(130, 170, 255, 0.28);
 }
 
 .markdown ul,

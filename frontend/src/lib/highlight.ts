@@ -108,18 +108,9 @@ export function escapeHtml(value: string) {
 
 export function inlineKind(text: string) {
   const value = text.trim()
-  if (!value) return "ident"
-  if (/^(['"`]).*\1$/.test(value)) return "string"
-  if (/^[+-]?\d[\d_]*(\.\d+)?$/.test(value)) return "number"
+  if (!value) return ""
   if (/[/\\]/.test(value) || /\.\w{1,8}$/.test(value) || /^[A-Za-z0-9_.-]+\.[A-Za-z0-9]+$/.test(value)) return "path"
-  if (
-    /^(const|let|var|function|class|return|import|export|from|type|interface|async|await|true|false|null|undefined)$/.test(
-      value,
-    )
-  ) {
-    return "keyword"
-  }
-  return "ident"
+  return ""
 }
 
 function unescapeHtml(value: string) {
