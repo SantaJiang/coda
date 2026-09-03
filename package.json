@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "bash ./run.sh",
     "dev:web": "bash ./run.sh --web",
-    "pack": "bash ./scripts/pack.sh"
+    "pack": "bash ./scripts/pack.sh",
+    "clean": "bash ./scripts/clean.sh"
   }
 }
