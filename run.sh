@@ -102,9 +102,16 @@ trap cleanup EXIT INT TERM
 
 clean_stale_rust_target() {
   local target="$FRONTEND/src-tauri/target"
-  [[ -d "$target" ]] || return 0
-  # 目录搬迁后，Cargo 仍会按旧的绝对 OUT_DIR 去读 Tauri 权限文件
-  if [[ ! -d "$ROOT/src-tauri" ]] && grep -Rql "/coda/src-tauri/" "$target"/debug/build/coda-* "$target"/debug/build/tauri-* 2>/dev/null; then
+  local build_dir="$target/debug/build"
+  [[ -d "$build_dir" ]] || return 0
+
+  local dep
+  dep="$(find "$build_dir" -name '*.d' -print -quit 2>/dev/null || true)"
+  [[ -n "$dep" ]] || return 0
+
+  # Cargo 会把绝对 OUT_DIR 写进 *.d。仓库搬迁后，tauri-build 仍会去旧路径
+  # 读插件权限文件。旧检测写的是 /coda/src-tauri/，匹配不到 frontend/src-tauri。
+  if grep -q '/src-tauri/target/' "$dep" && ! grep -Fq "$target" "$dep"; then
     echo "==> 清理过期的 Rust 构建缓存"
     rm -rf "$target"
   fi
