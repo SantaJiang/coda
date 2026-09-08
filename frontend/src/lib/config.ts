@@ -6,6 +6,7 @@ export const PLAN_AGENT = "plan"
 export const STORAGE_KEYS = {
   projects: "coda.projects",
   lastProject: "coda.lastProject",
+  projectSessions: "coda.projectSessions",
   permissionMode: "coda.permissionMode",
   sendShortcut: "coda.sendShortcut",
 } as const

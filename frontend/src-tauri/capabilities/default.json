@@ -8,6 +8,7 @@
     "core:window:allow-start-dragging",
     "opener:default",
     "dialog:default",
+    "allow-path-exists",
     {
       "identifier": "http:default",
       "allow": [

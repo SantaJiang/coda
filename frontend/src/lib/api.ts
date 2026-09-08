@@ -110,8 +110,8 @@ export async function fetchHomeDir(): Promise<string | null> {
   }
 }
 
-export async function listSessions(directory: string) {
-  return request<Session[]>("GET", "/session", { directory })
+export async function listSessions(directory: string, extra?: Record<string, string>) {
+  return request<Session[]>("GET", "/session", { directory, extraQuery: extra })
 }
 
 export async function createSession(

@@ -15,6 +15,7 @@ const GLYPHS: Record<string, string> = {
   pencil: "\uf040",
   trash: "\uf014",
   "code-fork": "\uf126",
+  warning: "\uf071",
 }
 
 export function Icon(props: { name: string; class?: string; style?: JSX.CSSProperties }) {

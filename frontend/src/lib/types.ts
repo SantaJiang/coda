@@ -4,6 +4,7 @@ export type Project = {
   name: string
   expanded: boolean
   kind?: "local" | "folder"
+  missing?: boolean
 }
 
 export type Session = {

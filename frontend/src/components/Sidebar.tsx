@@ -1,7 +1,7 @@
 import { For, Index, Show, createEffect, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useApp } from "../store/app"
 import type { Project, Session } from "../lib/types"
-import { isLocalProject } from "../lib/persist"
+import { isLocalProject, projectDisplay } from "../lib/persist"
 import { Icon } from "./Icon"
 
 const COLLAPSE_MS = 200
@@ -66,6 +66,15 @@ function TreeCollapse(props: { open: boolean; children: JSX.Element }) {
 function sessionLabel(session: Session) {
   const title = session.title?.trim() || "未命名会话"
   return title.replace(/^New session.*$/i, "新会话")
+}
+
+type SessionDot = "wait" | "error" | "busy" | "unread"
+
+function sessionDotTitle(kind: SessionDot) {
+  if (kind === "wait") return "等待你确认权限或回答问题"
+  if (kind === "error") return "该会话执行出错"
+  if (kind === "busy") return "正在运行"
+  return "该会话已执行完毕，点击查看结果"
 }
 
 type CtxMenuState = {
@@ -150,7 +159,12 @@ export function Sidebar() {
 
   return (
     <aside class="sidebar">
-      <button class="new-session" type="button" onClick={() => app.startDraft()} disabled={!app.selectedProject()}>
+      <button
+        class="new-session"
+        type="button"
+        onClick={() => app.startDraft()}
+        disabled={!app.selectedProject() || app.selectedProject()?.missing}
+      >
         <Icon name="plus" />
         <span>新会话</span>
       </button>
@@ -173,27 +187,50 @@ export function Sidebar() {
                 [...(app.state.sessionsByProject[project().path] ?? [])].sort(
                   (a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0),
                 )
+              const display = () => projectDisplay(project(), app.state.projects)
+              const subtitle = () => display().hint
+              const sessionDot = (sessionID: string): SessionDot | null => {
+                const waiting =
+                  Object.values(app.state.permissions).some((item) => item?.sessionID === sessionID) ||
+                  Object.values(app.state.questions).some((item) => item?.sessionID === sessionID)
+                if (waiting) return "wait"
+                if (app.state.sessionErrors[sessionID]) return "error"
+                const status = app.state.status[sessionID]?.type
+                if (status === "busy" || status === "retry") return "busy"
+                if (app.state.attention[sessionID]) return "unread"
+                return null
+              }
               return (
-                <div class="tree-project">
+                <div class="tree-project" classList={{ missing: !!project().missing }}>
                   <div class="tree-root">
                     <button
                       type="button"
                       class="tree-root-main"
                       aria-expanded={project().expanded}
-                      title={project().expanded ? "叠起会话列表" : "展开会话列表"}
+                      title={project().path}
                       onClick={() => app.toggleProject(project().id)}
                     >
                       <span class="chevron-hit" classList={{ open: project().expanded }}>
                         <Icon name="chevron-right" class="tree-chevron" />
                       </span>
                       <span class="tree-icon">
-                        <Icon name={isLocalProject(project()) ? "home" : "folder"} />
+                        <Icon
+                          name={
+                            isLocalProject(project()) ? "home" : project().missing ? "warning" : "folder"
+                          }
+                        />
                       </span>
-                      <span class="truncate" title={project().path}>
-                        {project().name}
+                      <span class="tree-name-wrap">
+                        <span class="truncate">{display().name}</span>
+                        <Show when={subtitle()}>
+                          {(hint) => <span class="tree-path-hint truncate">{hint()}</span>}
+                        </Show>
                       </span>
                     </button>
-                    <div class="tree-root-actions" classList={{ open: moreMenuId() === project().id }}>
+                    <div
+                      class="tree-root-actions"
+                      classList={{ open: moreMenuId() === project().id, pinned: !!project().missing }}
+                    >
                       <Show when={!isLocalProject(project())}>
                         <div class="tree-more">
                           <button
@@ -208,6 +245,17 @@ export function Sidebar() {
                           </button>
                           <Show when={moreMenuId() === project().id}>
                             <div class="context-menu tree-more-menu" role="menu">
+                              <button
+                                type="button"
+                                class="context-menu-item"
+                                role="menuitem"
+                                onClick={() => {
+                                  setMoreMenuId(null)
+                                  void app.relocateProject(project().id)
+                                }}
+                              >
+                                重新定位
+                              </button>
                               <button
                                 type="button"
                                 class="context-menu-item danger"
@@ -228,6 +276,7 @@ export function Sidebar() {
                         class="icon-btn tree-action"
                         title="新建会话"
                         aria-label="新建会话"
+                        disabled={!!project().missing}
                         onClick={() => {
                           app.selectProject(project().id)
                           app.startDraft()
@@ -280,16 +329,19 @@ export function Sidebar() {
                               onClick={() => void app.selectSession(session)}
                             >
                               <span class="truncate">{sessionLabel(session)}</span>
-                              <Show when={app.state.status[session.id]?.type === "busy"}>
-                                <span class="pulse-dot" />
-                              </Show>
-                              <Show
-                                when={
-                                  app.state.status[session.id]?.type !== "busy" &&
-                                  app.state.attention[session.id]
-                                }
-                              >
-                                <span class="alert-dot" title="该会话已执行完毕，点击查看结果" />
+                              <Show when={sessionDot(session.id)}>
+                                {(kind) => (
+                                  <span
+                                    class="session-dot"
+                                    classList={{
+                                      wait: kind() === "wait",
+                                      error: kind() === "error",
+                                      busy: kind() === "busy",
+                                      unread: kind() === "unread",
+                                    }}
+                                    title={sessionDotTitle(kind())}
+                                  />
+                                )}
                               </Show>
                             </button>
                           </Show>

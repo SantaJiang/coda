@@ -24,6 +24,9 @@
   --accent-2: #c7925b;
   --danger: #e06c75;
   --ok: #98c379;
+  --dot-busy: #6ea8fe;
+  --dot-wait: #e8c547;
+  --dot-error: #e06c75;
   --send-fg: #1a130c;
   --sidebar: 248px;
   --radius: 10px;
@@ -154,10 +157,12 @@ button {
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  padding: 0;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--text-muted);
+  box-sizing: border-box;
 }
 
 .icon-btn .fa {
@@ -167,6 +172,11 @@ button {
 .icon-btn:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  pointer-events: none;
 }
 
 .tree {
@@ -200,8 +210,9 @@ button {
   display: flex;
   align-items: center;
   gap: 2px;
-  min-height: 28px;
-  padding: 0 4px 0 4px;
+  box-sizing: border-box;
+  min-height: 30px;
+  padding: 4px;
   color: var(--text);
   font-size: 13px;
 }
@@ -240,16 +251,49 @@ button {
   min-width: 0;
 }
 
+.tree-name-wrap .truncate {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.tree-name-wrap {
+  flex: 1 1 0;
+  min-width: 3.5em;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: stretch;
+}
+
+.tree-name-wrap .truncate,
+.tree-path-hint {
+  max-width: 100%;
+}
+
+.tree-path-hint {
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1.2;
+}
+
+.tree-project.missing .tree-icon {
+  color: var(--error-fg);
+}
+
 .tree-root-actions {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .tree-project:hover .tree-root-actions,
-.tree-root-actions.open {
-  display: flex;
+.tree-root-actions.open,
+.tree-root-actions.pinned {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .tree-more {
@@ -278,6 +322,8 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
+  box-sizing: border-box;
+  height: 28px;
   min-height: 28px;
   padding: 0 8px 0 24px;
   border: none;
@@ -379,6 +425,11 @@ button {
   font-size: 12px;
 }
 
+.ctx-pill.ctx-missing {
+  color: var(--error-fg);
+  border-color: color-mix(in srgb, var(--error-fg) 35%, var(--border));
+}
+
 button.ctx-pill:hover {
   background: var(--bg-hover);
   color: var(--text);
@@ -466,24 +517,35 @@ button.ctx-pill:hover {
   transform: rotate(90deg);
 }
 
-.pulse-dot {
+.session-dot {
   width: 6px;
   height: 6px;
   border-radius: 99px;
-  background: var(--accent);
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.session-dot.busy,
+.session-dot.unread {
+  background: var(--dot-busy);
+}
+
+.session-dot.busy {
   animation: pulse 1.2s ease-in-out infinite;
 }
 
-.alert-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 99px;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px rgba(212, 165, 116, 0.18);
-  margin-left: auto;
-  flex-shrink: 0;
+.session-dot.unread {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-busy) 22%, transparent);
+}
+
+.session-dot.wait {
+  background: var(--dot-wait);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.session-dot.error {
+  background: var(--dot-error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-error) 22%, transparent);
 }
 
 .sidebar-foot {

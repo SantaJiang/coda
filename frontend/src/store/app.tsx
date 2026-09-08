@@ -50,11 +50,17 @@ import {
 import {
   createLocalProject,
   createProject,
+  clearProjectSessions,
+  directoryExists,
   ensureLocalProject,
   hydrateProjects,
   isLocalProject,
   loadLastProject,
   loadProjects,
+  loadProjectSessions,
+  missingDirectoryMessage,
+  MISSING_DIRECTORY_HINT,
+  parseMissingDirectory,
   pickAttachmentFolder,
   pickBrowserFiles,
   pickDirectory,
@@ -64,6 +70,8 @@ import {
   samePath,
   saveLastProject,
   saveProjects,
+  saveProjectSessions,
+  basename,
 } from "../lib/persist"
 import type {
   Message,
@@ -100,6 +108,7 @@ export type AppState = {
   parts: Record<string, Part[]>
   status: Record<string, SessionStatus>
   attention: Record<string, boolean>
+  sessionErrors: Record<string, boolean>
   todos: Record<string, Todo[]>
   permissions: Record<string, PermissionRequest>
   questions: Record<string, QuestionRequest>
@@ -166,6 +175,7 @@ type AppContextValue = {
   addFolder: () => Promise<void>
   removeAttachment: (id: string) => void
   addProject: () => Promise<void>
+  relocateProject: (id: string) => Promise<Project | null>
   toggleProject: (id: string) => void
   selectProject: (id: string) => void
   removeProject: (id: string) => void
@@ -214,6 +224,7 @@ const initial: AppState = {
   parts: {},
   status: {},
   attention: {},
+  sessionErrors: {},
   todos: {},
   permissions: {},
   questions: {},
@@ -253,6 +264,30 @@ export function AppProvider(props: ParentProps) {
     return (state.sessionsByProject[project.path] ?? []).find((session) => session.id === state.selectedSessionId)
   }
 
+  const projectForSession = (session: Session) =>
+    state.projects.find(
+      (project) =>
+        samePath(project.path, session.directory) ||
+        (state.sessionsByProject[project.path] ?? []).some((item) => item.id === session.id),
+    )
+
+  const directoryFor = (session: Session, project?: Project) =>
+    project?.path ?? projectForSession(session)?.path ?? session.directory
+
+  const markProjectMissing = (path: string) => {
+    setState(
+      "projects",
+      (project) => !isLocalProject(project) && samePath(project.path, path),
+      "missing",
+      true,
+    )
+  }
+
+  const setProjectMissingMessage = (path?: string) => {
+    if (path) markProjectMissing(path)
+    setState("error", MISSING_DIRECTORY_HINT)
+  }
+
   const busy = () => {
     const session = selectedSession()
     if (!session) return false
@@ -286,7 +321,8 @@ export function AppProvider(props: ParentProps) {
 
   const refreshDiscovered = async () => {
     try {
-      const list = await api.listProviders(selectedProject()?.path)
+      const project = selectedProject()
+      const list = await api.listProviders(project?.missing ? undefined : project?.path)
       const discovered = discoveredFromProviderList(list)
       setState("discoveredModels", discovered)
       setState("modelVariants", variantsByKey(list))
@@ -579,22 +615,64 @@ export function AppProvider(props: ParentProps) {
     )
   }
 
+  function rememberSessions(project: Project, sessions: Session[]) {
+    if (isLocalProject(project)) return
+    saveProjectSessions(project.id, sessions)
+  }
+
+  function cachedSessions(project: Project): Session[] {
+    return loadProjectSessions(project.id).map((session) => ({ ...session, directory: project.path }))
+  }
+
   async function refreshProjectSessions(project: Project) {
+    if (project.missing) {
+      const cached = cachedSessions(project)
+      if (cached.length) setState("sessionsByProject", project.path, cached)
+      return
+    }
     try {
-      const sessions = await api.listSessions(project.path)
-      const roots = (sessions ?? []).filter((session) => !session.parentID && !session.time.archived)
+      const sessions = await api.listSessions(
+        project.path,
+        isLocalProject(project) ? undefined : { scope: "project" },
+      )
+      const roots = (sessions ?? [])
+        .filter((session) => !session.parentID && !session.time.archived)
+        .map((session) => ({ ...session, directory: project.path }))
       setState("sessionsByProject", project.path, roots)
+      rememberSessions(project, roots)
     } catch (error) {
-      setState("error", error instanceof Error ? error.message : "加载会话失败")
+      const message = error instanceof Error ? error.message : "加载会话失败"
+      const missing = missingDirectoryMessage(message)
+      if (missing) {
+        setProjectMissingMessage(parseMissingDirectory(message) ?? project.path)
+        const cached = cachedSessions(project)
+        if (cached.length) setState("sessionsByProject", project.path, cached)
+      } else setState("error", message)
     }
   }
 
+  async function hydrateProjectPath(project: Project) {
+    if (isLocalProject(project)) {
+      await refreshProjectSessions(project)
+      return
+    }
+    const exists = await directoryExists(project.path)
+    if (exists === false) {
+      markProjectMissing(project.path)
+      await refreshProjectSessions({ ...project, missing: true })
+      if (state.selectedProjectId === project.id) setState("error", MISSING_DIRECTORY_HINT)
+      return
+    }
+    await refreshProjectSessions(project)
+  }
+
   async function loadSessionDetail(session: Session) {
+    const directory = directoryFor(session)
     const [messages, todos, permissions, questions] = await Promise.all([
-      api.listMessages(session.directory, session.id),
-      api.listTodos(session.directory, session.id).catch(() => [] as Todo[]),
-      api.listPermissions(session.directory).catch(() => [] as PermissionRequest[]),
-      api.listQuestions(session.directory).catch(() => [] as QuestionRequest[]),
+      api.listMessages(directory, session.id),
+      api.listTodos(directory, session.id).catch(() => [] as Todo[]),
+      api.listPermissions(directory).catch(() => [] as PermissionRequest[]),
+      api.listQuestions(directory).catch(() => [] as QuestionRequest[]),
     ])
 
     setState(
@@ -619,13 +697,15 @@ export function AppProvider(props: ParentProps) {
     if (!path) return
     const existing = state.projects.find((project) => samePath(project.path, path))
     if (existing) {
-      setState("selectedProjectId", existing.id)
+      const restored = { ...existing, expanded: true, missing: false }
       setState(
         "projects",
-        state.projects.map((project) => (project.id === existing.id ? { ...project, expanded: true } : project)),
+        state.projects.map((project) => (project.id === existing.id ? restored : project)),
       )
+      setState("selectedProjectId", existing.id)
+      setState("error", null)
       saveLastProject(existing.id)
-      await refreshProjectSessions(existing)
+      await refreshProjectSessions(restored)
       return
     }
     const project = createProject(path)
@@ -639,6 +719,63 @@ export function AppProvider(props: ParentProps) {
     await refreshProjectSessions(project)
   }
 
+  const relocateProject = async (id: string): Promise<Project | null> => {
+    const current = state.projects.find((project) => project.id === id)
+    if (!current || isLocalProject(current)) return null
+    const path = await pickDirectory()
+    if (!path) return null
+    const duplicate = state.projects.find((project) => project.id !== id && samePath(project.path, path))
+    if (duplicate) {
+      const previousPath = current.path
+      const restored = { ...duplicate, missing: false, expanded: true }
+      const projects = state.projects
+        .filter((project) => project.id !== id)
+        .map((project) => (project.id === duplicate.id ? restored : project))
+      setState("projects", projects)
+      setState(
+        produce((draft) => {
+          delete draft.sessionsByProject[previousPath]
+        }),
+      )
+      setState({
+        selectedProjectId: duplicate.id,
+        selectedSessionId: null,
+        draft: true,
+        error: null,
+      })
+      saveLastProject(duplicate.id)
+      clearProjectSessions(id)
+      await refreshProjectSessions(restored)
+      return restored
+    }
+    const previousPath = current.path
+    const previousSessions = state.sessionsByProject[previousPath] ?? []
+    const next: Project = {
+      ...current,
+      path,
+      name: basename(path),
+      missing: false,
+      expanded: true,
+    }
+    setState(
+      "projects",
+      state.projects.map((project) => (project.id === id ? next : project)),
+    )
+    setState("selectedProjectId", id)
+    setState("error", null)
+    saveLastProject(id)
+    if (!samePath(previousPath, path)) {
+      setState(
+        produce((draft) => {
+          draft.sessionsByProject[path] = previousSessions.map((session) => ({ ...session, directory: path }))
+          delete draft.sessionsByProject[previousPath]
+        }),
+      )
+    }
+    await refreshProjectSessions(next)
+    return next
+  }
+
   const toggleProject = (id: string) => {
     setState(
       "projects",
@@ -650,8 +787,11 @@ export function AppProvider(props: ParentProps) {
   }
 
   const selectProject = (id: string) => {
+    const project = state.projects.find((item) => item.id === id)
     setState("selectedProjectId", id)
     saveLastProject(id)
+    if (project?.missing) setState("error", MISSING_DIRECTORY_HINT)
+    else if (state.error === MISSING_DIRECTORY_HINT) setState("error", null)
   }
 
   const removeProject = (id: string) => {
@@ -661,8 +801,10 @@ export function AppProvider(props: ParentProps) {
     setState("projects", projects)
     for (const session of state.sessionsByProject[removed.path] ?? []) {
       setState("attention", session.id, false)
+      setState("sessionErrors", session.id, false)
     }
     saveProjects(projects)
+    clearProjectSessions(id)
     if (state.selectedProjectId === id) {
       const fallback = pickSelectedProjectId(projects, null)
       setState({
@@ -690,19 +832,22 @@ export function AppProvider(props: ParentProps) {
     const trimmed = title.trim()
     if (!trimmed || trimmed === session.title) return
     try {
-      const updated = await api.updateSessionTitle(session.directory, session.id, trimmed)
-      setState("sessionsByProject", session.directory, (list = []) =>
-        list.map((item) => (item.id === session.id ? updated : item)),
+      const directory = directoryFor(session)
+      const updated = await api.updateSessionTitle(directory, session.id, trimmed)
+      setState("sessionsByProject", directory, (list = []) =>
+        list.map((item) => (item.id === session.id ? { ...updated, directory } : item)),
       )
     } catch (error) {
-      setState("error", error instanceof Error ? error.message : "重命名失败")
+      const message = error instanceof Error ? error.message : "重命名失败"
+      setState("error", missingDirectoryMessage(message) ?? message)
     }
   }
 
   const deleteSession = async (session: Session) => {
     try {
-      await api.deleteSession(session.directory, session.id)
-      setState("sessionsByProject", session.directory, (list = []) =>
+      const directory = directoryFor(session)
+      await api.deleteSession(directory, session.id)
+      setState("sessionsByProject", directory, (list = []) =>
         list.filter((item) => item.id !== session.id),
       )
       if (state.selectedSessionId === session.id) {
@@ -712,6 +857,7 @@ export function AppProvider(props: ParentProps) {
         })
       }
       setState("attention", session.id, false)
+      setState("sessionErrors", session.id, false)
       setState("queuedBySession", session.id, [])
     } catch (error) {
       setState("error", error instanceof Error ? error.message : "删除会话失败")
@@ -719,7 +865,12 @@ export function AppProvider(props: ParentProps) {
   }
 
   const startDraft = () => {
-    if (!selectedProject()) return
+    const project = selectedProject()
+    if (!project) return
+    if (project.missing) {
+      setState("error", MISSING_DIRECTORY_HINT)
+      return
+    }
     setState({
       selectedSessionId: null,
       draft: true,
@@ -729,7 +880,11 @@ export function AppProvider(props: ParentProps) {
   }
 
   const selectSession = async (session: Session) => {
-    const project = state.projects.find((item) => samePath(item.path, session.directory))
+    const project = projectForSession(session)
+    if (project?.missing) {
+      setState("error", MISSING_DIRECTORY_HINT)
+      return
+    }
     setState({
       selectedSessionId: session.id,
       selectedProjectId: project?.id ?? state.selectedProjectId,
@@ -737,6 +892,7 @@ export function AppProvider(props: ParentProps) {
       error: null,
     })
     setState("attention", session.id, false)
+    setState("sessionErrors", session.id, false)
     if (project) saveLastProject(project.id)
     await loadSessionDetail(session)
   }
@@ -764,6 +920,16 @@ export function AppProvider(props: ParentProps) {
       files: payload.files,
     })
     setState("status", session.id, { type: "busy" })
+    setState("sessionErrors", session.id, false)
+  }
+
+  const ensureProjectDirectory = (project: Project): Project | null => {
+    if (isLocalProject(project)) return project
+    if (project.missing) {
+      setState("error", MISSING_DIRECTORY_HINT)
+      return null
+    }
+    return project
   }
 
   const dispatchQueued = async (sessionID: string, item: QueuedMessage) => {
@@ -775,9 +941,11 @@ export function AppProvider(props: ParentProps) {
       ? (state.sessionsByProject[project.path] ?? []).find((entry) => entry.id === sessionID)
       : undefined
     if (!project || !session) return false
+    const usable = ensureProjectDirectory(project)
+    if (!usable) return false
     setState("sending", true)
     try {
-      await promptSession(session, project, {
+      await promptSession(session, usable, {
         text: item.text,
         files: item.attachments,
         model: item.model,
@@ -786,7 +954,10 @@ export function AppProvider(props: ParentProps) {
       })
       return true
     } catch (error) {
-      setState("error", error instanceof Error ? error.message : "发送排队消息失败")
+      const message = error instanceof Error ? error.message : "发送排队消息失败"
+      const missing = missingDirectoryMessage(message)
+      if (missing) setProjectMissingMessage(parseMissingDirectory(message) ?? project.path)
+      else setState("error", message)
       return false
     } finally {
       setState("sending", false)
@@ -844,6 +1015,9 @@ export function AppProvider(props: ParentProps) {
       return
     }
 
+    const usable = ensureProjectDirectory(project)
+    if (!usable) return
+
     if (busy()) {
       const session = selectedSession()
       if (!session) return
@@ -870,21 +1044,21 @@ export function AppProvider(props: ParentProps) {
       const title = content || files[0]?.filename || "新会话"
       if (!session) {
         session = await api.createSession(
-          project.path,
+          usable.path,
           sessionTitle(title),
           model,
           currentAgent(),
-          rulesetForProject(project, state.permissionMode),
+          rulesetForProject(usable, state.permissionMode),
         )
-        setState("sessionsByProject", project.path, (list = []) => upsertById(list, session!))
+        setState("sessionsByProject", usable.path, (list = []) => upsertById(list, session!))
         setState({
           selectedSessionId: session.id,
           draft: false,
         })
       } else {
-        await applySessionPermission(project.path, session.id)
+        await applySessionPermission(usable.path, session.id)
       }
-      await api.promptAsync(project.path, session.id, {
+      await api.promptAsync(usable.path, session.id, {
         text: content,
         model,
         agent: currentAgent(),
@@ -894,8 +1068,12 @@ export function AppProvider(props: ParentProps) {
       setState("composer", "")
       setState("attachments", [])
       setState("status", session.id, { type: "busy" })
+      setState("sessionErrors", session.id, false)
     } catch (error) {
-      setState("error", error instanceof Error ? error.message : "发送失败")
+      const message = error instanceof Error ? error.message : "发送失败"
+      const missing = missingDirectoryMessage(message)
+      if (missing) setProjectMissingMessage(parseMissingDirectory(message) ?? usable.path)
+      else setState("error", message)
     } finally {
       setState("sending", false)
     }
@@ -1025,7 +1203,7 @@ export function AppProvider(props: ParentProps) {
     persistSelection(resolveSelectedKey(configured, mergeSelectables(configured, []), loadSelectedModelKey()))
 
     for (const project of initial) {
-      void refreshProjectSessions(project)
+      void hydrateProjectPath(project)
     }
 
     void resolveHomeDir().then((home) => {
@@ -1072,29 +1250,48 @@ export function AppProvider(props: ParentProps) {
               const info = props.info as Session | undefined
               const sessionID = (props.sessionID as string) ?? info?.id
               if (info && sessionID && !info.parentID) {
-                const path = directory || info.directory
-                draft.sessionsByProject[path] = upsertById(draft.sessionsByProject[path] ?? [], info)
+                const rawPath = directory || info.directory
+                const owner = draft.projects.find(
+                  (project) =>
+                    samePath(project.path, rawPath) ||
+                    (draft.sessionsByProject[project.path] ?? []).some((item) => item.id === sessionID),
+                )
+                const path = owner?.path ?? rawPath
+                draft.sessionsByProject[path] = upsertById(draft.sessionsByProject[path] ?? [], {
+                  ...info,
+                  directory: path,
+                })
               }
             }
             if (event.type === "session.deleted") {
               const info = props.info as Session | undefined
               const sessionID = (props.sessionID as string) ?? info?.id
-              const path = directory || info?.directory
+              const rawPath = directory || info?.directory
+              const owner = draft.projects.find(
+                (project) =>
+                  (rawPath && samePath(project.path, rawPath)) ||
+                  (sessionID && (draft.sessionsByProject[project.path] ?? []).some((item) => item.id === sessionID)),
+              )
+              const path = owner?.path ?? rawPath
               if (sessionID && path && draft.sessionsByProject[path]) {
                 draft.sessionsByProject[path] = draft.sessionsByProject[path].filter((item) => item.id !== sessionID)
               }
-              if (sessionID) delete draft.attention[sessionID]
-              if (draft.selectedSessionId === sessionID) {
+              if (sessionID) {
+                delete draft.attention[sessionID]
+                delete draft.sessionErrors[sessionID]
+                delete draft.queuedBySession[sessionID]
+              }
+              if (sessionID && draft.selectedSessionId === sessionID) {
                 draft.selectedSessionId = null
                 draft.draft = true
               }
-              if (sessionID) delete draft.queuedBySession[sessionID]
             }
             if (event.type === "message.updated") {
               const info = props.info as Message | undefined
               const sessionID = (props.sessionID as string) ?? info?.sessionID
               if (info && sessionID) {
                 draft.messages[sessionID] = upsertById(draft.messages[sessionID] ?? [], info)
+                if (info.role === "assistant" && info.error) draft.sessionErrors[sessionID] = true
               }
             }
             if (event.type === "message.removed") {
@@ -1194,11 +1391,26 @@ export function AppProvider(props: ParentProps) {
               if (requestID) delete draft.questions[requestID]
             }
             if (event.type === "session.error") {
+              const sessionID = props.sessionID as string | undefined
               const message =
                 (props.error as { data?: { message?: string }; message?: string } | undefined)?.data?.message ||
                 (props.error as { message?: string } | undefined)?.message ||
                 (props.message as string)
-              if (message) draft.error = message
+              if (sessionID) draft.sessionErrors[sessionID] = true
+              if (message) {
+                const friendly = missingDirectoryMessage(String(message))
+                if (friendly) {
+                  draft.error = friendly
+                  const missingPath = parseMissingDirectory(String(message))
+                  if (missingPath) {
+                    for (const project of draft.projects) {
+                      if (!isLocalProject(project) && samePath(project.path, missingPath)) project.missing = true
+                    }
+                  }
+                } else {
+                  draft.error = String(message)
+                }
+              }
             }
           }),
         )
@@ -1223,6 +1435,15 @@ export function AppProvider(props: ParentProps) {
 
   createEffect(() => {
     saveProjects(state.projects)
+  })
+
+  createEffect(() => {
+    for (const project of state.projects) {
+      if (isLocalProject(project)) continue
+      const list = state.sessionsByProject[project.path]
+      if (!list) continue
+      saveProjectSessions(project.id, list)
+    }
   })
 
   createEffect(() => {
@@ -1271,6 +1492,7 @@ export function AppProvider(props: ParentProps) {
     addFolder,
     removeAttachment,
     addProject,
+    relocateProject,
     toggleProject,
     selectProject,
     removeProject,

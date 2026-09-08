@@ -17,6 +17,7 @@ export function Composer() {
 
   const placeholder = createMemo(() => {
     if (!app.selectedProject()) return "先添加一个项目文件夹"
+    if (app.selectedProject()?.missing) return "先重新定位项目文件夹"
     if (!app.selectedModel()) return "先配置一个模型"
     if (app.blocked()) return "请先处理权限或提问"
     if (app.busy()) return "Agent 正在工作，Esc 可停止…"
@@ -31,6 +32,7 @@ export function Composer() {
   const canSend = createMemo(
     () =>
       !!app.selectedProject() &&
+      !app.selectedProject()?.missing &&
       !app.blocked() &&
       (hasDraft() || app.busy()),
   )
@@ -94,7 +96,7 @@ export function Composer() {
         ref={area}
         rows={1}
         value={app.state.composer}
-        disabled={!app.selectedProject() || app.blocked()}
+        disabled={!app.selectedProject() || app.blocked() || !!app.selectedProject()?.missing}
         placeholder={placeholder()}
         onInput={(event) => app.setState("composer", event.currentTarget.value)}
         onKeyDown={onKeyDown}

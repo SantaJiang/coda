@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-path-exists"
+description = "Allows checking whether a local project directory still exists."
+commands.allow = ["path_exists"]

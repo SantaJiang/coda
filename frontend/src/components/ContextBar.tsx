@@ -1,7 +1,7 @@
 import { Show, createEffect, createSignal, onCleanup } from "solid-js"
 import { useApp } from "../store/app"
 import * as api from "../lib/api"
-import { isLocalProject } from "../lib/persist"
+import { isLocalProject, projectContextLabel } from "../lib/persist"
 import { Icon } from "./Icon"
 
 export function ContextBar() {
@@ -10,7 +10,7 @@ export function ContextBar() {
 
   createEffect(() => {
     const project = app.selectedProject()
-    if (!project || isLocalProject(project)) {
+    if (!project || isLocalProject(project) || project.missing) {
       setBranch("")
       return
     }
@@ -46,12 +46,19 @@ export function ContextBar() {
         {(project) => (
           <div
             class="ctx-pill ctx-project"
-            classList={{ "ctx-local": isLocalProject(project()) }}
+            classList={{
+              "ctx-local": isLocalProject(project()),
+              "ctx-missing": !!project().missing,
+            }}
             title={isLocalProject(project()) ? `本机 · ${project().path}` : project().path}
           >
             <span class="ctx-icon">
               <span class="ctx-folder">
-                <Icon name={isLocalProject(project()) ? "home" : "folder"} />
+                <Icon
+                  name={
+                    isLocalProject(project()) ? "home" : project().missing ? "warning" : "folder"
+                  }
+                />
               </span>
               <Show when={!isLocalProject(project())}>
                 <button
@@ -65,7 +72,9 @@ export function ContextBar() {
                 </button>
               </Show>
             </span>
-            <span class="ctx-label truncate">{project().name}</span>
+            <span class="ctx-label truncate">
+              {projectContextLabel(project(), app.state.projects)}
+            </span>
           </div>
         )}
       </Show>

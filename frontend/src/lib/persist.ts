@@ -1,5 +1,5 @@
 import { STORAGE_KEYS } from "./config"
-import type { Project } from "./types"
+import type { Project, Session } from "./types"
 
 export const LOCAL_PROJECT_ID = "prj_local"
 export const LOCAL_PROJECT_NAME = "本机"
@@ -9,14 +9,56 @@ function uid(prefix: string) {
 }
 
 export function basename(path: string) {
-  const trimmed = path.replace(/[\\/]+$/, "")
-  const parts = trimmed.split(/[\\/]/)
-  return parts[parts.length - 1] || trimmed
+  const parts = pathParts(path)
+  return parts[parts.length - 1] || path
+}
+
+function pathParts(path: string) {
+  return path.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean)
+}
+
+function parentSegments(path: string, depth: number) {
+  const parts = pathParts(path)
+  if (parts.length <= 1) return ""
+  const start = Math.max(0, parts.length - 1 - depth)
+  return parts.slice(start, -1).join("/")
 }
 
 export function samePath(left: string, right: string) {
   const normalize = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "")
   return normalize(left) === normalize(right)
+}
+
+export type ProjectDisplay = {
+  name: string
+  hint?: string
+}
+
+export function projectDisplay(project: Project, all: Project[]): ProjectDisplay {
+  const name = isLocalProject(project) ? LOCAL_PROJECT_NAME : project.name?.trim() || basename(project.path)
+  if (isLocalProject(project)) return { name }
+
+  const key = name.toLowerCase()
+  const collisions = all.filter(
+    (item) => !isLocalProject(item) && (item.name || basename(item.path)).toLowerCase() === key,
+  )
+  if (collisions.length < 2) return { name }
+
+  for (let depth = 1; depth <= 4; depth++) {
+    const hints = collisions.map((item) => parentSegments(item.path, depth))
+    if (hints.every(Boolean) && new Set(hints).size === hints.length) {
+      return { name, hint: parentSegments(project.path, depth) }
+    }
+  }
+
+  const fallback = parentSegments(project.path, 2) || parentSegments(project.path, 1)
+  return fallback ? { name, hint: fallback } : { name }
+}
+
+export function projectContextLabel(project: Project, all: Project[]) {
+  const { name, hint } = projectDisplay(project, all)
+  if (hint) return `${name} · ${hint}`
+  return name
 }
 
 export function isLocalProject(project: Project | undefined | null): boolean {
@@ -80,7 +122,72 @@ export function loadProjects(): Project[] {
 }
 
 export function saveProjects(projects: Project[]) {
-  localStorage.setItem(STORAGE_KEYS.projects, JSON.stringify(projects))
+  const stored = projects.map((project) => {
+    const next = { ...project }
+    delete next.missing
+    return next
+  })
+  localStorage.setItem(STORAGE_KEYS.projects, JSON.stringify(stored))
+}
+
+export function loadProjectSessions(projectId: string): Session[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.projectSessions)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as Record<string, Session[]>
+    const list = parsed?.[projectId]
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+export function saveProjectSessions(projectId: string, sessions: Session[]) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.projectSessions)
+    const parsed = raw ? (JSON.parse(raw) as Record<string, Session[]>) : {}
+    const next = parsed && typeof parsed === "object" ? parsed : {}
+    next[projectId] = sessions
+    localStorage.setItem(STORAGE_KEYS.projectSessions, JSON.stringify(next))
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+export function clearProjectSessions(projectId: string) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.projectSessions)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as Record<string, Session[]>
+    if (!parsed || typeof parsed !== "object") return
+    delete parsed[projectId]
+    localStorage.setItem(STORAGE_KEYS.projectSessions, JSON.stringify(parsed))
+  } catch {
+    // ignore
+  }
+}
+
+export const MISSING_DIRECTORY_HINT =
+  "项目文件夹已不存在（可能被移动或删除）。请在侧栏该项目菜单里选择「重新定位」。"
+
+export function parseMissingDirectory(message: string): string | undefined {
+  const realPath = message.match(/FileSystem\.realPath\s*\(([^)]+)\)/)
+  if (realPath?.[1]) return realPath[1].trim()
+  return message.match(/ENOENT: no such file or directory, lstat '([^']+)'/)?.[1]
+}
+
+export function missingDirectoryMessage(message: string): string | undefined {
+  if (!/FileSystem\.realPath|ENOENT: no such file or directory/.test(message)) return
+  return MISSING_DIRECTORY_HINT
+}
+
+export async function directoryExists(path: string): Promise<boolean | null> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core")
+    return await invoke<boolean>("path_exists", { path })
+  } catch {
+    return null
+  }
 }
 
 export function loadLastProject() {
