@@ -1,7 +1,15 @@
 import { Index, Match, Show, Switch, createEffect, createMemo, on } from "solid-js"
 import { useApp } from "../store/app"
-import { ChatTurnView, CompactionMark, groupTurns } from "./MessagePart"
+import { ChatTurnView, CompactionMark, groupTurns, type TimelineItem } from "./MessagePart"
 import { WorkGroup } from "./WorkGroup"
+
+function asCompaction(item: TimelineItem) {
+  return item.kind === "compaction" ? item : undefined
+}
+
+function asTurn(item: TimelineItem) {
+  return item.kind === "turn" ? item : undefined
+}
 
 export function MessageTimeline() {
   const app = useApp()
@@ -45,18 +53,15 @@ export function MessageTimeline() {
         <Index each={items()}>
           {(item, index) => (
             <Switch>
-              <Match when={item().kind === "compaction"}>
-                <CompactionMark
-                  live={
-                    app.busy() &&
-                    index === items().length - 1 &&
-                    item().kind === "compaction" &&
-                    item().status === "running"
-                  }
-                  summary={item().kind === "compaction" ? item().summary : undefined}
-                />
+              <Match when={asCompaction(item())}>
+                {(compaction) => (
+                  <CompactionMark
+                    live={app.busy() && index === items().length - 1 && compaction().status === "running"}
+                    summary={compaction().summary}
+                  />
+                )}
               </Match>
-              <Match when={item().kind === "turn" ? item() : false}>
+              <Match when={asTurn(item())}>
                 {(turn) => (
                   <ChatTurnView
                     turn={turn()}
