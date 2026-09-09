@@ -47,6 +47,11 @@ export function WorkGroup(props: {
   })
   const summary = createMemo(() => activitySummary(parts()))
   const diff = createMemo(() => activityDiff(parts()))
+  const thoughtOnly = createMemo(() => {
+    const list = parts()
+    return list.length > 0 && list.every((part) => part.type === "reasoning")
+  })
+  const showHead = createMemo(() => Boolean(summary()) && !(props.live && thoughtOnly()))
   const open = () => (props.onToggle ? Boolean(props.open) : localOpen())
   const toggle = (event?: MouseEvent) => {
     event?.preventDefault()
@@ -127,7 +132,7 @@ export function WorkGroup(props: {
 
   return (
     <div class="work-group" classList={{ open: open(), live: props.live }}>
-      <Show when={summary()}>
+      <Show when={showHead()}>
         <button
           type="button"
           class="work-head"
@@ -171,13 +176,28 @@ export function WorkGroup(props: {
           </For>
         </div>
       </Show>
-      <Show when={open()}>
+      <Show when={open() && showHead()}>
         <div class="work-steps">
-          <For each={parts()}>
-            {(part) =>
-              part.type === "tool" || part.type === "reasoning" ? <WorkStep part={part} /> : null
+          <Show
+            when={thoughtOnly()}
+            fallback={
+              <For each={parts()}>
+                {(part) =>
+                  part.type === "tool" || part.type === "reasoning" ? <WorkStep part={part} /> : null
+                }
+              </For>
             }
-          </For>
+          >
+            <For each={parts()}>
+              {(part) =>
+                part.type === "reasoning" ? (
+                  <div class="work-step-body reasoning-inline">
+                    <MarkdownView text={(part as ReasoningPart).text} />
+                  </div>
+                ) : null
+              }
+            </For>
+          </Show>
         </div>
       </Show>
     </div>
