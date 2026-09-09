@@ -93,8 +93,7 @@ export function QuestionDock() {
           </Show>
           <Show when={current()}>
             {(question) => {
-              const at = index()
-              const selected = (label: string) => selectedAt(at, label)
+              const selected = (label: string) => selectedAt(index(), label)
               return (
                 <div class="question-block">
                   <div class="question-text">{question().question}</div>
@@ -105,7 +104,7 @@ export function QuestionDock() {
                           type="button"
                           class="question-option"
                           classList={{ picked: selected(option.label) }}
-                          onClick={() => toggle(at, option.label, question().multiple)}
+                          onClick={() => toggle(index(), option.label, question().multiple)}
                         >
                           <span class="question-option-label">{option.label}</span>
                           <Show when={option.description}>
@@ -118,20 +117,20 @@ export function QuestionDock() {
                       <div
                         class="question-option question-custom"
                         classList={{ picked: selected(CUSTOM) }}
-                        onClick={() => toggle(at, CUSTOM, question().multiple)}
+                        onClick={() => toggle(index(), CUSTOM, question().multiple)}
                       >
                         <span class="question-option-label">其他</span>
                         <Show when={selected(CUSTOM)}>
                           <input
                             type="text"
-                            value={customTexts()[at] ?? ""}
+                            value={customTexts()[index()] ?? ""}
                             autocomplete="off"
                             autofocus
                             onClick={(event) => event.stopPropagation()}
-                            onFocus={() => ensureCustom(at, question().multiple)}
+                            onFocus={() => ensureCustom(index(), question().multiple)}
                             onInput={(event) => {
-                              setCustomText(at, event.currentTarget.value)
-                              ensureCustom(at, question().multiple)
+                              setCustomText(index(), event.currentTarget.value)
+                              ensureCustom(index(), question().multiple)
                             }}
                           />
                         </Show>
