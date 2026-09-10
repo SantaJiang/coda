@@ -1,31 +1,20 @@
-import { For, Show, onCleanup, onMount } from "solid-js"
+import { For, Show } from "solid-js"
+import { useDismissable } from "../lib/dismiss"
 import { PERMISSION_PRESETS } from "../lib/permissions"
-import { useApp } from "../store/app"
+import { useChrome } from "../store/app"
 
 export function PermissionMenu() {
-  const app = useApp()
+  const app = useChrome()
   let root: HTMLDivElement | undefined
 
-  onMount(() => {
-    const onPointer = (event: PointerEvent) => {
-      if (!app.state.permissionMenuOpen) return
-      const target = event.target as Node | null
-      if (root && target && root.contains(target)) return
-      app.closePermissionMenu()
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") app.closePermissionMenu()
-    }
-    document.addEventListener("pointerdown", onPointer)
-    document.addEventListener("keydown", onKey)
-    onCleanup(() => {
-      document.removeEventListener("pointerdown", onPointer)
-      document.removeEventListener("keydown", onKey)
-    })
+  useDismissable({
+    active: () => app.permissionMenuOpen(),
+    onClose: () => app.closePermissionMenu(),
+    root: () => root,
   })
 
   const toggle = () => {
-    if (app.state.permissionMenuOpen) app.closePermissionMenu()
+    if (app.permissionMenuOpen()) app.closePermissionMenu()
     else app.openPermissionMenu()
   }
 
@@ -35,24 +24,24 @@ export function PermissionMenu() {
         type="button"
         class="model-chip"
         classList={{
-          open: app.state.permissionMenuOpen,
-          warn: app.state.permissionMode === "allow" || app.state.permissionMode === "auto",
+          open: app.permissionMenuOpen(),
+          warn: app.permissionMode() === "allow" || app.permissionMode() === "auto",
         }}
         aria-label={`权限：${app.permissionLabel()}`}
         aria-haspopup="menu"
-        aria-expanded={app.state.permissionMenuOpen}
+        aria-expanded={app.permissionMenuOpen()}
         onClick={toggle}
       >
         {app.permissionLabel()}
       </button>
-      <Show when={app.state.permissionMenuOpen}>
+      <Show when={app.permissionMenuOpen()}>
         <div class="model-menu perm-menu" role="menu">
           <For each={PERMISSION_PRESETS}>
             {(preset) => (
               <button
                 type="button"
                 class="model-menu-item perm-menu-item"
-                classList={{ active: app.state.permissionMode === preset.id }}
+                classList={{ active: app.permissionMode() === preset.id }}
                 role="menuitem"
                 onClick={() => void app.setPermissionMode(preset.id)}
               >

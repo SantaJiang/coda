@@ -159,10 +159,6 @@ export async function getVcs(directory: string) {
   return request<VcsInfo>("GET", "/vcs", { directory })
 }
 
-export async function getSession(directory: string, sessionID: string) {
-  return request<Session>("GET", `/session/${sessionID}`, { directory })
-}
-
 export async function listMessages(directory: string, sessionID: string) {
   return request<MessageWithParts[]>("GET", `/session/${sessionID}/message`, { directory })
 }

@@ -1,3 +1,5 @@
+import { uid } from "./uid"
+
 export type ModelRef = {
   providerID: string
   modelID: string
@@ -75,11 +77,12 @@ export type ProviderList = {
 }
 
 const STORAGE_MODELS = "coda.models"
+const STORAGE_SECRETS = "coda.modelSecrets"
 const STORAGE_SELECTED = "coda.selectedModel"
 const STORAGE_PINNED = "coda.pinnedModels"
 
-function uid() {
-  return `mdl_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
+function modelUid() {
+  return uid("mdl")
 }
 
 export function modelKey(providerID: string, modelID: string) {
@@ -106,15 +109,28 @@ export function emptyModelForm(): ModelForm {
   }
 }
 
-export function formFromModel(model: ConfiguredModel): ModelForm {
-  return {
-    name: model.name,
-    providerID: model.providerID,
-    providerName: model.providerName,
-    modelID: model.modelID,
-    baseURL: model.baseURL,
-    apiKey: model.apiKey,
+function loadSecrets(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_SECRETS)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== "object") return {}
+    const result: Record<string, string> = {}
+    for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === "string" && value) result[id] = value
+    }
+    return result
+  } catch {
+    return {}
   }
+}
+
+function saveSecrets(models: ConfiguredModel[]) {
+  const secrets: Record<string, string> = {}
+  for (const model of models) {
+    if (model.apiKey) secrets[model.id] = model.apiKey
+  }
+  localStorage.setItem(STORAGE_SECRETS, JSON.stringify(secrets))
 }
 
 export function loadConfiguredModels(): ConfiguredModel[] {
@@ -123,20 +139,35 @@ export function loadConfiguredModels(): ConfiguredModel[] {
     if (!raw) return []
     const parsed = JSON.parse(raw) as ConfiguredModel[]
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (item) =>
-        item &&
-        typeof item.id === "string" &&
-        typeof item.providerID === "string" &&
-        typeof item.modelID === "string",
-    )
+    const secrets = loadSecrets()
+    return parsed
+      .filter(
+        (item) =>
+          item &&
+          typeof item.id === "string" &&
+          typeof item.providerID === "string" &&
+          typeof item.modelID === "string",
+      )
+      .map((item) => ({
+        ...item,
+        apiKey: secrets[item.id] || item.apiKey || "",
+      }))
   } catch {
     return []
   }
 }
 
 export function saveConfiguredModels(models: ConfiguredModel[]) {
-  localStorage.setItem(STORAGE_MODELS, JSON.stringify(models))
+  const publicModels = models.map((model) => ({
+    id: model.id,
+    name: model.name,
+    providerID: model.providerID,
+    providerName: model.providerName,
+    modelID: model.modelID,
+    baseURL: model.baseURL,
+  }))
+  localStorage.setItem(STORAGE_MODELS, JSON.stringify(publicModels))
+  saveSecrets(models)
 }
 
 export function loadSelectedModelKey() {
@@ -167,7 +198,7 @@ export function createConfiguredModel(form: ModelForm): ConfiguredModel {
   const name = form.name.trim() || form.modelID.trim()
   const providerID = slugify(form.providerID || form.providerName || name)
   return {
-    id: uid(),
+    id: modelUid(),
     name,
     providerID,
     providerName: form.providerName.trim() || name,
@@ -193,11 +224,6 @@ export function validateProviderForm(form: Pick<ModelForm, "baseURL" | "apiKey" 
     return "接口地址不是合法 URL"
   }
   return null
-}
-
-export function validateModelForm(form: ModelForm) {
-  if (!form.modelID.trim()) return "请填写模型 ID"
-  return validateProviderForm(form)
 }
 
 export function variantKeys(model?: { variants?: Record<string, unknown> }) {
@@ -290,8 +316,7 @@ export function toBackendPatch(models: ConfiguredModel[], selectedKey: string | 
       tool_call: true,
       reasoning: true,
       temperature: true,
-      attachment: false,
-      limit: { context: 128000, output: 8192 },
+      attachment: true,
     }
     provider[model.providerID] = current
   }

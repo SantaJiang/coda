@@ -1,4 +1,5 @@
 import type { AssistantMessage, Message, Part, ReasoningPart, ToolPart } from "./types"
+import { basename } from "./path"
 
 export type ActivityBlock =
   | { kind: "work"; parts: Part[] }
@@ -131,12 +132,6 @@ function plural(n: number, one: string, many: string) {
 function capitalize(text: string) {
   if (!text) return text
   return text[0].toUpperCase() + text.slice(1)
-}
-
-function basename(path: string) {
-  const trimmed = path.replace(/[\\/]+$/, "")
-  const parts = trimmed.split(/[\\/]/)
-  return parts[parts.length - 1] || trimmed
 }
 
 function truncate(text: string, max = 56) {

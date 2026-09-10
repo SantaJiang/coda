@@ -1,33 +1,12 @@
 import { STORAGE_KEYS } from "./config"
+import { basename, parentSegments, samePath } from "./path"
+import { uid } from "./uid"
 import type { Project, Session } from "./types"
 
 export const LOCAL_PROJECT_ID = "prj_local"
 export const LOCAL_PROJECT_NAME = "本机"
 
-function uid(prefix: string) {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
-}
-
-export function basename(path: string) {
-  const parts = pathParts(path)
-  return parts[parts.length - 1] || path
-}
-
-function pathParts(path: string) {
-  return path.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean)
-}
-
-function parentSegments(path: string, depth: number) {
-  const parts = pathParts(path)
-  if (parts.length <= 1) return ""
-  const start = Math.max(0, parts.length - 1 - depth)
-  return parts.slice(start, -1).join("/")
-}
-
-export function samePath(left: string, right: string) {
-  const normalize = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "")
-  return normalize(left) === normalize(right)
-}
+export { basename, samePath } from "./path"
 
 export type ProjectDisplay = {
   name: string
@@ -196,10 +175,6 @@ export function loadLastProject() {
 
 export function saveLastProject(id: string) {
   localStorage.setItem(STORAGE_KEYS.lastProject, id)
-}
-
-export function clearLastProject() {
-  localStorage.removeItem(STORAGE_KEYS.lastProject)
 }
 
 export function createProject(path: string): Project {

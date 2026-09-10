@@ -150,15 +150,21 @@ export type RetryPart = {
   error?: { data?: { message?: string } }
 }
 
-export type GenericPart = {
+export type CompactionPart = {
   id: string
   sessionID: string
   messageID: string
-  type: string
-  [key: string]: unknown
+  type: "compaction"
 }
 
-export type Part = TextPart | ReasoningPart | FilePart | AgentPart | ToolPart | RetryPart | GenericPart
+export type MetaPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "step-start" | "step-finish" | "patch" | "snapshot"
+}
+
+export type Part = TextPart | ReasoningPart | FilePart | AgentPart | ToolPart | RetryPart | CompactionPart | MetaPart
 
 export type MessageWithParts = {
   info: Message

@@ -1,14 +1,14 @@
 import { For, Show } from "solid-js"
-import { useApp } from "../store/app"
+import { useRuntime } from "../store/app"
 import { Icon } from "./Icon"
 
 export function AttachmentStrip() {
-  const app = useApp()
+  const app = useRuntime()
 
   return (
-    <Show when={app.state.attachments.length > 0}>
+    <Show when={app.attachments().length > 0}>
       <div class="attachment-strip">
-        <For each={app.state.attachments}>
+        <For each={app.attachments()}>
           {(item) => (
             <div class="attachment-card">
               <button

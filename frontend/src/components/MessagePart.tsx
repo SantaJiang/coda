@@ -8,7 +8,6 @@ import {
   workDurationMs,
   type ActivityBlock,
 } from "../lib/activity"
-import { modelKey } from "../lib/models"
 import type {
   AgentPart,
   AssistantMessage,
@@ -19,7 +18,7 @@ import type {
   TextPart,
   UserMessage,
 } from "../lib/types"
-import { useApp } from "../store/app"
+import { useModels } from "../store/app"
 import { MarkdownView } from "./MarkdownView"
 import { WorkGroup } from "./WorkGroup"
 import { ChangedFiles } from "./ChangedFiles"
@@ -198,19 +197,8 @@ function MessageMeta(props: { agent?: string; modelName: string; time?: number; 
 }
 
 function useModelName() {
-  const app = useApp()
-  return (providerID?: string, modelID?: string) => {
-    if (!modelID && !providerID) return ""
-    if (providerID && modelID) {
-      const key = modelKey(providerID, modelID)
-      const named =
-        app.selectableModels().find((item) => item.key === key) ??
-        app.state.discoveredModels.find((item) => item.key === key) ??
-        app.state.configuredModels.find((item) => item.providerID === providerID && item.modelID === modelID)
-      if (named && "name" in named && named.name) return named.name
-    }
-    return modelID || providerID || ""
-  }
+  const models = useModels()
+  return (providerID?: string, modelID?: string) => models.nameFor(providerID, modelID)
 }
 
 function MessagePartView(props: { part: Part }) {

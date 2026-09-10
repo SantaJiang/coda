@@ -1,11 +1,9 @@
 import { For, Show } from "solid-js"
-import { useApp } from "../store/app"
+import { useRuntime } from "../store/app"
 
 export function PermissionDock() {
-  const app = useApp()
-  const sessionId = () => app.state.selectedSessionId
-  const pending = () =>
-    Object.values(app.state.permissions).filter((item) => item && item.sessionID === sessionId())
+  const runtime = useRuntime()
+  const pending = () => runtime.pendingPermissions()
 
   return (
     <Show when={pending()[0]}>
@@ -18,13 +16,13 @@ export function PermissionDock() {
             </div>
           </Show>
           <div class="dock-actions">
-            <button type="button" class="ghost" onClick={() => void app.replyPermission(request().id, "reject")}>
+            <button type="button" class="ghost" onClick={() => void runtime.replyPermission(request().id, "reject")}>
               拒绝
             </button>
-            <button type="button" class="secondary" onClick={() => void app.replyPermission(request().id, "always")}>
+            <button type="button" class="secondary" onClick={() => void runtime.replyPermission(request().id, "always")}>
               始终允许
             </button>
-            <button type="button" class="primary" onClick={() => void app.replyPermission(request().id, "once")}>
+            <button type="button" class="primary" onClick={() => void runtime.replyPermission(request().id, "once")}>
               允许一次
             </button>
           </div>

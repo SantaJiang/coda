@@ -1,33 +1,22 @@
-import { For, Show, onCleanup, onMount } from "solid-js"
-import { useApp } from "../store/app"
+import { For, Show } from "solid-js"
+import { useDismissable } from "../lib/dismiss"
+import { useModels } from "../store/app"
 
 export function ModelMenu() {
-  const app = useApp()
+  const app = useModels()
   let root: HTMLDivElement | undefined
 
   const label = () => app.selectedModel()?.name ?? "配置模型"
   const models = () => app.selectableModels()
 
-  onMount(() => {
-    const onPointer = (event: PointerEvent) => {
-      if (!app.state.modelMenuOpen) return
-      const target = event.target as Node | null
-      if (root && target && root.contains(target)) return
-      app.closeModelMenu()
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") app.closeModelMenu()
-    }
-    document.addEventListener("pointerdown", onPointer)
-    document.addEventListener("keydown", onKey)
-    onCleanup(() => {
-      document.removeEventListener("pointerdown", onPointer)
-      document.removeEventListener("keydown", onKey)
-    })
+  useDismissable({
+    active: () => app.modelMenuOpen(),
+    onClose: () => app.closeModelMenu(),
+    root: () => root,
   })
 
   const toggle = () => {
-    if (app.state.modelMenuOpen) app.closeModelMenu()
+    if (app.modelMenuOpen()) app.closeModelMenu()
     else app.openModelMenu()
   }
 
@@ -36,12 +25,12 @@ export function ModelMenu() {
       <button
         type="button"
         class="model-chip"
-        classList={{ open: app.state.modelMenuOpen, empty: !app.selectedModel() }}
+        classList={{ open: app.modelMenuOpen(), empty: !app.selectedModel() }}
         onClick={toggle}
       >
         {label()}
       </button>
-      <Show when={app.state.modelMenuOpen}>
+      <Show when={app.modelMenuOpen()}>
         <div class="model-menu" role="menu">
           <Show when={models().length > 0}>
             <div class="model-menu-list">
@@ -50,7 +39,7 @@ export function ModelMenu() {
                   <button
                     type="button"
                     class="model-menu-item"
-                    classList={{ active: model.key === app.state.selectedModelKey }}
+                    classList={{ active: model.key === app.selectedModelKey() }}
                     role="menuitem"
                     onClick={() => app.selectModel(model.key)}
                   >

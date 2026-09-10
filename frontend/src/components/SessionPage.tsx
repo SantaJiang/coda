@@ -1,5 +1,5 @@
 import { Show } from "solid-js"
-import { useApp } from "../store/app"
+import { useChrome, useProjects, useRuntime } from "../store/app"
 import { Composer } from "./Composer"
 import { ContextBar } from "./ContextBar"
 import { MessageTimeline } from "./MessageTimeline"
@@ -9,21 +9,18 @@ import { QueueDock } from "./QueueDock"
 import { TodoDock } from "./TodoDock"
 
 export function SessionPage() {
-  const app = useApp()
-  const hasPlan = () => {
-    const id = app.state.selectedSessionId
-    if (!id) return false
-    return (app.state.todos[id] ?? []).length > 0
-  }
+  const projects = useProjects()
+  const runtime = useRuntime()
+  const chrome = useChrome()
 
   return (
     <section class="session">
-      <Show when={app.state.error}>
-        <div class="session-error">{app.state.error}</div>
+      <Show when={projects.error()}>
+        <div class="session-error">{projects.error()}</div>
       </Show>
 
       <Show
-        when={app.selectedSession()}
+        when={projects.selectedSession()}
         fallback={
           <div class="empty">
             <div class="empty-composer">
@@ -44,7 +41,7 @@ export function SessionPage() {
               <ContextBar />
             </div>
           </div>
-          <Show when={hasPlan() && !app.state.planPanelDismissed}>
+          <Show when={runtime.hasPlan() && !chrome.planPanelDismissed()}>
             <aside class="session-aside">
               <TodoDock />
             </aside>

@@ -1,5 +1,5 @@
 import { Index, Match, Show, Switch, createEffect, createMemo, on } from "solid-js"
-import { useApp } from "../store/app"
+import { useRuntime } from "../store/app"
 import { ChatTurnView, CompactionMark, groupTurns, type TimelineItem } from "./MessagePart"
 import { WorkGroup } from "./WorkGroup"
 
@@ -12,21 +12,17 @@ function asTurn(item: TimelineItem) {
 }
 
 export function MessageTimeline() {
-  const app = useApp()
+  const runtime = useRuntime()
   let scroller: HTMLDivElement | undefined
   let stick = true
 
-  const messages = createMemo(() => {
-    const id = app.state.selectedSessionId
-    if (!id) return []
-    return app.state.messages[id] ?? []
-  })
+  const messages = createMemo(() => runtime.messages())
 
-  const items = createMemo(() => groupTurns(messages(), app.state.parts))
+  const items = createMemo(() => groupTurns(messages(), runtime.partsByMessage()))
   const last = createMemo(() => items()[items().length - 1])
   const waiting = createMemo(() => {
     const item = last()
-    return Boolean(app.busy() && item?.kind === "turn" && item.assistants.length === 0)
+    return Boolean(runtime.busy() && item?.kind === "turn" && item.assistants.length === 0)
   })
 
   const onScroll = () => {
@@ -36,7 +32,7 @@ export function MessageTimeline() {
 
   createEffect(
     on(
-      () => [messages(), app.state.parts, app.busy()],
+      () => [messages(), runtime.partsByMessage(), runtime.busy()],
       () => {
         if (stick && scroller) {
           requestAnimationFrame(() => {
@@ -56,7 +52,7 @@ export function MessageTimeline() {
               <Match when={asCompaction(item())}>
                 {(compaction) => (
                   <CompactionMark
-                    live={app.busy() && index === items().length - 1 && compaction().status === "running"}
+                    live={runtime.busy() && index === items().length - 1 && compaction().status === "running"}
                     summary={compaction().summary}
                   />
                 )}
@@ -65,8 +61,8 @@ export function MessageTimeline() {
                 {(turn) => (
                   <ChatTurnView
                     turn={turn()}
-                    partsByMessage={app.state.parts}
-                    live={app.busy() && index === items().length - 1}
+                    partsByMessage={runtime.partsByMessage()}
+                    live={runtime.busy() && index === items().length - 1}
                   />
                 )}
               </Match>

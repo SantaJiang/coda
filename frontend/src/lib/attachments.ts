@@ -1,8 +1,5 @@
-function fileName(path: string) {
-  const trimmed = path.replace(/[\\/]+$/, "")
-  const parts = trimmed.split(/[\\/]/)
-  return parts[parts.length - 1] || trimmed
-}
+import { basename } from "./path"
+import { uid } from "./uid"
 
 export type ComposerAttachment = {
   id: string
@@ -79,10 +76,6 @@ const EXT_MIME: Record<string, string> = {
   pdf: "application/pdf",
 }
 
-function uid() {
-  return `att_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
-}
-
 export function extensionOf(name: string) {
   const idx = name.lastIndexOf(".")
   if (idx === -1) return ""
@@ -118,10 +111,10 @@ export function toFileUrl(path: string) {
 }
 
 export function attachmentFromPath(path: string, kind: "file" | "directory"): ComposerAttachment {
-  const filename = fileName(path)
+  const filename = basename(path)
   const mime = kind === "directory" ? "application/x-directory" : mimeFromName(filename)
   return {
-    id: uid(),
+    id: uid("att"),
     filename,
     mime,
     kind,
@@ -140,7 +133,7 @@ export async function attachmentFromBrowserFile(file: File): Promise<ComposerAtt
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
   }
   return {
-    id: uid(),
+    id: uid("att"),
     filename: file.name,
     mime,
     kind: "file",
@@ -149,11 +142,3 @@ export async function attachmentFromBrowserFile(file: File): Promise<ComposerAtt
   }
 }
 
-export function toFileParts(attachments: ComposerAttachment[]) {
-  return attachments.map((item) => ({
-    type: "file" as const,
-    mime: item.mime,
-    filename: item.filename,
-    url: item.url,
-  }))
-}

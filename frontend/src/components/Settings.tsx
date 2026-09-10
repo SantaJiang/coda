@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js"
 import { modifierLabel, type SendShortcut } from "../lib/settings"
-import { useApp } from "../store/app"
+import { useChrome } from "../store/app"
 import { Icon } from "./Icon"
 
 const CHOICES: Array<{ id: SendShortcut; name: () => string; hint: () => string }> = [
@@ -17,23 +17,23 @@ const CHOICES: Array<{ id: SendShortcut; name: () => string; hint: () => string 
 ]
 
 export function Settings() {
-  const app = useApp()
+  const chrome = useChrome()
 
   const onOverlay = (event: MouseEvent) => {
-    if (event.target === event.currentTarget) app.closeSettings()
+    if (event.target === event.currentTarget) chrome.closeSettings()
   }
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") app.closeSettings()
+    if (event.key === "Escape") chrome.closeSettings()
   }
 
   return (
-    <Show when={app.state.settingsOpen}>
+    <Show when={chrome.settingsOpen()}>
       <div class="dialog-overlay" onMouseDown={onOverlay} onKeyDown={onKeyDown}>
         <div class="dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
           <header class="dialog-head">
             <h2 id="settings-title">设置</h2>
-            <button type="button" class="icon-btn" onClick={() => app.closeSettings()} aria-label="关闭">
+            <button type="button" class="icon-btn" onClick={() => chrome.closeSettings()} aria-label="关闭">
               <Icon name="times" />
             </button>
           </header>
@@ -46,8 +46,8 @@ export function Settings() {
                   <button
                     type="button"
                     class="settings-choice"
-                    classList={{ active: app.state.sendShortcut === choice.id }}
-                    onClick={() => app.setSendShortcut(choice.id)}
+                    classList={{ active: chrome.sendShortcut() === choice.id }}
+                    onClick={() => chrome.setSendShortcut(choice.id)}
                   >
                     <span class="settings-choice-name">{choice.name()}</span>
                     <span class="settings-choice-desc">{choice.hint()}</span>

@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { AUTO_QUESTION_SECONDS, isAutoMode } from "../lib/permissions"
 import type { QuestionInfo } from "../lib/types"
-import { useApp } from "../store/app"
+import { useChrome, useRuntime } from "../store/app"
 
 const CUSTOM = "__coda_custom__"
 
@@ -14,9 +14,9 @@ function recommendedOption(question?: QuestionInfo) {
 }
 
 export function QuestionDock() {
-  const app = useApp()
-  const sessionId = () => app.state.selectedSessionId
-  const pending = () => Object.values(app.state.questions).filter((item) => item && item.sessionID === sessionId())
+  const runtime = useRuntime()
+  const chrome = useChrome()
+  const pending = () => runtime.pendingQuestions()
   const [picked, setPicked] = createSignal<string[][]>([])
   const [customTexts, setCustomTexts] = createSignal<string[]>([])
   const [step, setStep] = createSignal(0)
@@ -30,7 +30,7 @@ export function QuestionDock() {
   const current = () => questions()[index()]
   const many = () => total() > 1
   const last = () => index() >= total() - 1
-  const auto = createMemo(() => isAutoMode(app.state.permissionMode))
+  const auto = createMemo(() => isAutoMode(chrome.permissionMode()))
 
   createEffect((prev?: string) => {
     const id = request()?.id
@@ -102,7 +102,7 @@ export function QuestionDock() {
       return
     }
     if (missing >= 0) return
-    void app.replyQuestion(
+    void runtime.replyQuestion(
       id,
       questions().map((_, questionIndex) => answersFor(questionIndex)),
     )
@@ -128,8 +128,14 @@ export function QuestionDock() {
       const recommended = recommendedOption(current())
       if (recommended) writePick(questionIndex, recommended.label, current()?.multiple)
     }
-    if (last()) submit(item.id)
-    else setStep((value) => Math.min(total() - 1, value + 1))
+    if (last()) {
+      questions().forEach((question, index) => {
+        if (answered(index)) return
+        const recommended = recommendedOption(question)
+        if (recommended) writePick(index, recommended.label, question.multiple)
+      })
+      submit(item.id)
+    } else setStep((value) => Math.min(total() - 1, value + 1))
   }
 
   const startCountdown = () => {
@@ -232,7 +238,7 @@ export function QuestionDock() {
               </button>
             </Show>
             <span class="dock-actions-grow" />
-            <button type="button" class="ghost" onClick={() => void app.rejectQuestion(item().id)}>
+            <button type="button" class="ghost" onClick={() => void runtime.rejectQuestion(item().id)}>
               跳过
             </button>
             <Show

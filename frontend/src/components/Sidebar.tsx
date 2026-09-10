@@ -1,7 +1,8 @@
 import { For, Index, Show, createEffect, createSignal, onCleanup, onMount, type JSX } from "solid-js"
-import { useApp } from "../store/app"
-import type { Project, Session } from "../lib/types"
 import { isLocalProject, projectDisplay } from "../lib/persist"
+import { type SessionDot } from "../lib/session-status"
+import { useChrome, useProjects, useRuntime } from "../store/app"
+import type { Project, Session } from "../lib/types"
 import { Icon } from "./Icon"
 
 const COLLAPSE_MS = 200
@@ -68,8 +69,6 @@ function sessionLabel(session: Session) {
   return title.replace(/^New session.*$/i, "新会话")
 }
 
-type SessionDot = "wait" | "error" | "busy" | "unread"
-
 function sessionDotTitle(kind: SessionDot) {
   if (kind === "wait") return "等待你确认权限或回答问题"
   if (kind === "error") return "该会话执行出错"
@@ -86,7 +85,9 @@ type CtxMenuState = {
 type ConfirmTarget = { kind: "project"; project: Project } | { kind: "session"; session: Session }
 
 export function Sidebar() {
-  const app = useApp()
+  const projects = useProjects()
+  const runtime = useRuntime()
+  const chrome = useChrome()
   const [moreMenuId, setMoreMenuId] = createSignal<string | null>(null)
   const [ctxMenu, setCtxMenu] = createSignal<CtxMenuState | null>(null)
   const [editingId, setEditingId] = createSignal<string | null>(null)
@@ -103,10 +104,10 @@ export function Sidebar() {
     const target = confirmTarget()
     if (!target) return
     if (target.kind === "project") {
-      app.removeProject(target.project.id)
+      projects.removeProject(target.project.id)
       setMoreMenuId(null)
     } else {
-      void app.deleteSession(target.session)
+      void projects.deleteSession(target.session)
       setCtxMenu(null)
     }
     setConfirmTarget(null)
@@ -130,7 +131,7 @@ export function Sidebar() {
     if (editingId() !== session.id) return
     const title = editingValue().trim()
     setEditingId(null)
-    if (title && title !== session.title) void app.renameSession(session, title)
+    if (title && title !== session.title) void projects.renameSession(session, title)
   }
 
   onMount(() => {
@@ -162,8 +163,8 @@ export function Sidebar() {
       <button
         class="new-session"
         type="button"
-        onClick={() => app.startDraft()}
-        disabled={!app.selectedProject() || app.selectedProject()?.missing}
+        onClick={() => projects.startDraft()}
+        disabled={!projects.selectedProject() || projects.selectedProject()?.missing}
       >
         <Icon name="plus" />
         <span>新会话</span>
@@ -171,35 +172,25 @@ export function Sidebar() {
 
       <div class="projects-head">
         <span>项目</span>
-        <button class="icon-btn" type="button" title="添加项目文件夹" onClick={() => void app.addProject()}>
+        <button class="icon-btn" type="button" title="添加项目文件夹" onClick={() => void projects.addProject()}>
           <Icon name="plus" />
         </button>
       </div>
 
       <div class="tree">
         <Show
-          when={app.state.projects.length > 0}
+          when={projects.projects().length > 0}
           fallback={<div class="tree-empty">点击右上角 + 添加一个代码项目</div>}
         >
-          <Index each={app.state.projects}>
+          <Index each={projects.projects()}>
             {(project) => {
               const sessions = () =>
-                [...(app.state.sessionsByProject[project().path] ?? [])].sort(
+                [...projects.sessionsFor(project().path)].sort(
                   (a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0),
                 )
-              const display = () => projectDisplay(project(), app.state.projects)
+              const display = () => projectDisplay(project(), projects.projects())
               const subtitle = () => display().hint
-              const sessionDot = (sessionID: string): SessionDot | null => {
-                const waiting =
-                  Object.values(app.state.permissions).some((item) => item?.sessionID === sessionID) ||
-                  Object.values(app.state.questions).some((item) => item?.sessionID === sessionID)
-                if (waiting) return "wait"
-                if (app.state.sessionErrors[sessionID]) return "error"
-                const status = app.state.status[sessionID]?.type
-                if (status === "busy" || status === "retry") return "busy"
-                if (app.state.attention[sessionID]) return "unread"
-                return null
-              }
+              const sessionDot = (sessionID: string) => runtime.sessionDot(sessionID)
               return (
                 <div class="tree-project" classList={{ missing: !!project().missing }}>
                   <div class="tree-root">
@@ -208,7 +199,7 @@ export function Sidebar() {
                       class="tree-root-main"
                       aria-expanded={project().expanded}
                       title={project().path}
-                      onClick={() => app.toggleProject(project().id)}
+                      onClick={() => projects.toggleProject(project().id)}
                     >
                       <span class="chevron-hit" classList={{ open: project().expanded }}>
                         <Icon name="chevron-right" class="tree-chevron" />
@@ -251,7 +242,7 @@ export function Sidebar() {
                                 role="menuitem"
                                 onClick={() => {
                                   setMoreMenuId(null)
-                                  void app.relocateProject(project().id)
+                                  void projects.relocateProject(project().id)
                                 }}
                               >
                                 重新定位
@@ -278,8 +269,8 @@ export function Sidebar() {
                         aria-label="新建会话"
                         disabled={!!project().missing}
                         onClick={() => {
-                          app.selectProject(project().id)
-                          app.startDraft()
+                          projects.selectProject(project().id)
+                          projects.startDraft()
                         }}
                       >
                         <Icon name="plus" />
@@ -294,7 +285,7 @@ export function Sidebar() {
                       {(session) => (
                         <div
                           class="tree-session"
-                          classList={{ active: app.state.selectedSessionId === session.id }}
+                          classList={{ active: projects.selectedSessionId() === session.id }}
                         >
                           <Show
                             when={editingId() !== session.id}
@@ -326,7 +317,7 @@ export function Sidebar() {
                               type="button"
                               class="tree-session-main"
                               onContextMenu={(event) => openSessionMenu(event, session)}
-                              onClick={() => void app.selectSession(session)}
+                              onClick={() => void projects.selectSession(session)}
                             >
                               <span class="truncate">{sessionLabel(session)}</span>
                               <Show when={sessionDot(session.id)}>
@@ -360,17 +351,17 @@ export function Sidebar() {
         <span
           class="status-pill"
           classList={{
-            ok: app.state.connection === "connected",
-            bad: app.state.connection === "disconnected",
+            ok: projects.connection() === "connected",
+            bad: projects.connection() === "disconnected",
           }}
         >
-          {app.state.connection === "connected"
+          {projects.connection() === "connected"
             ? "后端已连接"
-            : app.state.connection === "connecting"
+            : projects.connection() === "connecting"
               ? "正在连接"
               : "后端未连接"}
         </span>
-        <button class="icon-btn" type="button" title="设置" aria-label="设置" onClick={() => app.openSettings()}>
+        <button class="icon-btn" type="button" title="设置" aria-label="设置" onClick={() => chrome.openSettings()}>
           <Icon name="cog" />
         </button>
       </div>

@@ -1,11 +1,9 @@
 import type { JSX } from "solid-js"
 
-const GLYPHS: Record<string, string> = {
+const GLYPHS = {
   plus: "\uf067",
   folder: "\uf07b",
   home: "\uf015",
-  comments: "\uf086",
-  "ellipsis-v": "\uf142",
   "ellipsis-h": "\uf141",
   "chevron-right": "\uf054",
   times: "\uf00d",
@@ -16,12 +14,14 @@ const GLYPHS: Record<string, string> = {
   trash: "\uf014",
   "code-fork": "\uf126",
   warning: "\uf071",
-}
+} as const
 
-export function Icon(props: { name: string; class?: string; style?: JSX.CSSProperties }) {
+export type IconName = keyof typeof GLYPHS
+
+export function Icon(props: { name: IconName; class?: string; style?: JSX.CSSProperties }) {
   return (
     <span class={`fa ${props.class ?? ""}`} style={props.style} aria-hidden="true">
-      {GLYPHS[props.name] ?? ""}
+      {GLYPHS[props.name]}
     </span>
   )
 }

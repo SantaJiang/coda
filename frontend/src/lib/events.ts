@@ -27,19 +27,16 @@ export function unwrapEvent(raw: GlobalEvent): ParsedEvent | null {
   return null
 }
 
-export function eventProps(event: EventEnvelope): Record<string, unknown> {
-  return (event.properties ?? event.data ?? {}) as Record<string, unknown>
-}
-
 export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus?: (connected: boolean) => void) {
-  let aborted = false
+  const abort = new AbortController()
   let timer: number | undefined
 
   const connect = async () => {
-    while (!aborted) {
+    while (!abort.signal.aborted) {
       try {
         const response = await fetch(`${API_BASE}/global/event`, {
           headers: { Accept: "text/event-stream" },
+          signal: abort.signal,
         })
         if (!response.ok || !response.body) {
           throw new Error(`event stream ${response.status}`)
@@ -49,7 +46,7 @@ export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus
         const decoder = new TextDecoder()
         let buffer = ""
 
-        while (!aborted) {
+        while (!abort.signal.aborted) {
           const { value, done } = await reader.read()
           if (done) break
           buffer += decoder.decode(value, { stream: true })
@@ -73,14 +70,16 @@ export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus
             }
           }
         }
-      } catch {
+      } catch (error) {
+        if (abort.signal.aborted) return
+        if (error instanceof DOMException && error.name === "AbortError") return
         onStatus?.(false)
       }
 
-      if (aborted) return
+      if (abort.signal.aborted) return
       onStatus?.(false)
-      await new Promise((resolve) => {
-        timer = window.setTimeout(resolve, 1500)
+      await new Promise<void>((resolve) => {
+        timer = window.setTimeout(() => resolve(), 1500)
       })
     }
   }
@@ -88,7 +87,7 @@ export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus
   void connect()
 
   return () => {
-    aborted = true
+    abort.abort()
     if (timer) window.clearTimeout(timer)
   }
 }

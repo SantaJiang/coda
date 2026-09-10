@@ -1,32 +1,21 @@
-import { For, Show, onCleanup, onMount } from "solid-js"
+import { For, Show } from "solid-js"
+import { useDismissable } from "../lib/dismiss"
 import { formatVariantLabel } from "../lib/models"
-import { useApp } from "../store/app"
+import { useModels } from "../store/app"
 
 export function VariantMenu() {
-  const app = useApp()
+  const app = useModels()
   let root: HTMLDivElement | undefined
   const variants = () => app.currentVariants()
 
-  onMount(() => {
-    const onPointer = (event: PointerEvent) => {
-      if (!app.state.variantMenuOpen) return
-      const target = event.target as Node | null
-      if (root && target && root.contains(target)) return
-      app.closeVariantMenu()
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") app.closeVariantMenu()
-    }
-    document.addEventListener("pointerdown", onPointer)
-    document.addEventListener("keydown", onKey)
-    onCleanup(() => {
-      document.removeEventListener("pointerdown", onPointer)
-      document.removeEventListener("keydown", onKey)
-    })
+  useDismissable({
+    active: () => app.variantMenuOpen(),
+    onClose: () => app.closeVariantMenu(),
+    root: () => root,
   })
 
   const toggle = () => {
-    if (app.state.variantMenuOpen) app.closeVariantMenu()
+    if (app.variantMenuOpen()) app.closeVariantMenu()
     else app.openVariantMenu()
   }
 
@@ -36,17 +25,17 @@ export function VariantMenu() {
         <button
           type="button"
           class="model-chip"
-          classList={{ open: app.state.variantMenuOpen }}
+          classList={{ open: app.variantMenuOpen() }}
           onClick={toggle}
         >
           {app.variantLabel()}
         </button>
-        <Show when={app.state.variantMenuOpen}>
+        <Show when={app.variantMenuOpen()}>
           <div class="model-menu" role="menu">
             <button
               type="button"
               class="model-menu-item"
-              classList={{ active: !app.state.selectedVariant }}
+              classList={{ active: !app.selectedVariant() }}
               role="menuitem"
               onClick={() => app.setVariant(null)}
             >
@@ -57,7 +46,7 @@ export function VariantMenu() {
                 <button
                   type="button"
                   class="model-menu-item"
-                  classList={{ active: app.state.selectedVariant === id }}
+                  classList={{ active: app.selectedVariant() === id }}
                   role="menuitem"
                   onClick={() => app.setVariant(id)}
                 >

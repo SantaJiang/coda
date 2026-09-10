@@ -1,14 +1,10 @@
 import { For, Show, createMemo } from "solid-js"
-import { useApp } from "../store/app"
+import { useRuntime } from "../store/app"
 import { Icon } from "./Icon"
 
 export function QueueDock() {
-  const app = useApp()
-  const items = createMemo(() => {
-    const id = app.state.selectedSessionId
-    if (!id) return []
-    return app.state.queuedBySession[id] ?? []
-  })
+  const runtime = useRuntime()
+  const items = createMemo(() => runtime.queued())
 
   const preview = (text: string, filenames: string[]) => {
     const line = text.replace(/\s+/g, " ").trim()
@@ -37,7 +33,7 @@ export function QueueDock() {
                     class="icon-btn"
                     title="立即发送"
                     aria-label="立即发送"
-                    onClick={() => void app.sendQueuedNow(item.id)}
+                    onClick={() => void runtime.sendQueuedNow(item.id)}
                   >
                     <Icon name="paper-plane" />
                   </button>
@@ -46,7 +42,7 @@ export function QueueDock() {
                     class="icon-btn"
                     title="编辑"
                     aria-label="编辑"
-                    onClick={() => app.editQueued(item.id)}
+                    onClick={() => runtime.editQueued(item.id)}
                   >
                     <Icon name="pencil" />
                   </button>
@@ -55,7 +51,7 @@ export function QueueDock() {
                     class="icon-btn"
                     title="删除"
                     aria-label="删除"
-                    onClick={() => app.removeQueued(item.id)}
+                    onClick={() => runtime.removeQueued(item.id)}
                   >
                     <Icon name="trash" />
                   </button>

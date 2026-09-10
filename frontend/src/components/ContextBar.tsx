@@ -1,32 +1,10 @@
-import { Show, createEffect, createSignal, onCleanup } from "solid-js"
-import { useApp } from "../store/app"
-import * as api from "../lib/api"
+import { Show } from "solid-js"
+import { useProjects } from "../store/app"
 import { isLocalProject, projectContextLabel } from "../lib/persist"
 import { Icon } from "./Icon"
 
 export function ContextBar() {
-  const app = useApp()
-  const [branch, setBranch] = createSignal("")
-
-  createEffect(() => {
-    const project = app.selectedProject()
-    if (!project || isLocalProject(project) || project.missing) {
-      setBranch("")
-      return
-    }
-    let cancelled = false
-    void api
-      .getVcs(project.path)
-      .then((info) => {
-        if (!cancelled) setBranch(info?.branch ?? "")
-      })
-      .catch(() => {
-        if (!cancelled) setBranch("")
-      })
-    onCleanup(() => {
-      cancelled = true
-    })
-  })
+  const app = useProjects()
 
   return (
     <div class="context-bar">
@@ -73,17 +51,17 @@ export function ContextBar() {
               </Show>
             </span>
             <span class="ctx-label truncate">
-              {projectContextLabel(project(), app.state.projects)}
+              {projectContextLabel(project(), app.projects())}
             </span>
           </div>
         )}
       </Show>
-      <div class="ctx-pill ctx-branch" title={branch() ? `分支：${branch()}` : undefined}>
+      <div class="ctx-pill ctx-branch" title={app.vcsBranch() ? `分支：${app.vcsBranch()}` : undefined}>
         <span class="ctx-icon">
           <Icon name="code-fork" />
         </span>
         <span class="ctx-label truncate">
-          {app.selectedProject() && !isLocalProject(app.selectedProject()) ? branch() || "—" : "—"}
+          {app.selectedProject() && !isLocalProject(app.selectedProject()) ? app.vcsBranch() || "—" : "—"}
         </span>
       </div>
     </div>

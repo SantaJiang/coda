@@ -1,6 +1,6 @@
-import { Show, createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { Show, createEffect, onCleanup, onMount } from "solid-js"
 import { isSendHotkey } from "../lib/settings"
-import { useApp } from "../store/app"
+import { useChrome, useModels, useProjects, useRuntime } from "../store/app"
 import { isLocalProject } from "../lib/persist"
 import { AttachmentStrip } from "./AttachmentStrip"
 import { ComposerPlus } from "./ComposerPlus"
@@ -12,34 +12,33 @@ import { Icon } from "./Icon"
 const COMPOSER_MAX_HEIGHT = 220
 
 export function Composer() {
-  const app = useApp()
+  const projects = useProjects()
+  const models = useModels()
+  const runtime = useRuntime()
+  const chrome = useChrome()
   let area: HTMLTextAreaElement | undefined
 
-  const placeholder = createMemo(() => {
-    if (!app.selectedProject()) return "先添加一个项目文件夹"
-    if (app.selectedProject()?.missing) return "先重新定位项目文件夹"
-    if (!app.selectedModel()) return "先配置一个模型"
-    if (app.blocked()) return "请先处理权限或提问"
-    if (app.busy()) return "Agent 正在工作，Esc 可停止…"
-    if (isLocalProject(app.selectedProject())) return "不问具体项目也可以，发给 Agent 一条消息"
+  const placeholder = () => {
+    if (!projects.selectedProject()) return "先添加一个项目文件夹"
+    if (projects.selectedProject()?.missing) return "先重新定位项目文件夹"
+    if (!models.selectedModel()) return "先配置一个模型"
+    if (runtime.blocked()) return "请先处理权限或提问"
+    if (runtime.busy()) return "Agent 正在工作，Esc 可停止…"
+    if (isLocalProject(projects.selectedProject())) return "不问具体项目也可以，发给 Agent 一条消息"
     return "发给 Agent 一条消息"
-  })
+  }
 
-  const hasDraft = createMemo(
-    () => !!app.state.composer.trim() || app.state.attachments.length > 0,
-  )
+  const hasDraft = () => !!runtime.composer().trim() || runtime.attachments().length > 0
 
-  const canSend = createMemo(
-    () =>
-      !!app.selectedProject() &&
-      !app.selectedProject()?.missing &&
-      !app.blocked() &&
-      (hasDraft() || app.busy()),
-  )
+  const canSend = () =>
+    !!projects.selectedProject() &&
+    !projects.selectedProject()?.missing &&
+    !runtime.blocked() &&
+    (hasDraft() || runtime.busy())
 
   const resize = () => {
     if (!area) return
-    if (!app.state.composer) {
+    if (!runtime.composer()) {
       area.style.height = ""
       return
     }
@@ -48,21 +47,13 @@ export function Composer() {
   }
 
   createEffect(() => {
-    app.state.composer
+    runtime.composer()
     queueMicrotask(resize)
   })
 
-  const overlayOpen = () =>
-    app.state.settingsOpen ||
-    app.state.modelSettingsOpen ||
-    app.state.modelMenuOpen ||
-    app.state.plusMenuOpen ||
-    app.state.variantMenuOpen ||
-    app.state.permissionMenuOpen
-
   const stopIfBusy = () => {
-    if (!app.busy() || overlayOpen()) return false
-    void app.abort()
+    if (!runtime.busy() || chrome.overlayOpen()) return false
+    void runtime.abort()
     return true
   }
 
@@ -80,12 +71,12 @@ export function Composer() {
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape" && !event.isComposing) {
-      if (app.busy() && !overlayOpen()) event.preventDefault()
+      if (runtime.busy() && !chrome.overlayOpen()) event.preventDefault()
       return
     }
-    if (isSendHotkey(event, app.state.sendShortcut)) {
+    if (isSendHotkey(event, chrome.sendShortcut())) {
       event.preventDefault()
-      void app.send()
+      void runtime.send()
     }
   }
 
@@ -95,19 +86,19 @@ export function Composer() {
       <textarea
         ref={area}
         rows={1}
-        value={app.state.composer}
-        disabled={!app.selectedProject() || app.blocked() || !!app.selectedProject()?.missing}
+        value={runtime.composer()}
+        disabled={!projects.selectedProject() || runtime.blocked() || !!projects.selectedProject()?.missing}
         placeholder={placeholder()}
-        onInput={(event) => app.setState("composer", event.currentTarget.value)}
+        onInput={(event) => runtime.setComposer(event.currentTarget.value)}
         onKeyDown={onKeyDown}
       />
       <div class="composer-bar">
         <div class="composer-left">
           <ComposerPlus />
-          <Show when={app.state.planMode}>
+          <Show when={chrome.planMode()}>
             <div class="plan-chip">
               <span>Plan</span>
-              <button type="button" class="plan-chip-x" aria-label="退出 Plan" onClick={() => app.setPlanMode(false)}>
+              <button type="button" class="plan-chip-x" aria-label="退出 Plan" onClick={() => chrome.setPlanMode(false)}>
                 <Icon name="times" />
               </button>
             </div>
@@ -119,11 +110,11 @@ export function Composer() {
         <button
           type="button"
           class="send-btn"
-          classList={{ stop: app.busy() && !hasDraft() }}
+          classList={{ stop: runtime.busy() && !hasDraft() }}
           disabled={!canSend()}
-          onClick={() => (app.busy() && !hasDraft() ? void app.abort() : void app.send())}
+          onClick={() => (runtime.busy() && !hasDraft() ? void runtime.abort() : void runtime.send())}
         >
-          {app.busy() && !hasDraft() ? "停止" : "发送"}
+          {runtime.busy() && !hasDraft() ? "停止" : "发送"}
         </button>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { marked } from "marked"
 import { escapeHtml, highlightCode, inlineKind } from "./highlight"
+import { sanitizeHtml } from "./sanitize"
 
 marked.setOptions({
   gfm: true,
@@ -25,5 +26,6 @@ marked.use({ renderer })
 
 export function renderMarkdown(source: string) {
   const html = marked.parse(source, { async: false }) as string
-  return html.replace(/<table>/g, '<div class="md-table-wrap"><table>').replace(/<\/table>/g, "</table></div>")
+  const wrapped = html.replace(/<table>/g, '<div class="md-table-wrap"><table>').replace(/<\/table>/g, "</table></div>")
+  return sanitizeHtml(wrapped)
 }

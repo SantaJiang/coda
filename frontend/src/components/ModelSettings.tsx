@@ -7,11 +7,11 @@ import {
 } from "../lib/models"
 import { CUSTOM_PRESET_ID, PROVIDER_PRESETS, presetByBaseURL, presetById } from "../lib/presets"
 import { listRemoteModels, type RemoteModel } from "../lib/remote-models"
-import { useApp } from "../store/app"
+import { useModels } from "../store/app"
 import { Icon } from "./Icon"
 
 export function ModelSettings() {
-  const app = useApp()
+  const models = useModels()
   const [form, setForm] = createSignal<ModelForm>(emptyModelForm())
   const [presetId, setPresetId] = createSignal<string>(CUSTOM_PRESET_ID)
   const [providerTouched, setProviderTouched] = createSignal(false)
@@ -34,10 +34,10 @@ export function ModelSettings() {
   }
 
   createEffect((wasOpen?: boolean) => {
-    const open = app.state.modelSettingsOpen
+    const open = models.modelSettingsOpen()
     if (open && !wasOpen) {
       resetForm()
-      void app.refreshDiscovered()
+      void models.refreshDiscovered()
     }
     return open
   })
@@ -80,9 +80,9 @@ export function ModelSettings() {
   }
 
   const startEdit = (id: string) => {
-    const model = app.state.configuredModels.find((item) => item.id === id)
+    const model = models.configuredModels().find((item) => item.id === id)
     if (!model) return
-    const siblings = app.state.configuredModels.filter((item) => item.providerID === model.providerID)
+    const siblings = models.configuredModels().filter((item) => item.providerID === model.providerID)
     const matched = presetById(model.providerID) || presetByBaseURL(model.baseURL)
     setPresetId(matched?.id ?? CUSTOM_PRESET_ID)
     setForm({
@@ -146,7 +146,7 @@ export function ModelSettings() {
     setSaving(true)
     setFormError(null)
     try {
-      await app.saveConfiguredProvider(form(), selected)
+      await models.saveConfiguredProvider(form(), selected)
       resetForm()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "保存失败")
@@ -156,22 +156,22 @@ export function ModelSettings() {
   }
 
   const onOverlay = (event: MouseEvent) => {
-    if (event.target === event.currentTarget) app.closeModelSettings()
+    if (event.target === event.currentTarget) models.closeModelSettings()
   }
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") app.closeModelSettings()
+    if (event.key === "Escape") models.closeModelSettings()
   }
 
   const keyPlaceholder = () => presetById(presetId())?.keyPlaceholder ?? "sk-..."
 
   return (
-    <Show when={app.state.modelSettingsOpen}>
+    <Show when={models.modelSettingsOpen()}>
       <div class="dialog-overlay" onMouseDown={onOverlay} onKeyDown={onKeyDown}>
         <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="model-settings-title">
           <header class="dialog-head">
             <h2 id="model-settings-title">配置模型</h2>
-            <button type="button" class="icon-btn" onClick={() => app.closeModelSettings()} aria-label="关闭">
+            <button type="button" class="icon-btn" onClick={() => models.closeModelSettings()} aria-label="关闭">
               <Icon name="times" />
             </button>
           </header>
@@ -181,10 +181,10 @@ export function ModelSettings() {
           <section class="model-list">
             <div class="model-list-title">已添加</div>
             <Show
-              when={app.state.configuredModels.length > 0}
+              when={models.configuredModels().length > 0}
               fallback={<div class="model-list-empty">还没有配置任何模型</div>}
             >
-              <For each={app.state.configuredModels}>
+              <For each={models.configuredModels()}>
                 {(model) => (
                   <div class="model-row">
                     <div class="model-row-main">
@@ -197,7 +197,7 @@ export function ModelSettings() {
                       <button type="button" class="text-btn" onClick={() => startEdit(model.id)}>
                         编辑
                       </button>
-                      <button type="button" class="text-btn danger" onClick={() => void app.deleteConfiguredModel(model.id)}>
+                      <button type="button" class="text-btn danger" onClick={() => void models.deleteConfiguredModel(model.id)}>
                         删除
                       </button>
                     </div>
@@ -209,15 +209,15 @@ export function ModelSettings() {
 
           <section class="model-list discovered">
             <button type="button" class="model-list-toggle" onClick={() => setShowDiscovered((open) => !open)}>
-              已连接（{app.state.discoveredModels.length}）
+              已连接（{models.discoveredModels().length}）
             </button>
             <Show when={showDiscovered()}>
               <Show
-                when={app.state.discoveredModels.length > 0}
+                when={models.discoveredModels().length > 0}
                 fallback={<div class="model-list-empty">当前没有已连接的供应商</div>}
               >
                 <div class="discovered-scroll">
-                  <For each={app.state.discoveredModels}>
+                  <For each={models.discoveredModels()}>
                     {(model) => (
                       <div class="model-row compact">
                         <div class="model-row-main">
@@ -228,12 +228,12 @@ export function ModelSettings() {
                           type="button"
                           class="text-btn"
                           onClick={() =>
-                            app.state.pinnedModelKeys.includes(model.key)
-                              ? app.unpinDiscoveredModel(model.key)
-                              : app.pinDiscoveredModel(model.key)
+                            models.isPinned(model.key)
+                              ? models.unpinDiscoveredModel(model.key)
+                              : models.pinDiscoveredModel(model.key)
                           }
                         >
-                          {app.state.pinnedModelKeys.includes(model.key) ? "移出菜单" : "加入菜单"}
+                          {models.isPinned(model.key) ? "移出菜单" : "加入菜单"}
                         </button>
                       </div>
                     )}
@@ -347,8 +347,8 @@ export function ModelSettings() {
                 </button>
               </div>
             </label>
-            <Show when={formError() || app.state.modelSettingsError}>
-              <div class="dialog-error">{formError() || app.state.modelSettingsError}</div>
+            <Show when={formError() || models.modelSettingsError()}>
+              <div class="dialog-error">{formError() || models.modelSettingsError()}</div>
             </Show>
             <div class="dialog-actions">
               <button type="submit" class="send-btn" disabled={saving()}>

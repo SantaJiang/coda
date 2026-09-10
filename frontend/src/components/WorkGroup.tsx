@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { activityDiff, activityStatus, activitySummary, stepBody, stepLabel } from "../lib/activity"
 import type { Part, ReasoningPart } from "../lib/types"
-import { useApp } from "../store/app"
+import { useRuntime } from "../store/app"
 import { MarkdownView } from "./MarkdownView"
 import { Icon } from "./Icon"
 
@@ -38,13 +38,9 @@ export function WorkGroup(props: {
   const [localOpen, setLocalOpen] = createSignal(false)
   const [line, setLine] = createSignal({ current: "", previous: "", flipping: false, tick: 0 })
   const [clock, setClock] = createSignal(0)
-  const app = useApp()
+  const runtime = useRuntime()
   const parts = createMemo(() => (props.getParts ? props.getParts() : (props.parts ?? [])))
-  const currentTodo = createMemo(() => {
-    const id = app.state.selectedSessionId
-    if (!id) return ""
-    return (app.state.todos[id] ?? []).find((item) => item.status === "in_progress")?.content ?? ""
-  })
+  const currentTodo = createMemo(() => runtime.currentTodo())
   const summary = createMemo(() => activitySummary(parts()))
   const diff = createMemo(() => activityDiff(parts()))
   const thoughtOnly = createMemo(() => {

@@ -1,14 +1,11 @@
 import { For, Show, createMemo } from "solid-js"
 import { Icon } from "./Icon"
-import { useApp } from "../store/app"
+import { useChrome, useRuntime } from "../store/app"
 
 export function TodoDock() {
-  const app = useApp()
-  const todos = createMemo(() => {
-    const id = app.state.selectedSessionId
-    if (!id) return []
-    return app.state.todos[id] ?? []
-  })
+  const runtime = useRuntime()
+  const chrome = useChrome()
+  const todos = createMemo(() => runtime.todos())
   const done = () => todos().filter((item) => item.status === "completed").length
 
   return (
@@ -25,7 +22,7 @@ export function TodoDock() {
               class="plan-close"
               aria-label="关闭计划栏"
               title="关闭"
-              onClick={() => app.closePlanPanel()}
+              onClick={() => chrome.closePlanPanel()}
             >
               <Icon name="times" />
             </button>

@@ -25,6 +25,7 @@ import swift from "highlight.js/lib/languages/swift"
 import typescript from "highlight.js/lib/languages/typescript"
 import xml from "highlight.js/lib/languages/xml"
 import yaml from "highlight.js/lib/languages/yaml"
+import { sanitizeHtml } from "./sanitize"
 
 hljs.registerLanguage("bash", bash)
 hljs.registerLanguage("sh", bash)
@@ -160,7 +161,7 @@ function diffKind(line: string) {
 
 export function highlightDiff(patch: string, language?: string) {
   const lines = patch.replace(/\n$/, "").split("\n")
-  return lines
+  const html = lines
     .map((line) => {
       const kind = diffKind(line)
       const gutter =
@@ -176,4 +177,5 @@ export function highlightDiff(patch: string, language?: string) {
       return `<div class="diff-line ${kind}"><span class="diff-gutter">${gutter}</span><span class="diff-code">${code}</span></div>`
     })
     .join("")
+  return sanitizeHtml(html)
 }
