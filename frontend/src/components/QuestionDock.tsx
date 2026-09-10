@@ -1,7 +1,17 @@
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { AUTO_QUESTION_SECONDS, isAutoMode } from "../lib/permissions"
+import type { QuestionInfo } from "../lib/types"
 import { useApp } from "../store/app"
 
 const CUSTOM = "__coda_custom__"
+
+const RECOMMENDED_PATTERN = /\(recommended\)\s*$/i
+
+function recommendedOption(question?: QuestionInfo) {
+  const options = question?.options ?? []
+  if (options.length === 0) return undefined
+  return options.find((option) => RECOMMENDED_PATTERN.test(option.label) || option.label.includes("推荐")) ?? options[0]
+}
 
 export function QuestionDock() {
   const app = useApp()
@@ -10,14 +20,17 @@ export function QuestionDock() {
   const [picked, setPicked] = createSignal<string[][]>([])
   const [customTexts, setCustomTexts] = createSignal<string[]>([])
   const [step, setStep] = createSignal(0)
+  const [countdown, setCountdown] = createSignal(AUTO_QUESTION_SECONDS)
 
   const request = () => pending()[0]
+  const requestId = createMemo(() => request()?.id)
   const questions = createMemo(() => request()?.questions ?? [])
   const total = () => questions().length
   const index = () => Math.min(step(), Math.max(0, total() - 1))
   const current = () => questions()[index()]
   const many = () => total() > 1
   const last = () => index() >= total() - 1
+  const auto = createMemo(() => isAutoMode(app.state.permissionMode))
 
   createEffect((prev?: string) => {
     const id = request()?.id
@@ -31,6 +44,18 @@ export function QuestionDock() {
 
   const selectedAt = (questionIndex: number, label: string) => (picked()[questionIndex] ?? []).includes(label)
 
+  const writePick = (questionIndex: number, label: string, multiple?: boolean) => {
+    const next = picked().slice()
+    const row = new Set(next[questionIndex] ?? [])
+    if (multiple) row.add(label)
+    else {
+      row.clear()
+      row.add(label)
+    }
+    next[questionIndex] = [...row]
+    setPicked(next)
+  }
+
   const toggle = (questionIndex: number, label: string, multiple?: boolean) => {
     const next = picked().slice()
     const row = new Set(next[questionIndex] ?? [])
@@ -43,6 +68,7 @@ export function QuestionDock() {
     }
     next[questionIndex] = [...row]
     setPicked(next)
+    bump()
   }
 
   const ensureCustom = (questionIndex: number, multiple?: boolean) => {
@@ -54,6 +80,7 @@ export function QuestionDock() {
     const next = customTexts().slice()
     next[questionIndex] = value
     setCustomTexts(next)
+    bump()
   }
 
   const answersFor = (questionIndex: number) => {
@@ -84,10 +111,67 @@ export function QuestionDock() {
     setStep(0)
   }
 
+  let timer: ReturnType<typeof setInterval> | undefined
+
+  const clearTimer = () => {
+    if (timer !== undefined) {
+      clearInterval(timer)
+      timer = undefined
+    }
+  }
+
+  const expire = () => {
+    const item = request()
+    if (!item) return
+    const questionIndex = index()
+    if (!answered(questionIndex)) {
+      const recommended = recommendedOption(current())
+      if (recommended) writePick(questionIndex, recommended.label, current()?.multiple)
+    }
+    if (last()) submit(item.id)
+    else setStep((value) => Math.min(total() - 1, value + 1))
+  }
+
+  const startCountdown = () => {
+    clearTimer()
+    setCountdown(AUTO_QUESTION_SECONDS)
+    timer = setInterval(() => {
+      const value = countdown()
+      if (value > 1) {
+        setCountdown(value - 1)
+        return
+      }
+      clearTimer()
+      setCountdown(0)
+      expire()
+    }, 1000)
+  }
+
+  const bump = () => {
+    if (auto() && requestId()) startCountdown()
+  }
+
+  createEffect(() => {
+    if (!auto() || !requestId()) {
+      clearTimer()
+      return
+    }
+    index()
+    startCountdown()
+  })
+
+  onCleanup(clearTimer)
+
   return (
     <Show when={request()}>
       {(item) => (
         <div class="dock dock-question">
+          <Show when={auto()}>
+            <div class="question-auto">
+              <span class="question-auto-badge">{countdown()}s</span>
+              <span class="question-auto-text">无操作将自动选择推荐项</span>
+            </div>
+          </Show>
           <Show when={many()}>
             <div class="dock-title">问题 {index() + 1} / {total()}</div>
           </Show>

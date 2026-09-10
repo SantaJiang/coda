@@ -36,7 +36,7 @@ export function PermissionMenu() {
         class="model-chip"
         classList={{
           open: app.state.permissionMenuOpen,
-          warn: app.state.permissionMode === "allow",
+          warn: app.state.permissionMode === "allow" || app.state.permissionMode === "auto",
         }}
         aria-label={`权限：${app.permissionLabel()}`}
         aria-haspopup="menu"

@@ -10,7 +10,7 @@ export type PermissionRule = {
   action: PermissionAction
 }
 
-export type PermissionMode = "default" | "ask" | "readonly" | "allow"
+export type PermissionMode = "default" | "ask" | "readonly" | "allow" | "auto"
 
 export type PermissionPreset = {
   id: PermissionMode
@@ -39,6 +39,11 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
     label: "全允许",
     description: "所有操作自动放行，包括项目外路径",
   },
+  {
+    id: "auto",
+    label: "全自动",
+    description: "所有操作自动放行，AI 提问 5 秒无回应自动选推荐项",
+  },
 ]
 
 const MODES = new Set<PermissionMode>(PERMISSION_PRESETS.map((item) => item.id))
@@ -49,7 +54,7 @@ function rule(permission: string, action: PermissionAction, pattern = "*"): Perm
 
 export function permissionRuleset(mode: PermissionMode): PermissionRule[] {
   if (mode === "ask") return [rule("*", "ask")]
-  if (mode === "allow") {
+  if (mode === "allow" || mode === "auto") {
     return [rule("*", "allow"), rule("doom_loop", "allow"), rule("external_directory", "allow")]
   }
   if (mode === "readonly") {
@@ -103,11 +108,17 @@ export function permissionPreset(mode: PermissionMode) {
 
 const READONLY_ALLOW = new Set(["read", "grep", "glob", "list", "websearch", "todowrite", "todo"])
 
+export const AUTO_QUESTION_SECONDS = 5
+
+export function isAutoMode(mode: PermissionMode) {
+  return mode === "auto"
+}
+
 export function autoReplyForMode(
   mode: PermissionMode,
   permission: string,
 ): "once" | "always" | "reject" | null {
-  if (mode === "allow") return "always"
+  if (mode === "allow" || mode === "auto") return "always"
   if (mode === "readonly") return READONLY_ALLOW.has(permission) ? "always" : "reject"
   return null
 }

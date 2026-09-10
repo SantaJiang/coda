@@ -44,7 +44,7 @@ export function SessionPage() {
               <ContextBar />
             </div>
           </div>
-          <Show when={hasPlan()}>
+          <Show when={hasPlan() && !app.state.planPanelDismissed}>
             <aside class="session-aside">
               <TodoDock />
             </aside>

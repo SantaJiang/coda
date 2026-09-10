@@ -1,4 +1,5 @@
 import { For, Show, createMemo } from "solid-js"
+import { Icon } from "./Icon"
 import { useApp } from "../store/app"
 
 export function TodoDock() {
@@ -15,8 +16,19 @@ export function TodoDock() {
       <div class="plan-panel">
         <header class="plan-head">
           <div class="plan-title">计划</div>
-          <div class="plan-count">
-            {done()}/{todos().length}
+          <div class="plan-head-right">
+            <div class="plan-count">
+              {done()}/{todos().length}
+            </div>
+            <button
+              type="button"
+              class="plan-close"
+              aria-label="关闭计划栏"
+              title="关闭"
+              onClick={() => app.closePlanPanel()}
+            >
+              <Icon name="times" />
+            </button>
           </div>
         </header>
         <ol class="plan-list">

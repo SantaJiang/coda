@@ -127,6 +127,7 @@ export type AppState = {
   variantMenuOpen: boolean
   permissionMenuOpen: boolean
   permissionMode: PermissionMode
+  planPanelDismissed: boolean
   settingsOpen: boolean
   sendShortcut: SendShortcut
   selectedVariant: string | null
@@ -168,6 +169,7 @@ type AppContextValue = {
   openPermissionMenu: () => void
   closePermissionMenu: () => void
   setPermissionMode: (mode: PermissionMode) => Promise<void>
+  closePlanPanel: () => void
   openSettings: () => void
   closeSettings: () => void
   setSendShortcut: (shortcut: SendShortcut) => void
@@ -243,6 +245,7 @@ const initial: AppState = {
   variantMenuOpen: false,
   permissionMenuOpen: false,
   permissionMode: loadPermissionMode(),
+  planPanelDismissed: false,
   settingsOpen: false,
   sendShortcut: loadSendShortcut(),
   selectedVariant: null,
@@ -472,6 +475,8 @@ export function AppProvider(props: ParentProps) {
       variantMenuOpen: false,
     })
   }
+
+  const closePlanPanel = () => setState("planPanelDismissed", true)
 
   const addFiles = async () => {
     setState("plusMenuOpen", false)
@@ -1452,6 +1457,12 @@ export function AppProvider(props: ParentProps) {
     if (!currentVariants().includes(selected)) setState("selectedVariant", null)
   })
 
+  createEffect((prev?: string | null) => {
+    const id = state.selectedSessionId
+    if (prev !== undefined && id !== prev) setState("planPanelDismissed", false)
+    return id
+  })
+
   const value: AppContextValue = {
     state,
     setState,
@@ -1485,6 +1496,7 @@ export function AppProvider(props: ParentProps) {
     openPermissionMenu,
     closePermissionMenu,
     setPermissionMode,
+    closePlanPanel,
     openSettings,
     closeSettings,
     setSendShortcut,
