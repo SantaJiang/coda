@@ -1,9 +1,12 @@
 import { For, Index, Show, createEffect, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { isLocalProject, projectDisplay } from "../lib/persist"
+import { formatSessionTitle } from "../lib/session-label"
+import { isMacPlatform } from "../lib/settings"
 import { type SessionDot } from "../lib/session-status"
 import { useChrome, useProjects, useRuntime } from "../store/app"
 import type { Project, Session } from "../lib/types"
 import { Icon } from "./Icon"
+import { ChromeDrag } from "./WindowChrome"
 
 const COLLAPSE_MS = 200
 const COLLAPSE_EASE = "cubic-bezier(0.16, 1, 0.3, 1)"
@@ -65,8 +68,7 @@ function TreeCollapse(props: { open: boolean; children: JSX.Element }) {
 }
 
 function sessionLabel(session: Session) {
-  const title = session.title?.trim() || "未命名会话"
-  return title.replace(/^New session.*$/i, "新会话")
+  return formatSessionTitle(session.title)
 }
 
 function sessionDotTitle(kind: SessionDot) {
@@ -160,6 +162,9 @@ export function Sidebar() {
 
   return (
     <aside class="sidebar">
+      <ChromeDrag class="sidebar-chrome">
+        {isMacPlatform() ? <div class="sidebar-lights" /> : null}
+      </ChromeDrag>
       <button
         class="new-session"
         type="button"

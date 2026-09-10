@@ -21,6 +21,7 @@
 :root {
   color-scheme: dark;
   --sidebar: 248px;
+  --chrome-h: 36px;
   --radius: 10px;
   --font-chat: 14px;
   --line-chat: 1.6;
@@ -165,6 +166,21 @@ button {
   overflow: hidden;
 }
 
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+button,
+input,
+textarea,
+select,
+a,
+.win-controls {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -173,6 +189,23 @@ button {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.sidebar-chrome {
+  flex: 0 0 var(--chrome-h);
+  height: var(--chrome-h);
+  display: flex;
+  align-items: stretch;
+  user-select: none;
+  cursor: default;
+}
+
+.sidebar-lights {
+  width: 78px;
+  height: 100%;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .new-session {
@@ -653,6 +686,58 @@ button.ctx-pill:hover {
   background: var(--bg);
 }
 
+.session-chrome {
+  flex: 0 0 var(--chrome-h);
+  height: var(--chrome-h);
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  user-select: none;
+  cursor: default;
+}
+
+.session-chrome-title {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: var(--chrome-h);
+}
+
+.win-controls {
+  display: flex;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+
+.win-btn {
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.win-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.win-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.win-btn.win-close:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
 .session-body {
   flex: 1 1 0;
   min-width: 0;
@@ -666,6 +751,7 @@ button.ctx-pill:hover {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .session-aside {
@@ -673,10 +759,11 @@ button.ctx-pill:hover {
   width: 280px;
   min-width: 220px;
   min-height: 0;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-left: 1px solid var(--border);
   background: var(--bg-sidebar);
-  padding: 16px 14px 24px;
 }
 
 @media (max-width: 1080px) {
@@ -684,7 +771,6 @@ button.ctx-pill:hover {
     flex-basis: 220px;
     width: 220px;
     min-width: 200px;
-    padding: 12px 10px 20px;
   }
 }
 
@@ -2257,21 +2343,26 @@ button.ctx-pill:hover {
 }
 
 .plan-panel {
+  flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .plan-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.plan-head-right {
+  flex: 0 0 var(--chrome-h);
+  height: var(--chrome-h);
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 0 0 0 14px;
+  user-select: none;
+  cursor: default;
+}
+
+:root[data-chrome="overlay"] .plan-head {
+  padding-right: 10px;
 }
 
 .plan-close {
@@ -2295,19 +2386,25 @@ button.ctx-pill:hover {
 }
 
 .plan-title {
-  font-size: 13px;
+  flex-shrink: 0;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .plan-count {
+  flex: 1 1 0;
+  min-width: 0;
   color: var(--text-faint);
   font-size: 12px;
 }
 
 .plan-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 8px 10px 24px;
   display: flex;
   flex-direction: column;
   gap: 2px;
