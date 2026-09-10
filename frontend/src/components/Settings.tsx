@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js"
 import { modifierLabel, type SendShortcut } from "../lib/settings"
 import { useChrome } from "../store/app"
+import { useTheme } from "../store/theme"
 import { Icon } from "./Icon"
 
 const CHOICES: Array<{ id: SendShortcut; name: () => string; hint: () => string }> = [
@@ -18,6 +19,7 @@ const CHOICES: Array<{ id: SendShortcut; name: () => string; hint: () => string 
 
 export function Settings() {
   const chrome = useChrome()
+  const theme = useTheme()
 
   const onOverlay = (event: MouseEvent) => {
     if (event.target === event.currentTarget) chrome.closeSettings()
@@ -37,6 +39,23 @@ export function Settings() {
               <Icon name="times" />
             </button>
           </header>
+
+          <section class="settings-group">
+            <div class="settings-label">外观</div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={theme.theme() === "dark"}
+              class="settings-toggle"
+              onClick={() => theme.setTheme(theme.theme() === "dark" ? "light" : "dark")}
+            >
+              <span class="settings-toggle-text">
+                <span class="settings-choice-name">深色模式</span>
+                <span class="settings-choice-desc">关闭后切换为浅色主题</span>
+              </span>
+              <span class="settings-switch" aria-hidden="true" />
+            </button>
+          </section>
 
           <section class="settings-group">
             <div class="settings-label">发送快捷键</div>

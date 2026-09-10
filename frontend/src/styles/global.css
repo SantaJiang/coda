@@ -20,6 +20,12 @@
 
 :root {
   color-scheme: dark;
+  --sidebar: 248px;
+  --radius: 10px;
+  --font-chat: 14px;
+  --line-chat: 1.6;
+
+  /* Dark palette (default). Values mirror :root[data-theme="light"]. */
   --accent: #d4a574;
   --accent-2: #c7925b;
   --danger: #e06c75;
@@ -28,39 +34,42 @@
   --dot-wait: #e8c547;
   --dot-error: #e06c75;
   --send-fg: #1a130c;
-  --sidebar: 248px;
-  --radius: 10px;
-  --font-chat: 14px;
-  --line-chat: 1.6;
-  --bg: #141414;
-  --bg-sidebar: #101010;
-  --bg-elevated: #1c1c1c;
-  --bg-hover: #222222;
-  --bg-active: #2a2a2a;
-  --border: #262626;
-  --border-strong: #333333;
-  --focus-border: #444444;
-  --text: #ececec;
-  --text-muted: #9a9a9a;
-  --text-faint: #6b6b6b;
-  --user: #26231f;
-  --shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-  --bg-code: #0d0d0d;
-  --text-code: #c8c8c8;
-  --bg-inline-code: #2a2a2a;
-  --bg-table-head: #1c1c1c;
-  --border-table: #3a3a3a;
-  --bg-chip: #3a3a3a;
-  --bg-chip-hover: #4a4a4a;
-  --bg-overlay: rgba(0, 0, 0, 0.55);
+  --bg: #1e1e20;
+  --bg-sidebar: #19191b;
+  --bg-elevated: #262629;
+  --bg-hover: #2e2e32;
+  --bg-active: #36363b;
+  --border: #333338;
+  --border-strong: #414147;
+  --focus-border: #55555c;
+  --text: #ededf0;
+  --text-muted: #a5a5ad;
+  --text-faint: #7a7a83;
+  --user: #2f2b26;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  --bg-code: #18181a;
+  --text-code: #ccccd2;
+  --bg-inline-code: #303036;
+  --bg-table-head: #262629;
+  --border-table: #424249;
+  --bg-chip: #3f3f46;
+  --bg-chip-hover: #4d4d55;
+  --bg-overlay: rgba(0, 0, 0, 0.5);
   --error-fg: #f3b4b8;
-  --scrollbar: #333333;
+  --scrollbar: #3f3f46;
+  --diff-add: #7dcea0;
+  --diff-del: #e08b8b;
+  --path-fg: #82aaff;
+  --path-bg: rgba(130, 170, 255, 0.1);
+  --path-border: rgba(130, 170, 255, 0.28);
   --hljs-keyword: #c792ea;
   --hljs-string: #c3e88d;
   --hljs-number: #f78c6c;
   --hljs-comment: #637777;
   --hljs-function: #82aaff;
   --hljs-variable: #eeffff;
+  --hljs-name: #f07178;
+  --hljs-meta: #89ddff;
   font-family:
     "Inter",
     "SF Pro Text",
@@ -69,6 +78,54 @@
     "Segoe UI",
     sans-serif;
   font-size: var(--font-chat);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --accent: #404040;
+  --accent-2: #262626;
+  --danger: #dc2626;
+  --ok: #15803d;
+  --dot-busy: #525252;
+  --dot-wait: #b45309;
+  --dot-error: #dc2626;
+  --send-fg: #ffffff;
+  --bg: #ffffff;
+  --bg-sidebar: #fafafa;
+  --bg-elevated: #ffffff;
+  --bg-hover: #f5f5f5;
+  --bg-active: #e5e5e5;
+  --border: #e5e5e5;
+  --border-strong: #d4d4d4;
+  --focus-border: #a3a3a3;
+  --text: #171717;
+  --text-muted: #525252;
+  --text-faint: #a3a3a3;
+  --user: #f5f5f5;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
+  --bg-code: #f5f5f5;
+  --text-code: #262626;
+  --bg-inline-code: #efefef;
+  --bg-table-head: #f5f5f5;
+  --border-table: #d4d4d4;
+  --bg-chip: #e5e5e5;
+  --bg-chip-hover: #d4d4d4;
+  --bg-overlay: rgba(0, 0, 0, 0.35);
+  --error-fg: #b91c1c;
+  --scrollbar: #d4d4d4;
+  --diff-add: #15803d;
+  --diff-del: #b91c1c;
+  --path-fg: #404040;
+  --path-bg: rgba(0, 0, 0, 0.045);
+  --path-border: rgba(0, 0, 0, 0.12);
+  --hljs-keyword: #cf222e;
+  --hljs-string: #0a3069;
+  --hljs-number: #0550ae;
+  --hljs-comment: #6e7781;
+  --hljs-function: #8250df;
+  --hljs-variable: #24292f;
+  --hljs-name: #953800;
+  --hljs-meta: #0550ae;
 }
 
 * {
@@ -988,11 +1045,11 @@ button.ctx-pill:hover {
 }
 
 .work-diff-add {
-  color: #7dcea0;
+  color: var(--diff-add);
 }
 
 .work-diff-del {
-  color: #e08b8b;
+  color: var(--diff-del);
 }
 
 .work-steps {
@@ -1424,8 +1481,8 @@ button.ctx-pill:hover {
   height: 22px;
   padding: 0 4px 0 8px;
   border-radius: 6px;
-  background: #355a7a;
-  color: #e4f1fb;
+  background: var(--bg-chip);
+  color: var(--text);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -1439,7 +1496,7 @@ button.ctx-pill:hover {
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.16);
+  background: color-mix(in srgb, var(--text) 14%, transparent);
   color: inherit;
   font-size: 12px;
   line-height: 1;
@@ -1450,7 +1507,7 @@ button.ctx-pill:hover {
 }
 
 .plan-chip-x:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: color-mix(in srgb, var(--text) 24%, transparent);
 }
 
 .attachment-strip {
@@ -1676,6 +1733,10 @@ button.ctx-pill:hover {
   gap: 8px;
 }
 
+.settings-group + .settings-group {
+  margin-top: 18px;
+}
+
 .settings-label {
   color: var(--text-muted);
   font-size: 12px;
@@ -1718,6 +1779,62 @@ button.ctx-pill:hover {
 .settings-choice-desc {
   color: var(--text-faint);
   font-size: 11px;
+}
+
+.settings-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.settings-toggle:hover {
+  background: var(--bg-hover);
+}
+
+.settings-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--bg-active);
+  transition: background 140ms ease;
+}
+
+.settings-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 140ms ease;
+}
+
+.settings-toggle[aria-checked="true"] .settings-switch {
+  background: var(--accent);
+}
+
+.settings-toggle[aria-checked="true"] .settings-switch::after {
+  transform: translateX(18px);
 }
 
 .model-list {
@@ -2434,9 +2551,9 @@ button.ctx-pill:hover {
 }
 
 .md-inline[data-kind="path"] {
-  color: #82aaff;
-  background: rgba(130, 170, 255, 0.1);
-  border: 1px solid rgba(130, 170, 255, 0.28);
+  color: var(--path-fg);
+  background: var(--path-bg);
+  border: 1px solid var(--path-border);
 }
 
 .markdown ul,
@@ -2516,12 +2633,12 @@ button.ctx-pill:hover {
 .hljs-selector-id,
 .hljs-selector-class,
 .hljs-tag {
-  color: #f07178;
+  color: var(--hljs-name);
 }
 .hljs-meta,
 .hljs-doctag,
 .hljs-regexp {
-  color: #89ddff;
+  color: var(--hljs-meta);
 }
 
 ::-webkit-scrollbar {

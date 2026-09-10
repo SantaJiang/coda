@@ -9,4 +9,5 @@ export const STORAGE_KEYS = {
   projectSessions: "coda.projectSessions",
   permissionMode: "coda.permissionMode",
   sendShortcut: "coda.sendShortcut",
+  theme: "coda.theme",
 } as const
