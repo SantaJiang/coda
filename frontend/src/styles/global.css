@@ -897,6 +897,10 @@ button.ctx-pill:hover {
   color: var(--text);
 }
 
+.msg-meta-copy.rollback:hover {
+  color: var(--danger);
+}
+
 .user-bubble .markdown,
 .assistant-body .markdown {
   font-size: var(--font-chat);

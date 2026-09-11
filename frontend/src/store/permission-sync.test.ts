@@ -21,6 +21,7 @@ function stubClient(overrides: Partial<AgentClient> = {}): AgentClient {
     updateSessionPermission: vi.fn(),
     promptAsync: vi.fn(),
     abortSession: vi.fn(),
+    revertSession: vi.fn(),
     replyPermission: vi.fn(),
     replyQuestion: vi.fn(),
     rejectQuestion: vi.fn(),

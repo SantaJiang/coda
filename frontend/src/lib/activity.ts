@@ -349,8 +349,8 @@ export function activityStatus(parts: Part[], now = Date.now(), currentTodo = ""
     if (part.type === "reasoning") lastReasoning = index
     if (part.type === "tool") lastTool = index
   })
-  const idle =
-    lastTool >= 0 ? "Planning next moves" : lastReasoning > lastTool ? "Thought" : "Thinking"
+  if (lastTool >= 0) return "Planning next moves"
+  const idle = lastReasoning > lastTool ? "Thought" : "Thinking"
   const topic = currentTodo.trim()
   return topic ? `${idle} · ${truncate(topic, 40)}` : idle
 }

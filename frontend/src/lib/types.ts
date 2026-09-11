@@ -7,6 +7,11 @@ export type Project = {
   missing?: boolean
 }
 
+export type SessionRevertState = {
+  messageID: string
+  partID?: string
+}
+
 export type Session = {
   id: string
   slug?: string
@@ -25,6 +30,7 @@ export type Session = {
     updated: number
     archived?: number
   }
+  revert?: SessionRevertState | null
 }
 
 export type SessionStatus =

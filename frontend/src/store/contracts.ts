@@ -73,6 +73,7 @@ export type RuntimeApi = {
   setComposer: (value: string) => void
   send: (text?: string) => Promise<void>
   abort: () => Promise<void>
+  revertToMessage: (messageID: string) => Promise<void>
   sendQueuedNow: (id: string) => Promise<void>
   editQueued: (id: string) => void
   removeQueued: (id: string) => void

@@ -14,6 +14,7 @@ import {
   pickBrowserFiles,
   pickFiles,
 } from "../lib/persist"
+import { cutAtRevert, revertDraftFromParts } from "../lib/revert"
 import { isSessionBusy, sessionDotKind } from "../lib/session-status"
 import { uid } from "../lib/uid"
 import { upsertById } from "../lib/upsert"
@@ -27,7 +28,7 @@ import {
   selectedSessionOf,
   type StoreHandle,
 } from "./handle"
-import { sendingKey } from "./lookup"
+import { directoryFor, sendingKey } from "./lookup"
 import { selectedModelOf } from "./model-slice"
 import { applySessionPermission } from "./permission-sync"
 import { shouldFlushQueue, takeDeferredSend, withSessionLock } from "./queue"
@@ -282,6 +283,25 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
         reportError(handle, error, "停止失败")
       }
     },
+    revertToMessage: async (messageID) => {
+      const session = selectedSession()
+      const project = selectedProject()
+      if (!session || !project || busy()) return
+      const usable = ensureProjectDirectory(project)
+      if (!usable) return
+      try {
+        const updated = await client.revertSession(usable.path, session.id, messageID)
+        const directory = directoryFor(state, session, usable)
+        setState("sessionsByProject", directory, (list = []) => upsertById(list, { ...updated, directory }))
+        const draft = revertDraftFromParts(state.parts[messageID] ?? [])
+        setState("drafts", draftKey(session.id, state.selectedProjectId), {
+          composer: draft.text,
+          attachments: draft.attachments,
+        })
+      } catch (error) {
+        reportError(handle, error, "回滚失败")
+      }
+    },
     sendQueuedNow: async (id) => {
       const session = selectedSession()
       const project = selectedProject()
@@ -434,7 +454,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     messages: () => {
       const id = state.selectedSessionId
       if (!id) return []
-      return state.messages[id] ?? []
+      return cutAtRevert(state.messages[id] ?? [], selectedSession()?.revert)
     },
     partsByMessage: () => state.parts,
     todos: () => {

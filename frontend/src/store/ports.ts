@@ -17,6 +17,7 @@ export type AgentClient = Pick<
   | "updateSessionPermission"
   | "promptAsync"
   | "abortSession"
+  | "revertSession"
   | "replyPermission"
   | "replyQuestion"
   | "rejectQuestion"

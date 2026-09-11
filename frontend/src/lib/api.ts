@@ -217,6 +217,13 @@ export async function abortSession(directory: string, sessionID: string) {
   return request<boolean>("POST", `/session/${sessionID}/abort`, { directory })
 }
 
+export async function revertSession(directory: string, sessionID: string, messageID: string) {
+  return request<Session>("POST", `/session/${sessionID}/revert`, {
+    directory,
+    body: { messageID },
+  })
+}
+
 export async function listTodos(directory: string, sessionID: string) {
   return request<Todo[]>("GET", `/session/${sessionID}/todo`, { directory })
 }

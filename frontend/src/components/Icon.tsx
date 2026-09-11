@@ -15,6 +15,7 @@ const GLYPHS = {
   trash: "\uf014",
   "code-fork": "\uf126",
   warning: "\uf071",
+  undo: "\uf0e2",
 } as const
 
 export type IconName = keyof typeof GLYPHS

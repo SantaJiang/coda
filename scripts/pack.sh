@@ -58,7 +58,7 @@ echo "==> 安装依赖"
 bun install --cwd "$FRONTEND"
 
 echo "==> Tauri release 构建（前端 + 原生 + 安装包）"
-bun run --cwd "$FRONTEND" tauri build -- --bundles "$BUNDLES"
+bun run --cwd "$FRONTEND" tauri build --bundles "$BUNDLES"
 
 echo
 echo "==> 打包完成，安装包在："

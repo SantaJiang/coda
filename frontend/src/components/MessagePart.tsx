@@ -18,7 +18,7 @@ import type {
   TextPart,
   UserMessage,
 } from "../lib/types"
-import { useModels, useProjects } from "../store/app"
+import { useModels, useProjects, useRuntime } from "../store/app"
 import { MarkdownView } from "./MarkdownView"
 import { WorkGroup } from "./WorkGroup"
 import { ChangedFiles } from "./ChangedFiles"
@@ -171,7 +171,13 @@ function formatSentTime(value?: number) {
   return `${date.getFullYear()}/${day} ${hh}`
 }
 
-function MessageMeta(props: { agent?: string; modelName: string; time?: number; copyText: string }) {
+function MessageMeta(props: {
+  agent?: string
+  modelName: string
+  time?: number
+  copyText: string
+  onRollback?: () => void
+}) {
   const copy = async (event: MouseEvent) => {
     event.stopPropagation()
     const text = props.copyText.trim()
@@ -192,6 +198,22 @@ function MessageMeta(props: { agent?: string; modelName: string; time?: number; 
       <button type="button" class="msg-meta-copy" aria-label="复制" title="复制" onClick={(event) => void copy(event)}>
         <Icon name="copy" />
       </button>
+      <Show when={props.onRollback}>
+        {(rollback) => (
+          <button
+            type="button"
+            class="msg-meta-copy rollback"
+            aria-label="回滚"
+            title="回滚到这条提问之前"
+            onClick={(event) => {
+              event.stopPropagation()
+              rollback()()
+            }}
+          >
+            <Icon name="undo" />
+          </button>
+        )}
+      </Show>
     </div>
   )
 }
@@ -223,7 +245,13 @@ function MessagePartView(props: { part: Part }) {
 function UserBubble(props: { message: Message; parts: Part[] }) {
   const parts = createMemo(() => (props.parts ?? []).filter(isVisiblePart))
   const modelNameOf = useModelName()
+  const runtime = useRuntime()
+  const [confirmOpen, setConfirmOpen] = createSignal(false)
   const user = () => props.message as UserMessage
+  const runRollback = () => {
+    setConfirmOpen(false)
+    void runtime.revertToMessage(props.message.id)
+  }
   return (
     <article class="turn" data-role="user">
       <div class="turn-stack">
@@ -235,8 +263,38 @@ function UserBubble(props: { message: Message; parts: Part[] }) {
           modelName={modelNameOf(user().model?.providerID, user().model?.modelID)}
           time={user().time.created}
           copyText={partsPlainText(parts())}
+          onRollback={runtime.busy() ? undefined : () => setConfirmOpen(true)}
         />
       </div>
+      <Show when={confirmOpen()}>
+        <div
+          class="dialog-overlay"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setConfirmOpen(false)
+          }}
+        >
+          <div class="dialog confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="rollback-dialog-title">
+            <header class="dialog-head">
+              <h2 id="rollback-dialog-title">回滚到这条提问之前？</h2>
+              <button type="button" class="icon-btn" aria-label="关闭" onClick={() => setConfirmOpen(false)}>
+                <Icon name="times" />
+              </button>
+            </header>
+            <p class="dialog-hint">
+              这条提问之后的所有改动都会被丢弃（discard all changes），项目将恢复到这条提问之前的状态；
+              这条提问的内容会放回输入框，便于修改后重新发送。
+            </p>
+            <div class="dialog-actions">
+              <button type="button" class="ghost-btn" autofocus onClick={() => setConfirmOpen(false)}>
+                取消
+              </button>
+              <button type="button" class="send-btn stop" onClick={runRollback}>
+                回滚
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
     </article>
   )
 }
