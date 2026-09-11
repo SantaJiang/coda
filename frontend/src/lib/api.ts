@@ -116,7 +116,6 @@ export async function listSessions(directory: string, extra?: Record<string, str
 
 export async function createSession(
   directory: string,
-  title?: string,
   model?: ModelRef,
   agent = DEFAULT_AGENT,
   permission?: PermissionRule[],
@@ -124,7 +123,6 @@ export async function createSession(
   return request<Session>("POST", "/session", {
     directory,
     body: {
-      ...(title !== undefined ? { title } : {}),
       agent,
       ...(model ? { model: { id: model.modelID, providerID: model.providerID } } : {}),
       ...(permission ? { permission } : {}),

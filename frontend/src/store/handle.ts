@@ -47,11 +47,6 @@ export function reportError(handle: StoreHandle, error: unknown, fallback: strin
   handle.setState("error", message)
 }
 
-export function sessionTitle(text: string) {
-  const line = text.trim().split("\n")[0] ?? "新会话"
-  return line.length > 42 ? `${line.slice(0, 42)}…` : line
-}
-
 export function projectOwningSession(state: AppState, sessionID: string): Project | undefined {
   return state.projects.find((entry) =>
     (state.sessionsByProject[entry.path] ?? []).some((session: Session) => session.id === sessionID),

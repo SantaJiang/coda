@@ -24,7 +24,6 @@ import {
   reportError,
   selectedProjectOf,
   selectedSessionOf,
-  sessionTitle,
   type StoreHandle,
 } from "./handle"
 import { sendingKey } from "./lookup"
@@ -238,11 +237,9 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       setState("error", null)
       try {
         let session = selectedSession()
-        const title = content || files[0]?.filename || "新会话"
         if (!session) {
           session = await client.createSession(
             usable.path,
-            sessionTitle(title),
             model,
             currentAgent(),
             rulesetForProject(usable, state.permissionMode),
