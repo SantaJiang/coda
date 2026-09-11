@@ -1,4 +1,4 @@
-import type { PermissionRequest, QuestionRequest, SessionStatus } from "./types"
+import type { Message, PermissionRequest, QuestionRequest, SessionStatus } from "./types"
 
 export function isActiveStatus(status?: SessionStatus) {
   return status?.type === "busy" || status?.type === "retry"
@@ -6,6 +6,16 @@ export function isActiveStatus(status?: SessionStatus) {
 
 export function isSessionBusy(status?: SessionStatus, sending = false) {
   return sending || isActiveStatus(status)
+}
+
+export function deriveStatusFromMessages(messages: Message[]): SessionStatus | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role !== "assistant") continue
+    const done = Boolean(message.time.completed) || Boolean(message.error)
+    return done ? { type: "idle" } : { type: "busy" }
+  }
+  return null
 }
 
 export function sessionHasBlockers(

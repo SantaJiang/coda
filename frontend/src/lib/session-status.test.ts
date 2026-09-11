@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest"
-import { isActiveStatus, isSessionBusy, sessionDotKind, sessionHasBlockers } from "./session-status"
+import {
+  deriveStatusFromMessages,
+  isActiveStatus,
+  isSessionBusy,
+  sessionDotKind,
+  sessionHasBlockers,
+} from "./session-status"
+import type { AssistantMessage, Message, UserMessage } from "./types"
+
+const user = (id: string): UserMessage => ({ id, sessionID: "s1", role: "user", time: { created: 1 } })
+const assistant = (id: string, over?: Partial<AssistantMessage>): AssistantMessage => ({
+  id,
+  sessionID: "s1",
+  role: "assistant",
+  time: { created: 2 },
+  ...over,
+})
 
 describe("session status", () => {
   it("treats retry as an active/busy state", () => {
@@ -38,5 +54,19 @@ describe("session status", () => {
     expect(sessionDotKind({ ...base, status: { type: "retry" }, attention: true })).toBe("busy")
     expect(sessionDotKind({ ...base, attention: true })).toBe("unread")
     expect(sessionDotKind(base)).toBeNull()
+  })
+
+  it("derives busy/idle from the latest assistant message", () => {
+    expect(deriveStatusFromMessages([])).toBeNull()
+    expect(deriveStatusFromMessages([user("u1")])).toBeNull()
+    expect(deriveStatusFromMessages([user("u1"), assistant("a1")])).toEqual({ type: "busy" })
+    expect(deriveStatusFromMessages([assistant("a1", { time: { created: 2, completed: 9 } })])).toEqual({
+      type: "idle",
+    })
+    expect(deriveStatusFromMessages([assistant("a1", { error: { data: { message: "boom" } } })])).toEqual({
+      type: "idle",
+    })
+    const mixed: Message[] = [assistant("a1", { time: { created: 2, completed: 9 } }), user("u2"), assistant("a2")]
+    expect(deriveStatusFromMessages(mixed)).toEqual({ type: "busy" })
   })
 })

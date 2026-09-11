@@ -1,23 +1,14 @@
 import { onCleanup, onMount, createSignal, Show, type JSX } from "solid-js"
-import { usesCustomWindowControls, isTauri } from "../lib/platform"
+import { usesCustomWindowControls } from "../lib/platform"
 
 async function appWindow() {
   const { getCurrentWindow } = await import("@tauri-apps/api/window")
   return getCurrentWindow()
 }
 
-function isInteractiveTarget(target: EventTarget | null) {
-  return target instanceof Element && Boolean(target.closest("button, a, input, textarea, .win-controls"))
-}
-
 export function ChromeDrag(props: { class?: string; children?: JSX.Element }) {
-  const onDblClick = (event: MouseEvent) => {
-    if (!isTauri() || isInteractiveTarget(event.target)) return
-    void appWindow().then((win) => win.toggleMaximize())
-  }
-
   return (
-    <div class={props.class} data-tauri-drag-region="" onDblClick={onDblClick}>
+    <div class={props.class} data-tauri-drag-region="">
       {props.children}
     </div>
   )

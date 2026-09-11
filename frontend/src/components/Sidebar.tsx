@@ -163,7 +163,7 @@ export function Sidebar() {
   return (
     <aside class="sidebar">
       <ChromeDrag class="sidebar-chrome">
-        {isMacPlatform() ? <div class="sidebar-lights" /> : null}
+        {isMacPlatform() ? <div class="sidebar-lights" data-tauri-drag-region="" /> : null}
       </ChromeDrag>
       <button
         class="new-session"
@@ -364,7 +364,7 @@ export function Sidebar() {
             ? "后端已连接"
             : projects.connection() === "connecting"
               ? "正在连接"
-              : "后端未连接"}
+              : "正在重连…"}
         </span>
         <button class="icon-btn" type="button" title="设置" aria-label="设置" onClick={() => chrome.openSettings()}>
           <Icon name="cog" />

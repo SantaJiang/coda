@@ -19,6 +19,8 @@ export class ApiError extends Error {
   }
 }
 
+const HEALTHCHECK_TIMEOUT_MS = 5_000
+
 function directoryHeaders(directory?: string): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -94,7 +96,10 @@ async function request<T>(
 }
 
 export async function healthcheck() {
-  const response = await fetch(`${API_BASE}/global/health`, { method: "GET" })
+  const response = await fetch(`${API_BASE}/global/health`, {
+    method: "GET",
+    signal: AbortSignal.timeout(HEALTHCHECK_TIMEOUT_MS),
+  })
   return response.ok
 }
 

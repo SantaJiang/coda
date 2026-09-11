@@ -15,6 +15,7 @@ import {
   samePath,
   basename,
 } from "../lib/persist"
+import { deriveStatusFromMessages } from "../lib/session-status"
 import type { PermissionRequest, Project, QuestionRequest, Session, Todo } from "../lib/types"
 import type { ProjectApi } from "./contracts"
 import { purgeSession, syncSessionRequests } from "./gc"
@@ -31,6 +32,8 @@ export type ProjectSlice = ProjectApi & {
   refreshProjectSessions: (project: Project) => Promise<void>
   hydrateProjectPath: (project: Project) => Promise<void>
 }
+
+const newDraftPatch = { selectedSessionId: null, draft: true, planMode: false }
 
 export function createProjectSlice(handle: StoreHandle): ProjectSlice {
   const { state, setState, client } = handle
@@ -105,11 +108,14 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
 
     setState(
       produce((draft) => {
-        draft.messages[session.id] = messages.map((item) => item.info)
+        const infos = messages.map((item) => item.info)
+        draft.messages[session.id] = infos
         for (const item of messages) {
           draft.parts[item.info.id] = item.parts ?? []
         }
         draft.todos[session.id] = todos ?? []
+        const derived = deriveStatusFromMessages(infos)
+        if (derived) draft.status[session.id] = derived
         syncSessionRequests(draft, session.id, permissions ?? [], questions ?? [])
       }),
     )
@@ -145,7 +151,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       const project = createProject(path)
       const projects = [...state.projects, project]
       setState("projects", projects)
-      setState({ selectedProjectId: project.id, draft: true, selectedSessionId: null, error: null })
+      setState({ selectedProjectId: project.id, ...newDraftPatch, error: null })
       saveLastProject(project.id)
       await refreshProjectSessions(project)
     },
@@ -169,8 +175,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         )
         setState({
           selectedProjectId: duplicate.id,
-          selectedSessionId: null,
-          draft: true,
+          ...newDraftPatch,
           error: null,
         })
         saveLastProject(duplicate.id)
@@ -219,7 +224,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       saveLastProject(id)
       const sessions = project ? (state.sessionsByProject[project.path] ?? []) : []
       if (state.selectedSessionId && !sessions.some((session) => session.id === state.selectedSessionId)) {
-        setState({ selectedSessionId: null, draft: true })
+        setState(newDraftPatch)
       }
       if (project?.missing) setState("error", MISSING_DIRECTORY_HINT)
       else if (state.error === MISSING_DIRECTORY_HINT) setState("error", null)
@@ -240,8 +245,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         const fallback = pickSelectedProjectId(projects, null)
         setState({
           selectedProjectId: fallback,
-          selectedSessionId: null,
-          draft: true,
+          ...newDraftPatch,
           error: null,
         })
         if (fallback) saveLastProject(fallback)
@@ -251,8 +255,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       const local = state.projects.find(isLocalProject)
       setState({
         selectedProjectId: local?.id ?? null,
-        selectedSessionId: null,
-        draft: true,
+        ...newDraftPatch,
         error: null,
       })
       if (local) saveLastProject(local.id)
@@ -282,6 +285,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
             if (draft.selectedSessionId === session.id) {
               draft.selectedSessionId = null
               draft.draft = true
+              draft.planMode = false
             }
           }),
         )
@@ -297,8 +301,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         return
       }
       setState({
-        selectedSessionId: null,
-        draft: true,
+        ...newDraftPatch,
         error: null,
       })
     },

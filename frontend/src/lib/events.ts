@@ -6,6 +6,9 @@ export type ParsedEvent = {
   event: EventEnvelope
 }
 
+const STALE_STREAM_MS = 25_000
+const RETRY_DELAY_MS = 1_500
+
 export function unwrapEvent(raw: GlobalEvent): ParsedEvent | null {
   if (raw.payload && typeof raw.payload === "object" && "type" in raw.payload) {
     return {
@@ -33,10 +36,19 @@ export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus
 
   const connect = async () => {
     while (!abort.signal.aborted) {
+      const attempt = new AbortController()
+      const forwardAbort = () => attempt.abort()
+      abort.signal.addEventListener("abort", forwardAbort)
+      let stale: number | undefined
+      const bumpStale = () => {
+        if (stale !== undefined) window.clearTimeout(stale)
+        stale = window.setTimeout(() => attempt.abort(), STALE_STREAM_MS)
+      }
+      bumpStale()
       try {
         const response = await fetch(`${API_BASE}/global/event`, {
           headers: { Accept: "text/event-stream" },
-          signal: abort.signal,
+          signal: attempt.signal,
         })
         if (!response.ok || !response.body) {
           throw new Error(`event stream ${response.status}`)
@@ -49,6 +61,7 @@ export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus
         while (!abort.signal.aborted) {
           const { value, done } = await reader.read()
           if (done) break
+          bumpStale()
           buffer += decoder.decode(value, { stream: true })
           const chunks = buffer.split("\n\n")
           buffer = chunks.pop() ?? ""
@@ -70,16 +83,17 @@ export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus
             }
           }
         }
-      } catch (error) {
+      } catch {
         if (abort.signal.aborted) return
-        if (error instanceof DOMException && error.name === "AbortError") return
-        onStatus?.(false)
+      } finally {
+        abort.signal.removeEventListener("abort", forwardAbort)
+        if (stale !== undefined) window.clearTimeout(stale)
       }
 
       if (abort.signal.aborted) return
       onStatus?.(false)
       await new Promise<void>((resolve) => {
-        timer = window.setTimeout(() => resolve(), 1500)
+        timer = window.setTimeout(() => resolve(), RETRY_DELAY_MS)
       })
     }
   }

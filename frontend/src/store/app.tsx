@@ -55,6 +55,19 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
   const runtime = createRuntimeSlice(handle, { skipQueueFlush, sendAfterIdle })
   const chrome = createChromeSlice(handle)
 
+  let lastConnected: boolean | null = null
+  const resyncAfterReconnect = async () => {
+    const project = projects.selectedProject()
+    if (project) await projects.refreshProjectSessions(project).catch(() => undefined)
+    const session = projects.selectedSession()
+    if (session) await projects.selectSession(session).catch(() => undefined)
+  }
+  const applyConnection = (ok: boolean) => {
+    setState("connection", ok ? "connected" : "disconnected")
+    if (ok && lastConnected === false) void resyncAfterReconnect()
+    lastConnected = ok
+  }
+
   onMount(() => {
     const stored = loadProjects()
     const last = loadLastProject()
@@ -91,16 +104,16 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
 
     const ping = window.setInterval(async () => {
       const ok = await client.healthcheck().catch(() => false)
-      setState("connection", ok ? "connected" : "disconnected")
+      applyConnection(ok)
     }, 8000)
 
     void (async () => {
       const ok = await client.healthcheck().catch(() => false)
       if (!ok) {
-        setState("connection", "disconnected")
+        applyConnection(false)
         return
       }
-      setState("connection", "connected")
+      applyConnection(true)
       const patch = toBackendPatch(loadConfiguredModels(), loadSelectedModelKey())
       if (patch) await client.patchGlobalConfig(patch).catch(() => undefined)
       await models.refreshDiscovered()
@@ -132,7 +145,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
         }
       },
       (connected) => {
-        setState("connection", connected ? "connected" : "disconnected")
+        applyConnection(connected)
         if (connected) void models.refreshDiscovered()
       },
     )

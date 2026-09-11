@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { activityDiff, activityStatus, activitySummary, stepBody, stepLabel } from "../lib/activity"
 import type { Part, ReasoningPart } from "../lib/types"
-import { useRuntime } from "../store/app"
+import { useProjects, useRuntime } from "../store/app"
 import { MarkdownView } from "./MarkdownView"
 import { Icon } from "./Icon"
 
@@ -39,11 +39,14 @@ export function WorkGroup(props: {
   const [line, setLine] = createSignal({ current: "", previous: "", flipping: false, tick: 0 })
   const [clock, setClock] = createSignal(0)
   const runtime = useRuntime()
+  const projects = useProjects()
   const parts = createMemo(() => (props.getParts ? props.getParts() : (props.parts ?? [])))
   const currentTodo = createMemo(() => runtime.currentTodo())
   const asking = createMemo(() => runtime.pendingQuestions().length > 0)
+  const reconnecting = createMemo(() => projects.connection() === "disconnected")
   const liveStatus = () => {
     if (!props.live) return ""
+    if (reconnecting()) return "Reconnecting…"
     if (asking()) return "Asking questions"
     return activityStatus(parts(), Date.now(), currentTodo())
   }

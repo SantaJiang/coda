@@ -1,5 +1,5 @@
 import { Index, Match, Show, Switch, createEffect, createMemo, on } from "solid-js"
-import { useRuntime } from "../store/app"
+import { useProjects, useRuntime } from "../store/app"
 import { ChatTurnView, CompactionMark, groupTurns, type TimelineItem } from "./MessagePart"
 import { WorkGroup } from "./WorkGroup"
 
@@ -13,6 +13,7 @@ function asTurn(item: TimelineItem) {
 
 export function MessageTimeline() {
   const runtime = useRuntime()
+  const projects = useProjects()
   let scroller: HTMLDivElement | undefined
   let stick = true
 
@@ -24,6 +25,8 @@ export function MessageTimeline() {
     const item = last()
     return Boolean(runtime.busy() && item?.kind === "turn" && item.assistants.length === 0)
   })
+  const reconnecting = createMemo(() => projects.connection() === "disconnected")
+  const showLiveTail = createMemo(() => waiting() || (reconnecting() && !runtime.busy()))
 
   const onScroll = () => {
     if (!scroller) return
@@ -32,7 +35,7 @@ export function MessageTimeline() {
 
   createEffect(
     on(
-      () => [messages(), runtime.partsByMessage(), runtime.busy()],
+      () => [messages(), runtime.partsByMessage(), runtime.busy(), reconnecting()],
       () => {
         if (stick && scroller) {
           requestAnimationFrame(() => {
@@ -69,7 +72,7 @@ export function MessageTimeline() {
             </Switch>
           )}
         </Index>
-        <Show when={waiting()}>
+        <Show when={showLiveTail()}>
           <WorkGroup parts={[]} live />
         </Show>
       </div>
