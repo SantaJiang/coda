@@ -14,12 +14,15 @@ describe("purgeSession", () => {
       p1: { id: "p1", sessionID: "s1", permission: "edit", patterns: [] },
       p2: { id: "p2", sessionID: "s2", permission: "edit", patterns: [] },
     }
+    draft.planModeBySession = { s1: true, s2: true }
     purgeSession(draft, "s1")
     expect(draft.messages.s1).toBeUndefined()
     expect(draft.parts.m1).toBeUndefined()
     expect(draft.messages.s2).toHaveLength(1)
     expect(draft.permissions.p1).toBeUndefined()
     expect(draft.permissions.p2).toBeDefined()
+    expect(draft.planModeBySession.s1).toBeUndefined()
+    expect(draft.planModeBySession.s2).toBe(true)
   })
 })
 
@@ -42,5 +45,14 @@ describe("syncSessionRequests", () => {
     expect(draft.permissions.new).toBeDefined()
     expect(draft.questions.oldq).toBeUndefined()
     expect(draft.questions.newq).toBeDefined()
+  })
+
+  it("can keep local requests that a stale snapshot omitted", () => {
+    const draft = structuredClone(initialState)
+    draft.permissions = {
+      live: { id: "live", sessionID: "s1", permission: "edit", patterns: [] },
+    }
+    syncSessionRequests(draft, "s1", [], [], { dropMissing: false })
+    expect(draft.permissions.live).toBeDefined()
   })
 })

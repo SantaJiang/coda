@@ -23,6 +23,7 @@ describe("applyClientEvent", () => {
   it("purges session data on delete", () => {
     const state = draft({
       selectedSessionId: "s1",
+      draftPlanMode: true,
       messages: { s1: [{ id: "m1", sessionID: "s1", role: "user", time: { created: 1 } }] },
       parts: { m1: [] },
       queuedBySession: {
@@ -40,6 +41,8 @@ describe("applyClientEvent", () => {
     expect(state.parts.m1).toBeUndefined()
     expect(state.queuedBySession.s1).toBeUndefined()
     expect(state.selectedSessionId).toBeNull()
+    expect(state.draftPlanMode).toBe(false)
+    expect(state.draft).toBe(true)
   })
 
   it("auto-replies permissions without dropping the request on later failure", () => {
@@ -68,5 +71,32 @@ describe("applyClientEvent", () => {
     expect(effects.autoReplies).toEqual([])
     expect(effects.idleSessions).toEqual([])
     expect(state).toEqual(snapshot)
+  })
+
+  it("keeps session errors on the session instead of the global banner", () => {
+    const state = draft({ selectedSessionId: "s1", error: null })
+    applyClientEvent(state, {
+      event: {
+        type: "session.error",
+        properties: { sessionID: "s1", error: { data: { message: "model failed" } } },
+      },
+    })
+    expect(state.sessionErrors.s1).toBe(true)
+    expect(state.error).toBeNull()
+  })
+
+  it("still surfaces a missing directory on the global banner", () => {
+    const state = draft({
+      error: null,
+      projects: [{ id: "p1", name: "app", path: "/tmp/app", expanded: true }],
+    })
+    applyClientEvent(state, {
+      event: {
+        type: "session.error",
+        properties: { sessionID: "s1", message: "ENOENT: no such file or directory, lstat '/tmp/app'" },
+      },
+    })
+    expect(state.error).toMatch(/重新定位/)
+    expect(state.projects[0]?.missing).toBe(true)
   })
 })

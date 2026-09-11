@@ -74,6 +74,7 @@ const handlers: Record<string, EventHandler> = {
     if (sessionID && draft.selectedSessionId === sessionID) {
       draft.selectedSessionId = null
       draft.draft = true
+      draft.draftPlanMode = false
     }
   },
   "message.updated": (draft, { props }) => {
@@ -191,8 +192,6 @@ const handlers: Record<string, EventHandler> = {
           if (!isLocalProject(project) && samePath(project.path, missingPath)) project.missing = true
         }
       }
-    } else {
-      draft.error = String(message)
     }
   },
 }

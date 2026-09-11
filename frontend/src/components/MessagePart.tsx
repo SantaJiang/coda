@@ -18,7 +18,7 @@ import type {
   TextPart,
   UserMessage,
 } from "../lib/types"
-import { useModels } from "../store/app"
+import { useModels, useProjects } from "../store/app"
 import { MarkdownView } from "./MarkdownView"
 import { WorkGroup } from "./WorkGroup"
 import { ChangedFiles } from "./ChangedFiles"
@@ -374,8 +374,10 @@ function AssistantTurn(props: {
 
 export function CompactionMark(props: { live: boolean; summary?: string }) {
   const [open, setOpen] = createSignal(false)
+  const projects = useProjects()
   const summary = () => props.summary?.trim() ?? ""
   const expandable = () => !props.live && Boolean(summary())
+  const liveLabel = () => (projects.connection() === "disconnected" ? "Reconnecting…" : "Compacting context")
 
   return (
     <div class="compaction-mark" classList={{ live: props.live, open: open() }}>
@@ -412,7 +414,7 @@ export function CompactionMark(props: { live: boolean; summary?: string }) {
         }
       >
         <div class="compaction-live">
-          <span class="work-status-wave">Compacting context</span>
+          <span class="work-status-wave">{liveLabel()}</span>
         </div>
       </Show>
     </div>

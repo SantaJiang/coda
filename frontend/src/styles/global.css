@@ -706,6 +706,13 @@ button.ctx-pill:hover {
   line-height: var(--chrome-h);
 }
 
+.session-error {
+  flex: 0 0 auto;
+  padding: 8px 16px 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
 .win-controls {
   display: flex;
   align-self: stretch;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   deriveStatusFromMessages,
+  hasAssistantError,
   isActiveStatus,
   isSessionBusy,
   sessionDotKind,
@@ -68,5 +69,11 @@ describe("session status", () => {
     })
     const mixed: Message[] = [assistant("a1", { time: { created: 2, completed: 9 } }), user("u2"), assistant("a2")]
     expect(deriveStatusFromMessages(mixed)).toEqual({ type: "busy" })
+  })
+
+  it("detects an assistant error on the session", () => {
+    expect(hasAssistantError([])).toBe(false)
+    expect(hasAssistantError([user("u1"), assistant("a1")])).toBe(false)
+    expect(hasAssistantError([assistant("a1", { error: { data: { message: "boom" } } })])).toBe(true)
   })
 })

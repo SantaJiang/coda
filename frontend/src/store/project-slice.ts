@@ -15,11 +15,13 @@ import {
   samePath,
   basename,
 } from "../lib/persist"
-import { deriveStatusFromMessages } from "../lib/session-status"
+import { applyDerivedStatus, mergeMessages, mergeParts } from "../lib/session-sync"
+import { deriveStatusFromMessages, hasAssistantError } from "../lib/session-status"
 import type { PermissionRequest, Project, QuestionRequest, Session, Todo } from "../lib/types"
 import type { ProjectApi } from "./contracts"
 import { purgeSession, syncSessionRequests } from "./gc"
 import {
+  inferPlanMode,
   markProjectMissing,
   reportError,
   selectedProjectOf,
@@ -31,9 +33,11 @@ import { directoryFor, projectForSession } from "./lookup"
 export type ProjectSlice = ProjectApi & {
   refreshProjectSessions: (project: Project) => Promise<void>
   hydrateProjectPath: (project: Project) => Promise<void>
+  resyncSession: (session: Session) => Promise<void>
 }
 
 const newDraftPatch = { selectedSessionId: null, draft: true, draftPlanMode: false }
+let detailGen = 0
 
 export function createProjectSlice(handle: StoreHandle): ProjectSlice {
   const { state, setState, client } = handle
@@ -97,7 +101,8 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
     await refreshProjectSessions(project)
   }
 
-  async function loadSessionDetail(session: Session) {
+  async function loadSessionDetail(session: Session, opts: { merge?: boolean } = {}) {
+    const gen = ++detailGen
     const directory = directoryFor(state, session)
     const [messages, todos, permissions, questions] = await Promise.all([
       client.listMessages(directory, session.id),
@@ -105,18 +110,37 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       client.listPermissions(directory).catch(() => [] as PermissionRequest[]),
       client.listQuestions(directory).catch(() => [] as QuestionRequest[]),
     ])
+    if (gen !== detailGen) return
 
     setState(
       produce((draft) => {
         const infos = messages.map((item) => item.info)
-        draft.messages[session.id] = infos
-        for (const item of messages) {
-          draft.parts[item.info.id] = item.parts ?? []
+        const localMessages = draft.messages[session.id] ?? []
+        const nextMessages = opts.merge ? mergeMessages(localMessages, infos) : infos
+        draft.messages[session.id] = nextMessages
+        if (opts.merge) {
+          for (const item of messages) {
+            draft.parts[item.info.id] = mergeParts(draft.parts[item.info.id] ?? [], item.parts ?? [])
+          }
+        } else {
+          for (const item of messages) {
+            draft.parts[item.info.id] = item.parts ?? []
+          }
         }
         draft.todos[session.id] = todos ?? []
-        const derived = deriveStatusFromMessages(infos)
+        const derived = applyDerivedStatus(
+          draft.status[session.id],
+          deriveStatusFromMessages(nextMessages),
+          Boolean(opts.merge),
+        )
         if (derived) draft.status[session.id] = derived
-        syncSessionRequests(draft, session.id, permissions ?? [], questions ?? [])
+        draft.sessionErrors[session.id] = hasAssistantError(nextMessages)
+        if (draft.planModeBySession[session.id] === undefined) {
+          draft.planModeBySession[session.id] = inferPlanMode(session, nextMessages)
+        }
+        syncSessionRequests(draft, session.id, permissions ?? [], questions ?? [], {
+          dropMissing: !opts.merge,
+        })
       }),
     )
   }
@@ -132,6 +156,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
     vcsBranch: () => state.vcsBranch,
     refreshProjectSessions,
     hydrateProjectPath,
+    resyncSession: (session) => loadSessionDetail(session, { merge: true }),
     addProject: async () => {
       const path = await pickDirectory()
       if (!path) return
@@ -318,10 +343,10 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         selectedSessionId: session.id,
         selectedProjectId: project?.id ?? state.selectedProjectId,
         draft: false,
+        draftPlanMode: false,
         error: null,
       })
       setState("attention", session.id, false)
-      setState("sessionErrors", session.id, false)
       if (project) saveLastProject(project.id)
       await loadSessionDetail(session)
     },

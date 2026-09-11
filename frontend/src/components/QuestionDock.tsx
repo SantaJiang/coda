@@ -103,6 +103,7 @@ export function QuestionDock() {
       return
     }
     if (missing >= 0) return
+    clearTimer()
     void runtime.replyQuestion(
       id,
       questions().map((_, questionIndex) => answersFor(questionIndex)),
@@ -123,7 +124,8 @@ export function QuestionDock() {
 
   const expire = () => {
     const item = request()
-    if (!item) return
+    const id = item?.id
+    if (!item || !id) return
     const questionIndex = index()
     if (!answered(questionIndex)) {
       const recommended = recommendedOption(current())
@@ -135,7 +137,8 @@ export function QuestionDock() {
         const recommended = recommendedOption(question)
         if (recommended) writePick(index, recommended.label, question.multiple)
       })
-      submit(item.id)
+      if (request()?.id !== id) return
+      submit(id)
     } else setStep((value) => Math.min(total() - 1, value + 1))
   }
 
@@ -165,6 +168,7 @@ export function QuestionDock() {
     }
     index()
     startCountdown()
+    onCleanup(clearTimer)
   })
 
   onCleanup(clearTimer)
@@ -258,7 +262,14 @@ export function QuestionDock() {
           </Show>
           <div class="dock-actions">
             <span class="dock-actions-grow" />
-            <button type="button" class="ghost" onClick={() => void runtime.rejectQuestion(item().id)}>
+            <button
+              type="button"
+              class="ghost"
+              onClick={() => {
+                clearTimer()
+                void runtime.rejectQuestion(item().id)
+              }}
+            >
               跳过
             </button>
             <button type="button" class="primary" disabled={!ready()} onClick={() => ready() && submit(item().id)}>

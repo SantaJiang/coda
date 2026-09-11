@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { shouldFlushQueue, takeDeferredSend } from "../store/queue"
+import { shouldFlushQueue, takeDeferredSend, withSessionLock } from "../store/queue"
 import type { QueuedMessage } from "../store/state"
 
 const item: QueuedMessage = {
@@ -51,5 +51,25 @@ describe("takeDeferredSend", () => {
     const skip = { a: true }
     expect(takeDeferredSend({}, skip, "b")).toEqual({ kind: "next" })
     expect(skip.a).toBe(true)
+  })
+})
+
+describe("withSessionLock", () => {
+  it("serializes overlapping work for the same session", async () => {
+    const locks: Record<string, boolean> = {}
+    let started = 0
+    const first = withSessionLock(locks, "s1", async () => {
+      started += 1
+      await Promise.resolve()
+      return "a"
+    })
+    const second = withSessionLock(locks, "s1", async () => {
+      started += 1
+      return "b"
+    })
+    await expect(first).resolves.toBe("a")
+    await expect(second).resolves.toBeUndefined()
+    expect(started).toBe(1)
+    await expect(withSessionLock(locks, "s1", async () => "c")).resolves.toBe("c")
   })
 })

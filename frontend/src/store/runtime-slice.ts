@@ -30,12 +30,13 @@ import {
 import { sendingKey } from "./lookup"
 import { selectedModelOf } from "./model-slice"
 import { applySessionPermission } from "./permission-sync"
-import { shouldFlushQueue, takeDeferredSend } from "./queue"
+import { shouldFlushQueue, takeDeferredSend, withSessionLock } from "./queue"
 import { emptySessionDraft, type QueuedMessage, type SessionDraft } from "./state"
 
 export type QueueRefs = {
   skipQueueFlush: Record<string, boolean>
   sendAfterIdle: Record<string, QueuedMessage | undefined>
+  flushing: Record<string, boolean>
 }
 
 export type RuntimeSlice = RuntimeApi & {
@@ -154,31 +155,33 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
   }
 
   const flushQueue = async (sessionID: string) => {
-    if (
-      !shouldFlushQueue({
-        sending: Boolean(state.sendingBySession[sessionID]),
-        status: state.status[sessionID],
-        permissions: state.permissions,
-        questions: state.questions,
-        sessionID,
-      })
-    ) {
-      return
-    }
+    await withSessionLock(refs.flushing, sessionID, async () => {
+      if (
+        !shouldFlushQueue({
+          sending: Boolean(state.sendingBySession[sessionID]),
+          status: state.status[sessionID],
+          permissions: state.permissions,
+          questions: state.questions,
+          sessionID,
+        })
+      ) {
+        return
+      }
 
-    const taken = takeDeferredSend(refs.sendAfterIdle, refs.skipQueueFlush, sessionID)
-    if (taken.kind === "skip") return
-    if (taken.kind === "deferred") {
-      const ok = await dispatchQueued(sessionID, taken.item)
-      if (!ok) setState("queuedBySession", sessionID, [taken.item, ...queuedFor(sessionID)])
-      return
-    }
+      const taken = takeDeferredSend(refs.sendAfterIdle, refs.skipQueueFlush, sessionID)
+      if (taken.kind === "skip") return
+      if (taken.kind === "deferred") {
+        const ok = await dispatchQueued(sessionID, taken.item)
+        if (!ok) setState("queuedBySession", sessionID, [taken.item, ...queuedFor(sessionID)])
+        return
+      }
 
-    const [next, ...rest] = queuedFor(sessionID)
-    if (!next) return
-    setState("queuedBySession", sessionID, rest)
-    const ok = await dispatchQueued(sessionID, next)
-    if (!ok) setState("queuedBySession", sessionID, [next, ...queuedFor(sessionID)])
+      const [next, ...rest] = queuedFor(sessionID)
+      if (!next) return
+      setState("queuedBySession", sessionID, rest)
+      const ok = await dispatchQueued(sessionID, next)
+      if (!ok) setState("queuedBySession", sessionID, [next, ...queuedFor(sessionID)])
+    })
   }
 
   return {
@@ -286,11 +289,6 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const list = queuedFor(session.id)
       const item = list.find((entry) => entry.id === id)
       if (!item) return
-      setState(
-        "queuedBySession",
-        session.id,
-        list.filter((entry) => entry.id !== id),
-      )
       const idle = shouldFlushQueue({
         sending: Boolean(state.sendingBySession[session.id]),
         status: state.status[session.id],
@@ -299,10 +297,23 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
         sessionID: session.id,
       })
       if (idle) {
-        const ok = await dispatchQueued(session.id, item)
-        if (!ok) setState("queuedBySession", session.id, [item, ...queuedFor(session.id)])
+        const sent = await withSessionLock(refs.flushing, session.id, async () => {
+          setState(
+            "queuedBySession",
+            session.id,
+            list.filter((entry) => entry.id !== id),
+          )
+          return dispatchQueued(session.id, item)
+        })
+        if (sent === undefined) return
+        if (!sent) setState("queuedBySession", session.id, [item, ...queuedFor(session.id)])
         return
       }
+      setState(
+        "queuedBySession",
+        session.id,
+        list.filter((entry) => entry.id !== id),
+      )
       refs.skipQueueFlush[session.id] = false
       refs.sendAfterIdle[session.id] = item
       try {

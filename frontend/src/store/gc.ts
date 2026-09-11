@@ -26,14 +26,18 @@ export function syncSessionRequests(
   sessionID: string,
   permissions: PermissionRequest[],
   questions: QuestionRequest[],
+  opts: { dropMissing?: boolean } = {},
 ) {
-  const permIds = new Set(permissions.map((item) => item.id))
-  const questionIds = new Set(questions.map((item) => item.id))
-  for (const [id, permission] of Object.entries(draft.permissions)) {
-    if (permission?.sessionID === sessionID && !permIds.has(id)) delete draft.permissions[id]
-  }
-  for (const [id, question] of Object.entries(draft.questions)) {
-    if (question?.sessionID === sessionID && !questionIds.has(id)) delete draft.questions[id]
+  const dropMissing = opts.dropMissing !== false
+  if (dropMissing) {
+    const permIds = new Set(permissions.map((item) => item.id))
+    const questionIds = new Set(questions.map((item) => item.id))
+    for (const [id, permission] of Object.entries(draft.permissions)) {
+      if (permission?.sessionID === sessionID && !permIds.has(id)) delete draft.permissions[id]
+    }
+    for (const [id, question] of Object.entries(draft.questions)) {
+      if (question?.sessionID === sessionID && !questionIds.has(id)) delete draft.questions[id]
+    }
   }
   for (const permission of permissions) {
     if (permission.sessionID === sessionID) draft.permissions[permission.id] = permission

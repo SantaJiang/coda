@@ -6,7 +6,8 @@ import {
   parseMissingDirectory,
   samePath,
 } from "../lib/persist"
-import type { Project, Session } from "../lib/types"
+import { PLAN_AGENT } from "../lib/config"
+import type { Message, Project, Session } from "../lib/types"
 import type { AgentClient } from "./ports"
 import type { AppState } from "./state"
 
@@ -29,6 +30,14 @@ export function selectedSessionOf(state: AppState) {
 export function activePlanMode(state: AppState): boolean {
   const id = state.selectedSessionId
   return id ? (state.planModeBySession[id] ?? false) : state.draftPlanMode
+}
+
+export function inferPlanMode(session?: { agent?: string }, messages: Message[] = []): boolean {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const agent = messages[index]?.agent
+    if (agent) return agent === PLAN_AGENT
+  }
+  return session?.agent === PLAN_AGENT
 }
 
 export function markProjectMissing(handle: StoreHandle, path: string) {

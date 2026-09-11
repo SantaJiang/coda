@@ -18,6 +18,10 @@ export function deriveStatusFromMessages(messages: Message[]): SessionStatus | n
   return null
 }
 
+export function hasAssistantError(messages: Message[]): boolean {
+  return messages.some((message) => message.role === "assistant" && Boolean(message.error))
+}
+
 export function sessionHasBlockers(
   sessionID: string,
   permissions: Record<string, PermissionRequest | undefined>,

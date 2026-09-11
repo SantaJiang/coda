@@ -20,6 +20,20 @@ export function shouldFlushQueue(input: {
   return true
 }
 
+export function withSessionLock<T>(
+  locks: Record<string, boolean>,
+  sessionID: string,
+  run: () => Promise<T>,
+): Promise<T | undefined> {
+  if (locks[sessionID]) return Promise.resolve(undefined)
+  locks[sessionID] = true
+  return Promise.resolve()
+    .then(run)
+    .finally(() => {
+      delete locks[sessionID]
+    })
+}
+
 export function takeDeferredSend(
   sendAfterIdle: Record<string, QueuedMessage | undefined>,
   skipQueueFlush: Record<string, boolean>,

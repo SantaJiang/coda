@@ -39,6 +39,11 @@ export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus
       const attempt = new AbortController()
       const forwardAbort = () => attempt.abort()
       abort.signal.addEventListener("abort", forwardAbort)
+      if (abort.signal.aborted) {
+        attempt.abort()
+        abort.signal.removeEventListener("abort", forwardAbort)
+        return
+      }
       let stale: number | undefined
       const bumpStale = () => {
         if (stale !== undefined) window.clearTimeout(stale)
@@ -93,7 +98,14 @@ export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus
       if (abort.signal.aborted) return
       onStatus?.(false)
       await new Promise<void>((resolve) => {
-        timer = window.setTimeout(() => resolve(), RETRY_DELAY_MS)
+        const finish = () => {
+          abort.signal.removeEventListener("abort", finish)
+          if (timer !== undefined) window.clearTimeout(timer)
+          timer = undefined
+          resolve()
+        }
+        abort.signal.addEventListener("abort", finish)
+        timer = window.setTimeout(finish, RETRY_DELAY_MS)
       })
     }
   }
