@@ -78,6 +78,8 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
       bootstrapped = true
       const patch = toBackendPatch(loadConfiguredModels(), loadSelectedModelKey())
       if (patch) await client.patchGlobalConfig(patch).catch(() => undefined)
+      const backendProjects = await client.listProjects().catch(() => [])
+      if (backendProjects.length) await projects.restoreProjects(backendProjects)
       await models.refreshDiscovered()
     })().finally(() => {
       bootstrapping = null

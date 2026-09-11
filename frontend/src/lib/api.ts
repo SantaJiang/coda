@@ -3,6 +3,7 @@ import type { ComposerAttachment } from "./attachments"
 import type { ConfigPatch, ModelRef, ProviderList } from "./models"
 import type { PermissionRule } from "./permissions"
 import type {
+  BackendProject,
   MessageWithParts,
   PermissionRequest,
   QuestionRequest,
@@ -113,6 +114,10 @@ export async function fetchHomeDir(): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+export async function listProjects() {
+  return request<BackendProject[]>("GET", "/project", {})
 }
 
 export async function listSessions(directory: string, extra?: Record<string, string>) {

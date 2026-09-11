@@ -7,6 +7,17 @@ export type Project = {
   missing?: boolean
 }
 
+export type BackendProject = {
+  id: string
+  worktree: string
+  vcs?: string | null
+  sandboxes?: string[]
+  time?: {
+    created?: number
+    updated?: number
+  }
+}
+
 export type SessionRevertState = {
   messageID: string
   partID?: string

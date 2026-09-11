@@ -6,6 +6,7 @@ export type AgentClient = Pick<
   | "healthcheck"
   | "listProviders"
   | "patchGlobalConfig"
+  | "listProjects"
   | "listSessions"
   | "listMessages"
   | "listTodos"

@@ -5,6 +5,7 @@ import {
   directoryExists,
   isLocalProject,
   loadProjectSessions,
+  restoreCandidates,
   saveProjectSessions,
   missingDirectoryMessage,
   MISSING_DIRECTORY_HINT,
@@ -17,7 +18,7 @@ import {
 } from "../lib/persist"
 import { applyDerivedStatus, mergeMessages, mergeParts } from "../lib/session-sync"
 import { deriveStatusFromMessages, hasAssistantError } from "../lib/session-status"
-import type { PermissionRequest, Project, QuestionRequest, Session, Todo } from "../lib/types"
+import type { BackendProject, PermissionRequest, Project, QuestionRequest, Session, Todo } from "../lib/types"
 import type { ProjectApi } from "./contracts"
 import { purgeSession, syncSessionRequests } from "./gc"
 import {
@@ -34,6 +35,7 @@ export type ProjectSlice = ProjectApi & {
   refreshProjectSessions: (project: Project) => Promise<void>
   hydrateProjectPath: (project: Project) => Promise<void>
   resyncSession: (session: Session) => Promise<void>
+  restoreProjects: (list: BackendProject[]) => Promise<void>
 }
 
 const newDraftPatch = { selectedSessionId: null, draft: true, draftPlanMode: false }
@@ -157,6 +159,31 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
     refreshProjectSessions,
     hydrateProjectPath,
     resyncSession: (session) => loadSessionDetail(session, { merge: true }),
+    restoreProjects: async (list) => {
+      const groups = restoreCandidates(state.projects, list)
+      if (!groups.length) return
+      const next: Project[] = []
+      for (const dirs of groups) {
+        let path = dirs[0]
+        for (const dir of dirs) {
+          if ((await directoryExists(dir)) !== false) {
+            path = dir
+            break
+          }
+        }
+        next.push(createProject(path))
+      }
+      const projects = [...state.projects, ...next]
+      setState("projects", projects)
+      if (!state.selectedProjectId) {
+        const fallback = pickSelectedProjectId(projects, null)
+        if (fallback) {
+          setState("selectedProjectId", fallback)
+          saveLastProject(fallback)
+        }
+      }
+      await Promise.all(next.map((project) => hydrateProjectPath(project)))
+    },
     addProject: async () => {
       const path = await pickDirectory()
       if (!path) return

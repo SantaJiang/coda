@@ -1,7 +1,7 @@
 import { STORAGE_KEYS } from "./config"
 import { basename, parentSegments, samePath } from "./path"
 import { uid } from "./uid"
-import type { Project, Session } from "./types"
+import type { BackendProject, Project, Session } from "./types"
 
 export const LOCAL_PROJECT_ID = "prj_local"
 export const LOCAL_PROJECT_NAME = "本机"
@@ -184,6 +184,22 @@ export function createProject(path: string): Project {
     name: basename(path),
     expanded: true,
   }
+}
+
+export function restoreCandidates(projects: Project[], backend: BackendProject[]): string[][] {
+  const known = projects.map((project) => project.path)
+  const sorted = [...backend].sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))
+  const groups: string[][] = []
+  for (const item of sorted) {
+    const dirs = [item.worktree, ...(item.sandboxes ?? [])].filter(
+      (dir, index, all) => dir && dir !== "/" && all.indexOf(dir) === index,
+    )
+    if (!dirs.length) continue
+    if (dirs.some((dir) => known.some((path) => samePath(path, dir)))) continue
+    known.push(...dirs)
+    groups.push(dirs)
+  }
+  return groups
 }
 
 export async function pickDirectory(): Promise<string | null> {
