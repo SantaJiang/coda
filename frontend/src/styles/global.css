@@ -774,13 +774,6 @@ button.ctx-pill:hover {
   }
 }
 
-.session-error {
-  flex: 0 0 auto;
-  padding: 8px 16px 0;
-  color: var(--danger);
-  font-size: 12px;
-}
-
 .empty {
   flex: 1 1 0;
   min-height: 0;
@@ -2230,6 +2223,26 @@ button.ctx-pill:hover {
 .dock-actions button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.question-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+.question-pager {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.question-pager-label {
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
 }
 
 .question-auto {

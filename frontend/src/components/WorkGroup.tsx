@@ -41,6 +41,12 @@ export function WorkGroup(props: {
   const runtime = useRuntime()
   const parts = createMemo(() => (props.getParts ? props.getParts() : (props.parts ?? [])))
   const currentTodo = createMemo(() => runtime.currentTodo())
+  const asking = createMemo(() => runtime.pendingQuestions().length > 0)
+  const liveStatus = () => {
+    if (!props.live) return ""
+    if (asking()) return "Asking questions"
+    return activityStatus(parts(), Date.now(), currentTodo())
+  }
   const summary = createMemo(() => activitySummary(parts()))
   const diff = createMemo(() => activityDiff(parts()))
   const thoughtOnly = createMemo(() => {
@@ -96,7 +102,7 @@ export function WorkGroup(props: {
       () => {
         clock()
         currentTodo()
-        return props.live ? activityStatus(parts(), Date.now(), currentTodo()) : ""
+        return liveStatus()
       },
       (next) => {
         window.clearTimeout(pending)
@@ -113,7 +119,7 @@ export function WorkGroup(props: {
         }
         const delay = isIdleStatus(next) ? IDLE_HOLD_MS : TOOL_HOLD_MS
         pending = window.setTimeout(() => {
-          const latest = props.live ? activityStatus(parts(), Date.now(), currentTodo()) : ""
+          const latest = liveStatus()
           if (!latest || sameStatus(latest, shown)) return
           commit(latest, true)
         }, delay)

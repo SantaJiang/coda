@@ -5,6 +5,7 @@ const GLYPHS = {
   folder: "\uf07b",
   home: "\uf015",
   "ellipsis-h": "\uf141",
+  "chevron-left": "\uf053",
   "chevron-right": "\uf054",
   times: "\uf00d",
   cog: "\uf013",

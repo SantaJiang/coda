@@ -32,9 +32,6 @@ export function SessionPage() {
               <WindowControls />
             </Show>
           </ChromeDrag>
-          <Show when={projects.error()}>
-            <div class="session-error">{projects.error()}</div>
-          </Show>
           <Show
             when={projects.selectedSession()}
             fallback={

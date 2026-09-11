@@ -388,6 +388,7 @@ function liveStepLabel(part: ToolPart, now: number) {
     return withDetail("Running", desc)
   }
   if (name === "skill") return withDetail("Loading", headline || String(input.name ?? input.skill ?? ""))
+  if (name === "question") return "Asking questions"
   if (name.includes("lint")) return withDetail("Linting", file)
   if (headline) return headline
   if (file) return `${capitalize(name)} ${file}`

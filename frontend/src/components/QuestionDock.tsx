@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "so
 import { AUTO_QUESTION_SECONDS, isAutoMode } from "../lib/permissions"
 import type { QuestionInfo } from "../lib/types"
 import { useChrome, useRuntime } from "../store/app"
+import { Icon } from "./Icon"
 
 const CUSTOM = "__coda_custom__"
 
@@ -172,14 +173,38 @@ export function QuestionDock() {
     <Show when={request()}>
       {(item) => (
         <div class="dock dock-question">
+          <Show when={many()}>
+            <div class="question-head">
+              <div class="question-pager">
+                <button
+                  type="button"
+                  class="icon-btn"
+                  disabled={index() === 0}
+                  onClick={() => setStep((value) => Math.max(0, value - 1))}
+                  aria-label="上一个问题"
+                >
+                  <Icon name="chevron-left" />
+                </button>
+                <span class="question-pager-label">
+                  {index() + 1} of {total()}
+                </span>
+                <button
+                  type="button"
+                  class="icon-btn"
+                  disabled={last()}
+                  onClick={() => setStep((value) => Math.min(total() - 1, value + 1))}
+                  aria-label="下一个问题"
+                >
+                  <Icon name="chevron-right" />
+                </button>
+              </div>
+            </div>
+          </Show>
           <Show when={auto()}>
             <div class="question-auto">
               <span class="question-auto-badge">{countdown()}s</span>
               <span class="question-auto-text">无操作将自动选择推荐项</span>
             </div>
-          </Show>
-          <Show when={many()}>
-            <div class="dock-title">问题 {index() + 1} / {total()}</div>
           </Show>
           <Show when={current()}>
             {(question) => {
@@ -232,32 +257,13 @@ export function QuestionDock() {
             }}
           </Show>
           <div class="dock-actions">
-            <Show when={many() && index() > 0}>
-              <button type="button" class="ghost" onClick={() => setStep((value) => Math.max(0, value - 1))}>
-                上一个
-              </button>
-            </Show>
             <span class="dock-actions-grow" />
             <button type="button" class="ghost" onClick={() => void runtime.rejectQuestion(item().id)}>
               跳过
             </button>
-            <Show
-              when={last()}
-              fallback={
-                <button
-                  type="button"
-                  class="primary"
-                  disabled={!ready()}
-                  onClick={() => ready() && setStep((value) => Math.min(total() - 1, value + 1))}
-                >
-                  下一个
-                </button>
-              }
-            >
-              <button type="button" class="primary" disabled={!ready()} onClick={() => ready() && submit(item().id)}>
-                提交
-              </button>
-            </Show>
+            <button type="button" class="primary" disabled={!ready()} onClick={() => ready() && submit(item().id)}>
+              提交
+            </button>
           </div>
         </div>
       )}
