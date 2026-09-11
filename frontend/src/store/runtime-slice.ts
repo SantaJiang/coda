@@ -20,6 +20,7 @@ import { upsertById } from "../lib/upsert"
 import type { Project } from "../lib/types"
 import type { RuntimeApi } from "./contracts"
 import {
+  activePlanMode,
   projectOwningSession,
   reportError,
   selectedProjectOf,
@@ -50,7 +51,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
   const currentDraft = () => state.drafts[activeDraftKey()] ?? emptySessionDraft()
   const composer = () => currentDraft().composer
   const attachments = () => currentDraft().attachments
-  const currentAgent = () => (state.planMode ? PLAN_AGENT : DEFAULT_AGENT)
+  const currentAgent = () => (activePlanMode(state) ? PLAN_AGENT : DEFAULT_AGENT)
 
   const writeDraft = (patch: Partial<SessionDraft>) => {
     const key = activeDraftKey()
@@ -245,7 +246,8 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
             rulesetForProject(usable, state.permissionMode),
           )
           setState("sessionsByProject", usable.path, (list = []) => upsertById(list, session!))
-          setState({ selectedSessionId: session.id, draft: false })
+          setState("planModeBySession", session.id, state.draftPlanMode)
+          setState({ selectedSessionId: session.id, draft: false, draftPlanMode: false })
           setSending(key, false)
           key = sendingKey(session.id, project.id)
           setSending(key, true)

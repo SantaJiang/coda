@@ -2,7 +2,7 @@ import { saveSendShortcut, type SendShortcut } from "../lib/settings"
 import { permissionPreset, savePermissionMode, type PermissionMode } from "../lib/permissions"
 import { popoverPatch } from "./state"
 import type { ChromeApi } from "./contracts"
-import { reportError, selectedProjectOf, selectedSessionOf, type StoreHandle } from "./handle"
+import { activePlanMode, reportError, selectedProjectOf, selectedSessionOf, type StoreHandle } from "./handle"
 import { applySessionPermission, autoReplyPending } from "./permission-sync"
 
 export function createChromeSlice(handle: StoreHandle): ChromeApi {
@@ -16,7 +16,7 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
       state.plusMenuOpen ||
       state.variantMenuOpen ||
       state.permissionMenuOpen,
-    planMode: () => state.planMode,
+    planMode: () => activePlanMode(state),
     plusMenuOpen: () => state.plusMenuOpen,
     permissionMenuOpen: () => state.permissionMenuOpen,
     permissionMode: () => state.permissionMode,
@@ -24,7 +24,12 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
     settingsOpen: () => state.settingsOpen,
     sendShortcut: () => state.sendShortcut,
     planPanelDismissed: () => state.planPanelDismissed,
-    setPlanMode: (on) => setState({ planMode: on, plusMenuOpen: false }),
+    setPlanMode: (on) => {
+      const id = state.selectedSessionId
+      if (id) setState("planModeBySession", id, on)
+      else setState("draftPlanMode", on)
+      setState("plusMenuOpen", false)
+    },
     openPlusMenu: () => setState(popoverPatch("plus")),
     closePlusMenu: () => setState("plusMenuOpen", false),
     openPermissionMenu: () => setState(popoverPatch("permission")),

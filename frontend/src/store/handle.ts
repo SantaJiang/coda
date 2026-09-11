@@ -26,6 +26,11 @@ export function selectedSessionOf(state: AppState) {
   return (state.sessionsByProject[project.path] ?? []).find((session) => session.id === state.selectedSessionId)
 }
 
+export function activePlanMode(state: AppState): boolean {
+  const id = state.selectedSessionId
+  return id ? (state.planModeBySession[id] ?? false) : state.draftPlanMode
+}
+
 export function markProjectMissing(handle: StoreHandle, path: string) {
   handle.setState(
     "projects",

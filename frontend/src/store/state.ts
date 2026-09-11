@@ -60,7 +60,8 @@ export type AppState = {
   modelMenuOpen: boolean
   modelSettingsOpen: boolean
   modelSettingsError: string | null
-  planMode: boolean
+  planModeBySession: Record<string, boolean>
+  draftPlanMode: boolean
   plusMenuOpen: boolean
   variantMenuOpen: boolean
   permissionMenuOpen: boolean
@@ -99,7 +100,8 @@ export const initialState: AppState = {
   modelMenuOpen: false,
   modelSettingsOpen: false,
   modelSettingsError: null,
-  planMode: false,
+  planModeBySession: {},
+  draftPlanMode: false,
   plusMenuOpen: false,
   variantMenuOpen: false,
   permissionMenuOpen: false,

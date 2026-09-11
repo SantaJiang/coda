@@ -33,7 +33,7 @@ export type ProjectSlice = ProjectApi & {
   hydrateProjectPath: (project: Project) => Promise<void>
 }
 
-const newDraftPatch = { selectedSessionId: null, draft: true, planMode: false }
+const newDraftPatch = { selectedSessionId: null, draft: true, draftPlanMode: false }
 
 export function createProjectSlice(handle: StoreHandle): ProjectSlice {
   const { state, setState, client } = handle
@@ -220,11 +220,14 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
     },
     selectProject: (id) => {
       const project = state.projects.find((item) => item.id === id)
+      const changed = state.selectedProjectId !== id
       setState("selectedProjectId", id)
       saveLastProject(id)
       const sessions = project ? (state.sessionsByProject[project.path] ?? []) : []
       if (state.selectedSessionId && !sessions.some((session) => session.id === state.selectedSessionId)) {
         setState(newDraftPatch)
+      } else if (changed && !state.selectedSessionId) {
+        setState("draftPlanMode", false)
       }
       if (project?.missing) setState("error", MISSING_DIRECTORY_HINT)
       else if (state.error === MISSING_DIRECTORY_HINT) setState("error", null)
@@ -285,7 +288,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
             if (draft.selectedSessionId === session.id) {
               draft.selectedSessionId = null
               draft.draft = true
-              draft.planMode = false
+              draft.draftPlanMode = false
             }
           }),
         )

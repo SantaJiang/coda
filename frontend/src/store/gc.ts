@@ -12,6 +12,7 @@ export function purgeSession(draft: AppState, sessionID: string) {
   delete draft.queuedBySession[sessionID]
   delete draft.sendingBySession[sessionID]
   delete draft.drafts[`session:${sessionID}`]
+  delete draft.planModeBySession[sessionID]
   for (const [id, permission] of Object.entries(draft.permissions)) {
     if (permission?.sessionID === sessionID) delete draft.permissions[id]
   }
