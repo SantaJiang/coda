@@ -13,7 +13,7 @@ import type {
   Todo,
 } from "../lib/types"
 import { loadPermissionMode } from "../lib/permissions"
-import { loadSendShortcut } from "../lib/settings"
+import { loadKeepBackendAlive, loadSendShortcut } from "../lib/settings"
 
 export type ConnectionState = "connecting" | "connected" | "disconnected"
 
@@ -69,6 +69,7 @@ export type AppState = {
   planPanelDismissed: boolean
   settingsOpen: boolean
   sendShortcut: SendShortcut
+  keepBackendAlive: boolean
   selectedVariant: string | null
   modelVariants: Record<string, string[]>
   queuedBySession: Record<string, QueuedMessage[]>
@@ -109,6 +110,7 @@ export const initialState: AppState = {
   planPanelDismissed: false,
   settingsOpen: false,
   sendShortcut: loadSendShortcut(),
+  keepBackendAlive: loadKeepBackendAlive(),
   selectedVariant: null,
   modelVariants: {},
   queuedBySession: {},

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { mergeHydrated, type SharedSettings } from "./shared"
+import { mergeForWrite, mergeHydrated, type SharedSettings } from "./shared"
 
 const seed: SharedSettings = {
   models: [{ id: "m1", name: "M", providerID: "p", providerName: "P", modelID: "m", baseURL: "u", apiKey: "k" }],
@@ -31,5 +31,23 @@ describe("mergeHydrated", () => {
     expect(result.memory?.models).toEqual([])
     expect(result.memory?.projects).toEqual([])
     expect(result.memory?.theme).toBe("dark")
+  })
+})
+
+describe("mergeForWrite", () => {
+  it("writes the full memory when the file does not exist yet", () => {
+    expect(mergeForWrite(null, { theme: "dark" }, ["theme"])).toEqual({ theme: "dark" })
+  })
+
+  it("only overlays dirty keys onto the latest file so other instances survive", () => {
+    const file: SharedSettings = { theme: "light", sendShortcut: "mod-enter", keepBackendAlive: true }
+    const merged = mergeForWrite(file, { theme: "dark", sendShortcut: "enter" }, ["theme"])
+    expect(merged).toEqual({ theme: "dark", sendShortcut: "mod-enter", keepBackendAlive: true })
+  })
+
+  it("removes keys deleted locally", () => {
+    const file: SharedSettings = { theme: "light", selectedModelKey: "a/b" }
+    const merged = mergeForWrite(file, { theme: "light" }, ["selectedModelKey"])
+    expect(merged).toEqual({ theme: "light" })
   })
 })

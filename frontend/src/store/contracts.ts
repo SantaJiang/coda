@@ -103,6 +103,7 @@ export type ChromeApi = {
   permissionLabel: () => string
   settingsOpen: () => boolean
   sendShortcut: () => SendShortcut
+  keepBackendAlive: () => boolean
   planPanelDismissed: () => boolean
   setPlanMode: (on: boolean) => void
   openPlusMenu: () => void
@@ -114,4 +115,5 @@ export type ChromeApi = {
   openSettings: () => void
   closeSettings: () => void
   setSendShortcut: (shortcut: SendShortcut) => void
+  setKeepBackendAlive: (value: boolean) => void
 }

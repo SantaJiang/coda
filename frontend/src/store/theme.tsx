@@ -1,5 +1,6 @@
-import { createContext, createEffect, createSignal, useContext, type ParentProps } from "solid-js"
-import { applyTheme, loadTheme, saveTheme, type Theme } from "../lib/theme"
+import { createContext, createEffect, createSignal, onCleanup, useContext, type ParentProps } from "solid-js"
+import { onSharedChange } from "../lib/shared"
+import { applyTheme, isTheme, loadTheme, saveTheme, type Theme } from "../lib/theme"
 
 export type ThemeApi = {
   theme: () => Theme
@@ -12,6 +13,12 @@ export function ThemeProvider(props: ParentProps) {
   const [theme, setThemeSignal] = createSignal<Theme>(loadTheme())
 
   createEffect(() => applyTheme(theme()))
+
+  // 其他实例（run.sh 开发版 / 安装版）改了主题时跟随更新
+  const unsubscribe = onSharedChange((patch) => {
+    if (isTheme(patch.theme) && patch.theme !== theme()) setThemeSignal(patch.theme)
+  })
+  onCleanup(unsubscribe)
 
   const api: ThemeApi = {
     theme,

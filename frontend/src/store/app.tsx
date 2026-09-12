@@ -10,6 +10,7 @@ import {
   resolveSelectedKey,
   toBackendPatch,
 } from "../lib/models"
+import { onSharedChange, type SharedSettings } from "../lib/shared"
 import {
   createLocalProject,
   ensureLocalProject,
@@ -131,6 +132,28 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
 
     void bootstrapBackend()
 
+    // 其他实例（run.sh 开发版 / 安装版）改了共享设置时，跟随更新本地状态。
+    // 只改 state，不再回写 shared，避免两个实例互相回环。
+    const applySharedPatch = (patch: SharedSettings) => {
+      if (patch.sendShortcut && patch.sendShortcut !== state.sendShortcut) {
+        setState("sendShortcut", patch.sendShortcut)
+      }
+      if (patch.permissionMode && patch.permissionMode !== state.permissionMode) {
+        setState("permissionMode", patch.permissionMode)
+      }
+      if (typeof patch.keepBackendAlive === "boolean" && patch.keepBackendAlive !== state.keepBackendAlive) {
+        setState("keepBackendAlive", patch.keepBackendAlive)
+      }
+      if (patch.models || "selectedModelKey" in patch || patch.pinnedModelKeys) {
+        const configured = loadConfiguredModels()
+        const pinned = loadPinnedModelKeys()
+        const extras = state.discoveredModels.filter((item) => pinned.includes(item.key))
+        const nextKey = resolveSelectedKey(configured, mergeSelectables(configured, extras), loadSelectedModelKey())
+        setState({ configuredModels: configured, pinnedModelKeys: pinned, selectedModelKey: nextKey })
+      }
+    }
+    const unsubscribeShared = onSharedChange(applySharedPatch)
+
     const stop = subscribe(
       (parsed) => {
         const autoReplies: ReturnType<typeof applyClientEvent>["autoReplies"] = []
@@ -166,6 +189,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
 
     onCleanup(() => {
       stop()
+      unsubscribeShared()
       window.clearInterval(ping)
     })
   })

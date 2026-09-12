@@ -1,4 +1,4 @@
-import { saveSendShortcut, type SendShortcut } from "../lib/settings"
+import { saveKeepBackendAlive, saveSendShortcut, type SendShortcut } from "../lib/settings"
 import { permissionPreset, savePermissionMode, type PermissionMode } from "../lib/permissions"
 import { popoverPatch } from "./state"
 import type { ChromeApi } from "./contracts"
@@ -23,6 +23,7 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
     permissionLabel: () => permissionPreset(state.permissionMode).label,
     settingsOpen: () => state.settingsOpen,
     sendShortcut: () => state.sendShortcut,
+    keepBackendAlive: () => state.keepBackendAlive,
     planPanelDismissed: () => state.planPanelDismissed,
     setPlanMode: (on) => {
       const id = state.selectedSessionId
@@ -54,6 +55,10 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
     setSendShortcut: (shortcut: SendShortcut) => {
       setState("sendShortcut", shortcut)
       saveSendShortcut(shortcut)
+    },
+    setKeepBackendAlive: (value: boolean) => {
+      setState("keepBackendAlive", value)
+      saveKeepBackendAlive(value)
     },
   }
 }

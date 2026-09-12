@@ -7,7 +7,7 @@ import { hydrateShared } from "./lib/shared"
 import { initTheme, loadTheme } from "./lib/theme"
 import { loadConfiguredModels, loadPinnedModelKeys, loadSelectedModelKey } from "./lib/models"
 import { loadPermissionMode } from "./lib/permissions"
-import { loadSendShortcut } from "./lib/settings"
+import { loadKeepBackendAlive, loadSendShortcut } from "./lib/settings"
 import { loadLastProject, loadProjects } from "./lib/persist"
 import App from "./App"
 
@@ -20,6 +20,7 @@ async function boot() {
       theme: loadTheme(),
       sendShortcut: loadSendShortcut(),
       permissionMode: loadPermissionMode(),
+      keepBackendAlive: loadKeepBackendAlive(),
       projects: loadProjects(),
       lastProject: loadLastProject(),
     }))

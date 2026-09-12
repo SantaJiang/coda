@@ -75,6 +75,23 @@ export function Settings() {
               </For>
             </div>
           </section>
+
+          <section class="settings-group">
+            <div class="settings-label">后端</div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={chrome.keepBackendAlive()}
+              class="settings-toggle"
+              onClick={() => chrome.setKeepBackendAlive(!chrome.keepBackendAlive())}
+            >
+              <span class="settings-toggle-text">
+                <span class="settings-choice-name">退出后保持后端运行</span>
+                <span class="settings-choice-desc">关闭后，退出 Coda 时会一并停止本机的后端进程</span>
+              </span>
+              <span class="settings-switch" aria-hidden="true" />
+            </button>
+          </section>
         </div>
       </div>
     </Show>
