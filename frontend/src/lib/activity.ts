@@ -336,7 +336,7 @@ function hostFromUrl(value: string) {
   }
 }
 
-export function activityStatus(parts: Part[], now = Date.now(), currentTodo = ""): string {
+export function activityStatus(parts: Part[], now = Date.now()): string {
   const tools = parts.filter((part): part is ToolPart => part.type === "tool")
   const running = [...tools].reverse().find(
     (part) => part.state.status === "pending" || part.state.status === "running",
@@ -350,9 +350,7 @@ export function activityStatus(parts: Part[], now = Date.now(), currentTodo = ""
     if (part.type === "tool") lastTool = index
   })
   if (lastTool >= 0) return "Planning next moves"
-  const idle = lastReasoning > lastTool ? "Thought" : "Thinking"
-  const topic = currentTodo.trim()
-  return topic ? `${idle} · ${truncate(topic, 40)}` : idle
+  return lastReasoning > lastTool ? "Thought" : "Thinking"
 }
 
 function liveStepLabel(part: ToolPart, now: number) {

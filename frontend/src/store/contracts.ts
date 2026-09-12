@@ -87,7 +87,6 @@ export type RuntimeApi = {
   partsByMessage: () => Record<string, Part[]>
   todos: () => Todo[]
   hasPlan: () => boolean
-  currentTodo: () => string
   pendingPermissions: () => PermissionRequest[]
   pendingQuestions: () => QuestionRequest[]
   queued: () => QueuedMessage[]

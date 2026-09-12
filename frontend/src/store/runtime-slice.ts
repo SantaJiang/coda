@@ -467,11 +467,6 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       if (!id) return false
       return (state.todos[id] ?? []).length > 0
     },
-    currentTodo: () => {
-      const id = state.selectedSessionId
-      if (!id) return ""
-      return (state.todos[id] ?? []).find((item) => item.status === "in_progress")?.content ?? ""
-    },
     pendingPermissions: () => {
       const sessionId = state.selectedSessionId
       if (!sessionId) return []

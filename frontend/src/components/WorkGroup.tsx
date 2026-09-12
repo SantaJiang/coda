@@ -10,12 +10,7 @@ const TOOL_HOLD_MS = 90
 const FLIP_MS = 320
 
 function isIdleStatus(label: string) {
-  return (
-    label === "Thinking" ||
-    label === "Thought" ||
-    label.startsWith("Thinking ·") ||
-    label.startsWith("Thought ·")
-  )
+  return label === "Thinking" || label === "Thought"
 }
 
 function sameStatus(a: string, b: string) {
@@ -41,14 +36,13 @@ export function WorkGroup(props: {
   const runtime = useRuntime()
   const projects = useProjects()
   const parts = createMemo(() => (props.getParts ? props.getParts() : (props.parts ?? [])))
-  const currentTodo = createMemo(() => runtime.currentTodo())
   const asking = createMemo(() => runtime.pendingQuestions().length > 0)
   const reconnecting = createMemo(() => projects.connection() === "disconnected")
   const liveStatus = () => {
     if (!props.live) return ""
     if (reconnecting()) return "Reconnecting…"
     if (asking()) return "Asking questions"
-    return activityStatus(parts(), Date.now(), currentTodo())
+    return activityStatus(parts(), Date.now())
   }
   const summary = createMemo(() => activitySummary(parts()))
   const diff = createMemo(() => activityDiff(parts()))
@@ -104,7 +98,6 @@ export function WorkGroup(props: {
     on(
       () => {
         clock()
-        currentTodo()
         return liveStatus()
       },
       (next) => {
