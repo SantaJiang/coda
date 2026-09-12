@@ -88,6 +88,20 @@ kill_port() {
   fi
 }
 
+kill_stale_vite() {
+  # 旧的 vite-dev.sh 守护循环会不停重启 Vite，只杀监听进程会被立刻抢回端口，
+  # 所以先按进程组把残留的循环整个干掉
+  local pid pgid
+  for pid in $(pgrep -f "vite-dev.sh" 2>/dev/null || true); do
+    pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+    if [[ -n "${pgid:-}" ]]; then
+      kill -- -"$pgid" >/dev/null 2>&1 || true
+    else
+      kill "$pid" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
 cleanup() {
   if [[ -f "$BACKEND_PID_FILE" ]]; then
     local pid
@@ -129,6 +143,7 @@ fi
 
 echo "==> 启动前端（由 Tauri / Vite 热更新，不再单独生产构建）"
 
+kill_stale_vite
 kill_port "$PORT"
 kill_port 1420
 
