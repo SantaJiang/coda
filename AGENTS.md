@@ -5,7 +5,7 @@ Coda 是前后端合在一起的产品仓库：
 - `frontend/`：Coda 桌面客户端
 - `backend/`：后端 git 子模块（来自上游仓库）
 
-产品侧统一使用 Coda 品牌与命名。后续改代码时遵守下面三条。
+产品侧统一使用 Coda 品牌与命名。后续改代码时遵守下面几条。
 
 ## 1. 从上游同步后端时，保住关键字替换
 
@@ -47,3 +47,21 @@ Coda 是精简客户端。从上游同步时，**不要重新加入**本项目�
 4. 审查未通过时不要提交。
 
 不要把密钥、`.env`、`.coda/` 日志打进版本库。
+
+## 4. 后端本地补丁（同步时不能丢）
+
+`patches/backend/*.patch` 记录了 Coda 对后端子模块的**行为性改动**。这些改动只存在于本地子模块工作区，上游同步会覆盖它们，所以每次从上游同步 `backend/` 之后必须重新套用并验证：
+
+```bash
+git -C backend apply ../patches/backend/<name>.patch
+```
+
+如果上游改动了相关代码导致 apply 失败，要**手工把同等语义合并进新代码**，然后重新生成补丁文件（`git -C backend diff > patches/backend/<name>.patch`），保持补丁与子模块实际改动一致。
+
+当前补丁清单：
+
+| 补丁 | 位置 | 作用 |
+|---|---|---|
+| `session-permission-refresh-per-step.patch` | `packages/opencode/src/session/prompt.ts` 的 `runLoop` | 每个 step 循环开头重新 `sessions.get(sessionID)`，让前端**运行中**切换权限模式（PATCH `/session/:id/permission`）在下一个 step 立即生效，而不是等下一条消息。上游是在循环外只读一次快照。 |
+
+以后对 `backend/` 的任何行为性修改（非第 1 条的关键字替换），都要同样落成 `patches/backend/` 下的补丁并登记到这张表里。
