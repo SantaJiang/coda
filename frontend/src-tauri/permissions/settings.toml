@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-settings-read"
+description = "Allows reading the shared Coda settings file."
+commands.allow = ["settings_read"]
+
+[[permission]]
+identifier = "allow-settings-write"
+description = "Allows writing the shared Coda settings file."
+commands.allow = ["settings_write"]

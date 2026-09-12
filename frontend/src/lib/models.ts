@@ -1,3 +1,4 @@
+import { hasSharedValue, setSharedValue, sharedValue } from "./shared"
 import { uid } from "./uid"
 
 export type ModelRef = {
@@ -133,25 +134,30 @@ function saveSecrets(models: ConfiguredModel[]) {
   localStorage.setItem(STORAGE_SECRETS, JSON.stringify(secrets))
 }
 
+function sanitizeModels(parsed: ConfiguredModel[], secrets: Record<string, string>): ConfiguredModel[] {
+  if (!Array.isArray(parsed)) return []
+  return parsed
+    .filter(
+      (item) =>
+        item &&
+        typeof item.id === "string" &&
+        typeof item.providerID === "string" &&
+        typeof item.modelID === "string",
+    )
+    .map((item) => ({
+      ...item,
+      apiKey: secrets[item.id] || item.apiKey || "",
+    }))
+}
+
 export function loadConfiguredModels(): ConfiguredModel[] {
+  const shared = sharedValue("models")
+  if (Array.isArray(shared)) return sanitizeModels(shared, {})
   try {
     const raw = localStorage.getItem(STORAGE_MODELS)
     if (!raw) return []
     const parsed = JSON.parse(raw) as ConfiguredModel[]
-    if (!Array.isArray(parsed)) return []
-    const secrets = loadSecrets()
-    return parsed
-      .filter(
-        (item) =>
-          item &&
-          typeof item.id === "string" &&
-          typeof item.providerID === "string" &&
-          typeof item.modelID === "string",
-      )
-      .map((item) => ({
-        ...item,
-        apiKey: secrets[item.id] || item.apiKey || "",
-      }))
+    return sanitizeModels(parsed, loadSecrets())
   } catch {
     return []
   }
@@ -168,18 +174,23 @@ export function saveConfiguredModels(models: ConfiguredModel[]) {
   }))
   localStorage.setItem(STORAGE_MODELS, JSON.stringify(publicModels))
   saveSecrets(models)
+  setSharedValue({ models })
 }
 
 export function loadSelectedModelKey() {
+  if (hasSharedValue("selectedModelKey")) return sharedValue("selectedModelKey") ?? null
   return localStorage.getItem(STORAGE_SELECTED)
 }
 
 export function saveSelectedModelKey(key: string | null) {
   if (!key) localStorage.removeItem(STORAGE_SELECTED)
   else localStorage.setItem(STORAGE_SELECTED, key)
+  setSharedValue({ selectedModelKey: key })
 }
 
 export function loadPinnedModelKeys(): string[] {
+  const shared = sharedValue("pinnedModelKeys")
+  if (Array.isArray(shared)) return shared.filter((item): item is string => typeof item === "string")
   try {
     const raw = localStorage.getItem(STORAGE_PINNED)
     if (!raw) return []
@@ -192,6 +203,7 @@ export function loadPinnedModelKeys(): string[] {
 
 export function savePinnedModelKeys(keys: string[]) {
   localStorage.setItem(STORAGE_PINNED, JSON.stringify(keys))
+  setSharedValue({ pinnedModelKeys: keys })
 }
 
 export function createConfiguredModel(form: ModelForm): ConfiguredModel {

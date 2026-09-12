@@ -1,4 +1,5 @@
 import { STORAGE_KEYS } from "./config"
+import { setSharedValue, sharedValue } from "./shared"
 
 export type SendShortcut = "enter" | "mod-enter"
 
@@ -25,6 +26,8 @@ export function isSendHotkey(event: KeyboardEvent, shortcut: SendShortcut) {
 }
 
 export function loadSendShortcut(): SendShortcut {
+  const shared = sharedValue("sendShortcut")
+  if (shared && VALUES.has(shared)) return shared
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.sendShortcut)
     if (raw && VALUES.has(raw as SendShortcut)) return raw as SendShortcut
@@ -36,4 +39,5 @@ export function loadSendShortcut(): SendShortcut {
 
 export function saveSendShortcut(value: SendShortcut) {
   localStorage.setItem(STORAGE_KEYS.sendShortcut, value)
+  setSharedValue({ sendShortcut: value })
 }

@@ -1,4 +1,5 @@
 import { STORAGE_KEYS } from "./config"
+import { setSharedValue, sharedValue } from "./shared"
 
 export type Theme = "light" | "dark"
 
@@ -14,6 +15,8 @@ export function isTheme(value: unknown): value is Theme {
 }
 
 export function loadTheme(): Theme {
+  const shared = sharedValue("theme")
+  if (isTheme(shared)) return shared
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.theme)
     if (isTheme(raw)) return raw
@@ -29,6 +32,7 @@ export function saveTheme(theme: Theme) {
   } catch {
     // ignore
   }
+  setSharedValue({ theme })
 }
 
 export function applyTheme(theme: Theme, root?: HTMLElement | null) {

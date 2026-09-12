@@ -1,5 +1,6 @@
 import { STORAGE_KEYS } from "./config"
 import { isLocalProject } from "./persist"
+import { setSharedValue, sharedValue } from "./shared"
 import type { Project } from "./types"
 
 export type PermissionAction = "allow" | "ask" | "deny"
@@ -124,6 +125,8 @@ export function autoReplyForMode(
 }
 
 export function loadPermissionMode(): PermissionMode {
+  const shared = sharedValue("permissionMode")
+  if (shared && MODES.has(shared)) return shared
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.permissionMode)
     if (raw && MODES.has(raw as PermissionMode)) return raw as PermissionMode
@@ -135,4 +138,5 @@ export function loadPermissionMode(): PermissionMode {
 
 export function savePermissionMode(mode: PermissionMode) {
   localStorage.setItem(STORAGE_KEYS.permissionMode, mode)
+  setSharedValue({ permissionMode: mode })
 }

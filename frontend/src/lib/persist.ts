@@ -1,5 +1,6 @@
 import { STORAGE_KEYS } from "./config"
 import { basename, parentSegments, samePath } from "./path"
+import { hasSharedValue, setSharedValue, sharedValue } from "./shared"
 import { uid } from "./uid"
 import type { BackendProject, Project, Session } from "./types"
 
@@ -90,6 +91,8 @@ export async function resolveHomeDir(): Promise<string | null> {
 }
 
 export function loadProjects(): Project[] {
+  const shared = sharedValue("projects")
+  if (Array.isArray(shared)) return shared
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.projects)
     if (!raw) return []
@@ -107,6 +110,7 @@ export function saveProjects(projects: Project[]) {
     return next
   })
   localStorage.setItem(STORAGE_KEYS.projects, JSON.stringify(stored))
+  setSharedValue({ projects: stored })
 }
 
 export function loadProjectSessions(projectId: string): Session[] {
@@ -170,11 +174,13 @@ export async function directoryExists(path: string): Promise<boolean | null> {
 }
 
 export function loadLastProject() {
+  if (hasSharedValue("lastProject")) return sharedValue("lastProject") ?? null
   return localStorage.getItem(STORAGE_KEYS.lastProject)
 }
 
 export function saveLastProject(id: string) {
   localStorage.setItem(STORAGE_KEYS.lastProject, id)
+  setSharedValue({ lastProject: id })
 }
 
 export function createProject(path: string): Project {
