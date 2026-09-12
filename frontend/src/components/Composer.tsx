@@ -17,6 +17,7 @@ export function Composer() {
   const runtime = useRuntime()
   const chrome = useChrome()
   let area: HTMLTextAreaElement | undefined
+  let composing = false
 
   const placeholder = () => {
     if (!projects.selectedProject()) return "先添加一个项目文件夹"
@@ -50,6 +51,21 @@ export function Composer() {
     runtime.composer()
     queueMicrotask(resize)
   })
+
+  // textarea 不用 value 绑定做受控组件：Solid 每次输入都回写 node.value 会
+  // 重置光标并打断 IME 组合，导致 "" 自动配对、智能引号变成 ”” 之类的乱码。
+  // 只有外部改动（发送清空、恢复草稿等）且不在组合输入中时才回写 DOM。
+  createEffect(() => {
+    const next = runtime.composer()
+    if (!area || composing || area.value === next) return
+    area.value = next
+    resize()
+  })
+
+  const onCompositionEnd = () => {
+    composing = false
+    if (area) runtime.setComposer(area.value)
+  }
 
   const stopIfBusy = () => {
     if (!runtime.busy() || chrome.overlayOpen()) return false
@@ -86,10 +102,13 @@ export function Composer() {
       <textarea
         ref={area}
         rows={1}
-        value={runtime.composer()}
         disabled={!projects.selectedProject() || runtime.blocked() || !!projects.selectedProject()?.missing}
         placeholder={placeholder()}
         onInput={(event) => runtime.setComposer(event.currentTarget.value)}
+        onCompositionStart={() => {
+          composing = true
+        }}
+        onCompositionEnd={onCompositionEnd}
         onKeyDown={onKeyDown}
       />
       <div class="composer-bar">

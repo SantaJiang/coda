@@ -242,7 +242,10 @@ export function QuestionDock() {
                         <Show when={selected(CUSTOM)}>
                           <input
                             type="text"
-                            value={customTexts()[index()] ?? ""}
+                            // 不用 value 绑定：回写 node.value 会打断 IME 组合并重置光标
+                            ref={(el) => {
+                              el.value = customTexts()[index()] ?? ""
+                            }}
                             autocomplete="off"
                             autofocus
                             onClick={(event) => event.stopPropagation()}
