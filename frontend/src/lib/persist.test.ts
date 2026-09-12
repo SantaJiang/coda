@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { restoreCandidates } from "./persist"
-import type { BackendProject, Project } from "./types"
+import { filterProjectSessions, restoreCandidates } from "./persist"
+import type { BackendProject, Project, Session } from "./types"
 
 function project(path: string, extra: Partial<Project> = {}): Project {
   return { id: `prj_${path}`, path, name: path, expanded: true, ...extra }
@@ -8,6 +8,16 @@ function project(path: string, extra: Partial<Project> = {}): Project {
 
 function backend(id: string, worktree: string, extra: Partial<BackendProject> = {}): BackendProject {
   return { id, worktree, ...extra }
+}
+
+function session(id: string, directory: string, projectID?: string): Session {
+  return {
+    id,
+    directory,
+    title: id,
+    time: { created: 1, updated: 1 },
+    ...(projectID ? { projectID } : {}),
+  }
 }
 
 describe("restoreCandidates", () => {
@@ -60,5 +70,36 @@ describe("restoreCandidates", () => {
       ],
     )
     expect(groups).toEqual([["/tmp/a", "/tmp/shared"]])
+  })
+})
+
+describe("filterProjectSessions", () => {
+  it("drops global-project sessions from other directories", () => {
+    const kept = filterProjectSessions(
+      [
+        session("own", "/Volumes/Movie/AV/JK0571", "global"),
+        session("own-child", "/Volumes/Movie/AV/JK0571/sub", "global"),
+        session("leaked", "/Users/santa/Movies/other", "global"),
+        session("leaked-home", "/Users/santa", "global"),
+      ],
+      "/Volumes/Movie/AV/JK0571",
+    )
+    expect(kept.map((item) => item.id)).toEqual(["own", "own-child"])
+  })
+
+  it("keeps sessions of a real backend project regardless of directory", () => {
+    const kept = filterProjectSessions(
+      [session("worktree", "/tmp/sandbox/app", "abc123"), session("mine", "/Users/me/app", "abc123")],
+      "/Users/me/app",
+    )
+    expect(kept.map((item) => item.id)).toEqual(["worktree", "mine"])
+  })
+
+  it("treats sessions without projectID by directory", () => {
+    const kept = filterProjectSessions(
+      [session("inside", "/Users/me/app/x"), session("outside", "/Users/me/other")],
+      "/Users/me/app",
+    )
+    expect(kept.map((item) => item.id)).toEqual(["inside"])
   })
 })

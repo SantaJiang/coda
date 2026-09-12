@@ -15,15 +15,23 @@ function isWindowsPath(path: string) {
   return /^[A-Za-z]:/.test(path) || path.startsWith("//")
 }
 
+function canonWindows(path: string) {
+  return path.replace(/^([A-Za-z]):/, (_, drive: string) => `${drive.toUpperCase()}:`).toLowerCase()
+}
+
 export function samePath(left: string, right: string) {
   const a = normalizeSlashes(left)
   const b = normalizeSlashes(right)
-  if (isWindowsPath(a) || isWindowsPath(b)) {
-    const canon = (value: string) =>
-      value.replace(/^([A-Za-z]):/, (_, drive: string) => `${drive.toUpperCase()}:`).toLowerCase()
-    return canon(a) === canon(b)
-  }
+  if (isWindowsPath(a) || isWindowsPath(b)) return canonWindows(a) === canonWindows(b)
   return a === b
+}
+
+export function isWithinPath(child: string, parent: string) {
+  if (samePath(child, parent)) return true
+  const a = normalizeSlashes(child)
+  const b = normalizeSlashes(parent)
+  if (isWindowsPath(a) || isWindowsPath(b)) return canonWindows(a).startsWith(`${canonWindows(b)}/`)
+  return a.startsWith(`${b}/`)
 }
 
 export function parentSegments(path: string, depth: number) {

@@ -1,11 +1,24 @@
 import { STORAGE_KEYS } from "./config"
-import { basename, parentSegments, samePath } from "./path"
+import { basename, isWithinPath, parentSegments, samePath } from "./path"
 import { hasSharedValue, setSharedValue, sharedValue } from "./shared"
 import { uid } from "./uid"
 import type { BackendProject, Project, Session } from "./types"
 
 export const LOCAL_PROJECT_ID = "prj_local"
 export const LOCAL_PROJECT_NAME = "本机"
+
+// 后端把所有非 git 目录都归到同一个 "global" 项目里，scope=project 会把
+// 其他目录的会话一起带回来，所以 global 会话必须再按目录归属过滤一次。
+export const GLOBAL_BACKEND_PROJECT_ID = "global"
+
+export function sessionBelongsToProject(session: Session, projectPath: string) {
+  if (session.projectID && session.projectID !== GLOBAL_BACKEND_PROJECT_ID) return true
+  return isWithinPath(session.directory ?? "", projectPath)
+}
+
+export function filterProjectSessions(sessions: Session[], projectPath: string) {
+  return sessions.filter((session) => sessionBelongsToProject(session, projectPath))
+}
 
 export { basename, samePath } from "./path"
 

@@ -3,6 +3,7 @@ import {
   createProject,
   clearProjectSessions,
   directoryExists,
+  filterProjectSessions,
   isLocalProject,
   loadProjectSessions,
   restoreCandidates,
@@ -58,7 +59,10 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
   }
 
   function cachedSessions(project: Project): Session[] {
-    return loadProjectSessions(project.id).map((session) => ({ ...session, directory: project.path }))
+    return filterProjectSessions(loadProjectSessions(project.id), project.path).map((session) => ({
+      ...session,
+      directory: project.path,
+    }))
   }
 
   async function refreshProjectSessions(project: Project) {
@@ -72,7 +76,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         project.path,
         isLocalProject(project) ? undefined : { scope: "project" },
       )
-      const roots = (sessions ?? [])
+      const roots = filterProjectSessions(sessions ?? [], project.path)
         .filter((session) => !session.parentID && !session.time.archived)
         .map((session) => ({ ...session, directory: project.path }))
       setState("sessionsByProject", project.path, roots)
