@@ -162,6 +162,26 @@ export function WorkGroup(props: {
           </span>
         </button>
       </Show>
+      <Show when={open()}>
+        <div class="work-steps">
+          <Show
+            when={thoughtOnly()}
+            fallback={
+              <Index each={stepParts()}>
+                {(part) => <WorkStep part={part()} />}
+              </Index>
+            }
+          >
+            <Index each={thoughtParts()}>
+              {(part) => (
+                <div class="work-step-body reasoning-inline">
+                  <MarkdownView text={(part() as ReasoningPart).text} />
+                </div>
+              )}
+            </Index>
+          </Show>
+        </div>
+      </Show>
       <Show when={props.live && line().current}>
         <button
           type="button"
@@ -188,26 +208,6 @@ export function WorkGroup(props: {
             <Icon name="chevron-right" class="work-summary-caret" />
           </Show>
         </button>
-      </Show>
-      <Show when={open()}>
-        <div class="work-steps">
-          <Show
-            when={thoughtOnly()}
-            fallback={
-              <Index each={stepParts()}>
-                {(part) => <WorkStep part={part()} />}
-              </Index>
-            }
-          >
-            <Index each={thoughtParts()}>
-              {(part) => (
-                <div class="work-step-body reasoning-inline">
-                  <MarkdownView text={(part() as ReasoningPart).text} />
-                </div>
-              )}
-            </Index>
-          </Show>
-        </div>
       </Show>
     </div>
   )
