@@ -87,7 +87,7 @@ export function Settings() {
             >
               <span class="settings-toggle-text">
                 <span class="settings-choice-name">退出后保持后端运行</span>
-                <span class="settings-choice-desc">关闭后，退出 Coda 时会一并停止本机的后端进程</span>
+                <span class="settings-choice-desc">关闭后，退出 Coda 时会一并停止内置后端</span>
               </span>
               <span class="settings-switch" aria-hidden="true" />
             </button>

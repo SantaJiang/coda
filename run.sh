@@ -69,10 +69,9 @@ if [[ ! -d "$FRONTEND" || ! -f "$FRONTEND/package.json" ]]; then
   exit 1
 fi
 
-# 这些只给后端子进程用，不 export：留在调用方 shell 里会让后端测试读到
-# 真实配置目录，从而出现和代码无关的假失败
-CODA_CONFIG="${CODA_CONFIG:-$ROOT/config/coda.json}"
-CODA_CONFIG_DIR="${CODA_CONFIG_DIR:-$LOG_DIR/backend}"
+# 不给后端默认指定 CODA_CONFIG / CODA_CONFIG_DIR，
+# 与安装版共用 ~/.local/share/opencode（会话）和 ~/.config/opencode（配置）。
+# 调用方若已 export 这两项，子进程会继承。
 
 kill_port() {
   local port="$1"
@@ -150,7 +149,7 @@ kill_port 1420
 echo "==> 启动 Coda 后端  http://127.0.0.1:$PORT"
 (
   cd "$BACKEND_ROOT"
-  CODA_CONFIG="$CODA_CONFIG" CODA_CONFIG_DIR="$CODA_CONFIG_DIR" CODA_PORT="$PORT" \
+  CODA_PORT="$PORT" OPENCODE_DISABLE_AUTOUPDATE=1 \
     bun --cwd "$PKG_DIR" --conditions=browser src/index.ts serve --port "$PORT" --hostname 127.0.0.1
 ) >"$BACKEND_LOG" 2>&1 &
 echo $! >"$BACKEND_PID_FILE"

@@ -38,4 +38,6 @@ git submodule update --init --recursive
 ./scripts/pack.sh
 ```
 
-脚本会重新编译，并按当前系统生成安装包：macOS 为 dmg，Windows 为 exe，Linux 为 deb 与 rpm。
+脚本会编译内置后端、前端与 Rust，并按当前系统生成可独立运行的安装包：macOS 为 dmg，Windows 为 exe，Linux 为 deb 与 rpm。安装后直接打开即可，不必再跑 `./run.sh`。
+
+开发版和安装版读写同一份用户数据：会话在 `~/.local/share/opencode`，模型与界面设置在系统的 Coda 配置目录。

@@ -8,6 +8,7 @@
     "dev": "vite",
     "dev:watch": "bash scripts/vite-dev.sh",
     "build": "vite build",
+    "before-tauri-build": "bash ../scripts/build-sidecar.sh && bun run build",
     "test": "vitest run",
     "serve": "vite preview",
     "tauri": "tauri"

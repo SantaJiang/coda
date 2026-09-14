@@ -9,7 +9,7 @@ usage() {
   cat <<'EOF'
 用法: ./scripts/pack.sh
 
-每次都会重新编译前端与 Rust，并按当前系统打包：
+每次都会重新编译内置后端、前端与 Rust，并按当前系统打包成可独立运行的安装包：
   macOS  -> dmg
   Windows -> nsis（生成 setup.exe）
   Linux  -> deb 与 rpm
@@ -57,7 +57,7 @@ fi
 echo "==> 安装依赖"
 bun install --cwd "$FRONTEND"
 
-echo "==> Tauri release 构建（前端 + 原生 + 安装包）"
+echo "==> Tauri release 构建（内置后端 + 前端 + 原生 + 安装包）"
 bun run --cwd "$FRONTEND" tauri build --bundles "$BUNDLES"
 
 echo

@@ -12,6 +12,8 @@ usage() {
   - 各处 node_modules
   - frontend/dist
   - frontend/src-tauri/target
+  - frontend/src-tauri/binaries/coda-backend-*
+  - backend/packages/opencode/dist
   - .coda（本地日志与运行缓存）
   - .DS_Store 与 *.log
 
@@ -39,7 +41,17 @@ echo "==> 删除前端构建产物"
 for path in \
   "$ROOT/frontend/dist" \
   "$ROOT/frontend/src-tauri/target" \
+  "$ROOT/backend/packages/opencode/dist" \
   "$ROOT/.coda"
+do
+  if [[ -e "$path" ]]; then
+    echo "$path"
+    rm -rf "$path"
+  fi
+done
+
+echo "==> 删除打包用 sidecar"
+for path in "$ROOT"/frontend/src-tauri/binaries/coda-backend-*
 do
   if [[ -e "$path" ]]; then
     echo "$path"
