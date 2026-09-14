@@ -1,8 +1,20 @@
 import { autoReplyForMode } from "../lib/permissions"
+import { isAbortError } from "../lib/session-status"
 import { isLocalProject, missingDirectoryMessage, parseMissingDirectory } from "../lib/persist"
 import { samePath } from "../lib/path"
 import { upsertById } from "../lib/upsert"
-import type { Message, Part, PermissionRequest, QuestionRequest, Session, SessionStatus, TextPart, Todo, ToolPart } from "../lib/types"
+import type {
+  AssistantError,
+  Message,
+  Part,
+  PermissionRequest,
+  QuestionRequest,
+  Session,
+  SessionStatus,
+  TextPart,
+  Todo,
+  ToolPart,
+} from "../lib/types"
 import type { ParsedEvent } from "../lib/events"
 import type { AppState } from "./state"
 import { purgeSession } from "./gc"
@@ -82,7 +94,9 @@ const handlers: Record<string, EventHandler> = {
     const sessionID = (props.sessionID as string) ?? info?.sessionID
     if (info && sessionID) {
       draft.messages[sessionID] = upsertById(draft.messages[sessionID] ?? [], info)
-      if (info.role === "assistant" && info.error) draft.sessionErrors[sessionID] = true
+      if (info.role === "assistant" && info.error && !isAbortError(info.error)) {
+        draft.sessionErrors[sessionID] = true
+      }
     }
   },
   "message.removed": (draft, { props }) => {
@@ -177,12 +191,12 @@ const handlers: Record<string, EventHandler> = {
   },
   "session.error": (draft, { props }) => {
     const sessionID = props.sessionID as string | undefined
-    const message =
-      (props.error as { data?: { message?: string }; message?: string } | undefined)?.data?.message ||
-      (props.error as { message?: string } | undefined)?.message ||
-      (props.message as string)
-    if (sessionID) draft.sessionErrors[sessionID] = true
-    if (!message) return
+    const error = props.error as (AssistantError & { message?: string }) | string | undefined
+    const aborted = isAbortError(error)
+    const detail = typeof error === "string" ? undefined : error
+    const message = detail?.data?.message || detail?.message || (props.message as string)
+    if (sessionID && !aborted) draft.sessionErrors[sessionID] = true
+    if (!message || aborted) return
     const friendly = missingDirectoryMessage(String(message))
     if (friendly) {
       draft.error = friendly

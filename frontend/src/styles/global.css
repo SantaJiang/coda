@@ -956,12 +956,37 @@ button.ctx-pill:hover {
 }
 
 .work-status {
+  display: block;
   height: 1.4em;
   overflow: hidden;
   margin-top: 2px;
   font-size: var(--font-chat);
   line-height: 1.4em;
   animation: work-fade-in 220ms ease;
+}
+
+.work-status-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 2px 0 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.work-status-head:disabled {
+  cursor: default;
+}
+
+.work-status-head .work-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-top: 0;
 }
 
 .work-status-flip {
@@ -2562,6 +2587,26 @@ button.ctx-pill:hover {
 .reasoning summary {
   cursor: pointer;
   font-size: var(--font-chat);
+}
+
+.stop-mark {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  color: var(--text-faint);
+  font-size: var(--font-chat);
+  line-height: var(--line-chat);
+}
+
+.stop-mark::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.65;
 }
 
 .error-card {

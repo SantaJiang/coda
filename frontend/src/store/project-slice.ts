@@ -18,7 +18,7 @@ import {
   basename,
 } from "../lib/persist"
 import { applyDerivedStatus, mergeMessages, mergeParts } from "../lib/session-sync"
-import { deriveStatusFromMessages, hasAssistantError } from "../lib/session-status"
+import { deriveStatusFromMessages, hasFailingAssistant } from "../lib/session-status"
 import type { BackendProject, PermissionRequest, Project, QuestionRequest, Session, Todo } from "../lib/types"
 import type { ProjectApi } from "./contracts"
 import { purgeSession, syncSessionRequests } from "./gc"
@@ -140,7 +140,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
           Boolean(opts.merge),
         )
         if (derived) draft.status[session.id] = derived
-        draft.sessionErrors[session.id] = hasAssistantError(nextMessages)
+        draft.sessionErrors[session.id] = hasFailingAssistant(nextMessages)
         if (draft.planModeBySession[session.id] === undefined) {
           draft.planModeBySession[session.id] = inferPlanMode(session, nextMessages)
         }

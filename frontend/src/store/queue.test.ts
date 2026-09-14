@@ -9,6 +9,7 @@ const item: QueuedMessage = {
   agent: "build",
   model: { providerID: "openai", modelID: "gpt" },
   variant: null,
+  directory: "/tmp/app",
 }
 
 describe("shouldFlushQueue", () => {

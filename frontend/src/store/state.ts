@@ -24,6 +24,7 @@ export type QueuedMessage = {
   agent: string
   model: { providerID: string; modelID: string }
   variant: string | null
+  directory: string
 }
 
 export type SessionDraft = {

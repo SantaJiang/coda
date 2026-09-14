@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
   deriveStatusFromMessages,
-  hasAssistantError,
+  hasFailingAssistant,
+  isAbortError,
   isActiveStatus,
   isSessionBusy,
   sessionDotKind,
@@ -72,8 +73,31 @@ describe("session status", () => {
   })
 
   it("detects an assistant error on the session", () => {
-    expect(hasAssistantError([])).toBe(false)
-    expect(hasAssistantError([user("u1"), assistant("a1")])).toBe(false)
-    expect(hasAssistantError([assistant("a1", { error: { data: { message: "boom" } } })])).toBe(true)
+    expect(hasFailingAssistant([])).toBe(false)
+    expect(hasFailingAssistant([user("u1"), assistant("a1")])).toBe(false)
+    expect(hasFailingAssistant([assistant("a1", { error: { data: { message: "boom" } } })])).toBe(true)
+  })
+
+  it("treats a user abort as a stop, not a failure", () => {
+    expect(isAbortError({ name: "MessageAbortedError", data: { message: "Aborted" } })).toBe(true)
+    expect(isAbortError({ data: { message: "Aborted" } })).toBe(true)
+    expect(isAbortError("Aborted")).toBe(true)
+    expect(isAbortError({ name: "APIError", data: { message: "boom" } })).toBe(false)
+    expect(isAbortError(undefined)).toBe(false)
+    expect(
+      hasFailingAssistant([
+        assistant("a1", { error: { name: "MessageAbortedError", data: { message: "Aborted" } } }),
+      ]),
+    ).toBe(false)
+  })
+
+  it("only flags the latest assistant turn, so a recovered session is not stuck red", () => {
+    const messages: Message[] = [
+      assistant("a1", { error: { data: { message: "boom" } } }),
+      user("u2"),
+      assistant("a2", { time: { created: 3, completed: 4 } }),
+    ]
+    expect(hasFailingAssistant(messages)).toBe(false)
+    expect(hasFailingAssistant(messages.slice(0, 1))).toBe(true)
   })
 })

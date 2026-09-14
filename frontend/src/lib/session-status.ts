@@ -1,4 +1,4 @@
-import type { Message, PermissionRequest, QuestionRequest, SessionStatus } from "./types"
+import type { AssistantError, Message, PermissionRequest, QuestionRequest, SessionStatus } from "./types"
 
 export function isActiveStatus(status?: SessionStatus) {
   return status?.type === "busy" || status?.type === "retry"
@@ -18,8 +18,21 @@ export function deriveStatusFromMessages(messages: Message[]): SessionStatus | n
   return null
 }
 
-export function hasAssistantError(messages: Message[]): boolean {
-  return messages.some((message) => message.role === "assistant" && Boolean(message.error))
+export function isAbortError(error?: AssistantError | string | null) {
+  if (!error) return false
+  if (typeof error === "string") return error.trim().toLowerCase() === "aborted"
+  const name = (error.name ?? "").toLowerCase()
+  if (name === "messageabortederror" || name === "aborterror") return true
+  return (error.data?.message ?? "").trim().toLowerCase() === "aborted"
+}
+
+export function hasFailingAssistant(messages: Message[]): boolean {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role !== "assistant") continue
+    return Boolean(message.error) && !isAbortError(message.error)
+  }
+  return false
 }
 
 export function sessionHasBlockers(

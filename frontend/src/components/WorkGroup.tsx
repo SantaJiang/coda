@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
+import { For, Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { activityDiff, activityStatus, activitySummary, stepBody, stepLabel } from "../lib/activity"
 import type { Part, ReasoningPart } from "../lib/types"
 import { useProjects, useRuntime } from "../store/app"
@@ -50,6 +50,10 @@ export function WorkGroup(props: {
     const list = parts()
     return list.length > 0 && list.every((part) => part.type === "reasoning")
   })
+  const stepParts = createMemo(() =>
+    parts().filter((part) => part.type === "tool" || part.type === "reasoning"),
+  )
+  const thoughtParts = createMemo(() => parts().filter((part) => part.type === "reasoning"))
   const showHead = createMemo(() => Boolean(summary()) && !(props.live && thoughtOnly()))
   const open = () => (props.onToggle ? Boolean(props.open) : localOpen())
   const toggle = (event?: MouseEvent) => {
@@ -159,42 +163,49 @@ export function WorkGroup(props: {
         </button>
       </Show>
       <Show when={props.live && line().current}>
-        <div class="work-status" aria-label={line().current}>
-          <For each={[line().tick]}>
-            {() => (
-              <div class="work-status-flip" classList={{ flipping: line().flipping }}>
-                <Show when={line().previous}>
-                  <span class="work-status-line out">{line().previous}</span>
-                </Show>
-                <span class="work-status-line in">
-                  <span class="work-status-wave">{line().current}</span>
+        <button
+          type="button"
+          class="work-status-head"
+          onClick={toggle}
+          aria-expanded={open()}
+          disabled={!parts().length}
+        >
+          <span class="work-status" aria-label={line().current}>
+            <For each={[line().tick]}>
+              {() => (
+                <span class="work-status-flip" classList={{ flipping: line().flipping }}>
+                  <Show when={line().previous}>
+                    <span class="work-status-line out">{line().previous}</span>
+                  </Show>
+                  <span class="work-status-line in">
+                    <span class="work-status-wave">{line().current}</span>
+                  </span>
                 </span>
-              </div>
-            )}
-          </For>
-        </div>
+              )}
+            </For>
+          </span>
+          <Show when={parts().length}>
+            <Icon name="chevron-right" class="work-summary-caret" />
+          </Show>
+        </button>
       </Show>
-      <Show when={open() && showHead()}>
+      <Show when={open()}>
         <div class="work-steps">
           <Show
             when={thoughtOnly()}
             fallback={
-              <For each={parts()}>
-                {(part) =>
-                  part.type === "tool" || part.type === "reasoning" ? <WorkStep part={part} /> : null
-                }
-              </For>
+              <Index each={stepParts()}>
+                {(part) => <WorkStep part={part()} />}
+              </Index>
             }
           >
-            <For each={parts()}>
-              {(part) =>
-                part.type === "reasoning" ? (
-                  <div class="work-step-body reasoning-inline">
-                    <MarkdownView text={(part as ReasoningPart).text} />
-                  </div>
-                ) : null
-              }
-            </For>
+            <Index each={thoughtParts()}>
+              {(part) => (
+                <div class="work-step-body reasoning-inline">
+                  <MarkdownView text={(part() as ReasoningPart).text} />
+                </div>
+              )}
+            </Index>
           </Show>
         </div>
       </Show>

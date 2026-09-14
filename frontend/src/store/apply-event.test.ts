@@ -27,7 +27,17 @@ describe("applyClientEvent", () => {
       messages: { s1: [{ id: "m1", sessionID: "s1", role: "user", time: { created: 1 } }] },
       parts: { m1: [] },
       queuedBySession: {
-        s1: [{ id: "q", text: "x", attachments: [], agent: "build", model: { providerID: "a", modelID: "b" }, variant: null }],
+        s1: [
+          {
+            id: "q",
+            text: "x",
+            attachments: [],
+            agent: "build",
+            model: { providerID: "a", modelID: "b" },
+            variant: null,
+            directory: "/tmp/app",
+          },
+        ],
       },
       sessionsByProject: {
         "/tmp/app": [{ id: "s1", directory: "/tmp/app", title: "t", time: { created: 1, updated: 1 } }],
@@ -79,6 +89,47 @@ describe("applyClientEvent", () => {
       event: {
         type: "session.error",
         properties: { sessionID: "s1", error: { data: { message: "model failed" } } },
+      },
+    })
+    expect(state.sessionErrors.s1).toBe(true)
+    expect(state.error).toBeNull()
+  })
+
+  it("does not flag a session as errored when the user stopped it", () => {
+    const aborted = { name: "MessageAbortedError", data: { message: "Aborted" } }
+    const state = draft({ selectedSessionId: "other", error: null })
+    applyClientEvent(state, {
+      event: {
+        type: "message.updated",
+        properties: {
+          sessionID: "s1",
+          info: { id: "a1", sessionID: "s1", role: "assistant", time: { created: 1, completed: 2 }, error: aborted },
+        },
+      },
+    })
+    applyClientEvent(state, {
+      event: { type: "session.error", properties: { sessionID: "s2", error: aborted } },
+    })
+    expect(state.sessionErrors.s1).toBeUndefined()
+    expect(state.sessionErrors.s2).toBeUndefined()
+    expect(state.error).toBeNull()
+  })
+
+  it("flags a session on a real assistant failure", () => {
+    const state = draft({ selectedSessionId: "other", error: null })
+    applyClientEvent(state, {
+      event: {
+        type: "message.updated",
+        properties: {
+          sessionID: "s1",
+          info: {
+            id: "a1",
+            sessionID: "s1",
+            role: "assistant",
+            time: { created: 1 },
+            error: { name: "APIError", data: { message: "provider down" } },
+          },
+        },
       },
     })
     expect(state.sessionErrors.s1).toBe(true)

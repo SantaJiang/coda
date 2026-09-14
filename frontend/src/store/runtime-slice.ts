@@ -28,7 +28,7 @@ import {
   selectedSessionOf,
   type StoreHandle,
 } from "./handle"
-import { directoryFor, sendingKey } from "./lookup"
+import { directoryFor, projectByPath, sendingKey } from "./lookup"
 import { selectedModelOf } from "./model-slice"
 import { applySessionPermission } from "./permission-sync"
 import { shouldFlushQueue, takeDeferredSend, withSessionLock } from "./queue"
@@ -128,18 +128,20 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
 
   const setSending = (key: string, value: boolean) => setState("sendingBySession", key, value)
 
+  const queuedProject = (sessionID: string, item: QueuedMessage) =>
+    (item.directory ? projectByPath(state, item.directory) : undefined) ??
+    projectOwningSession(state, sessionID) ??
+    selectedProject()
+
   const dispatchQueued = async (sessionID: string, item: QueuedMessage) => {
     if (!item.text.trim() && item.attachments.length === 0) return true
-    const project = selectedProject() ?? projectOwningSession(state, sessionID)
-    const session = project
-      ? (state.sessionsByProject[project.path] ?? []).find((entry) => entry.id === sessionID)
-      : undefined
-    if (!project || !session) return false
+    const project = queuedProject(sessionID, item)
+    if (!project) return false
     const usable = ensureProjectDirectory(project)
     if (!usable) return false
     setSending(sessionID, true)
     try {
-      await promptSession(session, usable, {
+      await promptSession({ id: sessionID }, usable, {
         text: item.text,
         files: item.attachments,
         model: item.model,
@@ -231,6 +233,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
             agent: currentAgent(),
             model: { providerID: model.providerID, modelID: model.modelID },
             variant: state.selectedVariant,
+            directory: usable.path,
           },
         ])
         clearSentDraft()
@@ -361,6 +364,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
           agent: currentAgent(),
           model: model ? { providerID: model.providerID, modelID: model.modelID } : item.model,
           variant: state.selectedVariant,
+          directory: selectedProject()?.path ?? item.directory,
         })
       }
       setState("queuedBySession", sessionID, remaining)
