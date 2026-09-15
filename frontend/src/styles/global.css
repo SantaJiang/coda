@@ -1136,6 +1136,17 @@ button.ctx-pill:hover {
   min-width: 0;
 }
 
+.work-summary-action,
+.work-step-action {
+  color: var(--text-muted);
+}
+
+.work-summary-detail,
+.work-step-detail,
+.work-step-context {
+  color: var(--text-faint);
+}
+
 .work-summary-caret {
   flex: 0 0 auto;
   color: var(--text-faint);
@@ -1178,6 +1189,13 @@ button.ctx-pill:hover {
   color: var(--diff-del);
 }
 
+.work-failure {
+  flex: 0 0 auto;
+  color: var(--error-fg);
+  font-size: inherit;
+  font-weight: 550;
+}
+
 .work-steps {
   margin-top: 6px;
   display: flex;
@@ -1209,11 +1227,33 @@ button.ctx-pill:hover {
   cursor: default;
 }
 
+.work-step-head:not(:disabled) {
+  cursor: pointer;
+}
+
 .work-step-label {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.work-step-head:hover:not(:disabled) .work-step-action,
+.work-step.open .work-step-action {
+  color: var(--text);
+}
+
+.work-step-head:hover:not(:disabled) .work-step-detail,
+.work-step.open .work-step-detail,
+.work-step-head:hover:not(:disabled) .work-step-context,
+.work-step.open .work-step-context {
+  color: var(--text-muted);
+}
+
+.work-step.failed .work-step-action,
+.work-step.failed .work-step-detail,
+.work-step.failed .work-step-context {
+  color: var(--error-fg);
 }
 
 .work-step-body {

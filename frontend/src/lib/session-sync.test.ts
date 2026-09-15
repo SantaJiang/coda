@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { applyDerivedStatus, mergeMessages, mergeParts } from "./session-sync"
+import { applyDerivedStatus, mergeMessages, mergeParts, resolveRacingSessionStatus, resolveSessionStatus } from "./session-sync"
 import type { AssistantMessage, Part, TextPart, UserMessage } from "./types"
 
 const user = (id: string, created = 1): UserMessage => ({
@@ -61,6 +61,31 @@ describe("mergeParts", () => {
     expect(mergeParts(local, incoming).map((item) => item.id)).toEqual(["p1", "p2"])
   })
 
+  it("keeps completed reasoning timing when a resync snapshot is stale", () => {
+    const local: Part[] = [
+      {
+        id: "r1",
+        sessionID: "s1",
+        messageID: "m1",
+        type: "reasoning",
+        text: "complete thought",
+        time: { start: 1_000, end: 3_000 },
+      },
+    ]
+    const incoming: Part[] = [
+      {
+        id: "r1",
+        sessionID: "s1",
+        messageID: "m1",
+        type: "reasoning",
+        text: "complete",
+        time: { start: 1_000 },
+      },
+    ]
+
+    expect(mergeParts(local, incoming)[0]).toEqual(local[0])
+  })
+
   it("keeps a completed local tool over a running snapshot", () => {
     const local: Part[] = [
       {
@@ -95,5 +120,44 @@ describe("applyDerivedStatus", () => {
 
   it("unsticks a busy session when the snapshot says idle", () => {
     expect(applyDerivedStatus({ type: "busy" }, { type: "idle" }, true)).toEqual({ type: "idle" })
+  })
+
+  it("treats absence from the authoritative live status map as idle", () => {
+    expect(resolveSessionStatus("s1", {}, { type: "busy" }, { type: "busy" }, false)).toEqual({ type: "idle" })
+    expect(resolveSessionStatus("s1", { s1: { type: "retry", attempt: 2 } }, undefined, null)).toEqual({
+      type: "retry",
+      attempt: 2,
+    })
+  })
+
+  it("falls back to message-derived status when the live status request fails", () => {
+    expect(resolveSessionStatus("s1", null, undefined, { type: "busy" }, false)).toEqual({ type: "busy" })
+  })
+
+  it("does not let a stale live busy map revive a settled session", () => {
+    expect(
+      resolveSessionStatus("s1", { s1: { type: "busy" } }, { type: "idle" }, { type: "idle" }, true, "assistant"),
+    ).toEqual({ type: "idle" })
+    expect(
+      resolveSessionStatus("s1", { s1: { type: "busy" } }, { type: "busy" }, { type: "idle" }, true, "assistant"),
+    ).toEqual({ type: "idle" })
+  })
+
+  it("still trusts live busy when a new user turn is waiting", () => {
+    expect(
+      resolveSessionStatus("s1", { s1: { type: "busy" } }, { type: "idle" }, { type: "idle" }, true, "user"),
+    ).toEqual({ type: "busy" })
+  })
+
+  it("unsticks a raced busy session when merged messages have settled", () => {
+    expect(resolveRacingSessionStatus({ type: "busy" }, { type: "idle" }, "assistant")).toEqual({ type: "idle" })
+  })
+
+  it("keeps SSE busy/retry when a new user turn arrived during the snapshot", () => {
+    expect(resolveRacingSessionStatus({ type: "busy" }, { type: "idle" }, "user")).toEqual({ type: "busy" })
+    expect(resolveRacingSessionStatus({ type: "retry", attempt: 2 }, { type: "busy" }, "assistant")).toEqual({
+      type: "retry",
+      attempt: 2,
+    })
   })
 })

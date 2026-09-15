@@ -103,7 +103,8 @@ describe("applyClientEvent", () => {
       role: "assistant",
       error: { data: { message: "model failed" } },
     })
-    expect(state.messages.s1[0]?.time.completed).toEqual(expect.any(Number))
+    const assistant = state.messages.s1[0]
+    expect(assistant?.role === "assistant" ? assistant.time.completed : undefined).toEqual(expect.any(Number))
   })
 
   it("keeps a session error card when no assistant message exists yet", () => {

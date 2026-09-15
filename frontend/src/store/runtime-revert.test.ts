@@ -13,6 +13,7 @@ function stubClient(overrides: Partial<AgentClient> = {}): AgentClient {
     patchGlobalConfig: vi.fn(),
     listProjects: vi.fn(),
     listSessions: vi.fn(),
+    listSessionStatuses: vi.fn(),
     listMessages: vi.fn(),
     listTodos: vi.fn(),
     listPermissions: vi.fn(),

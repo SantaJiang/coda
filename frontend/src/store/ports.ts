@@ -8,6 +8,7 @@ export type AgentClient = Pick<
   | "patchGlobalConfig"
   | "listProjects"
   | "listSessions"
+  | "listSessionStatuses"
   | "listMessages"
   | "listTodos"
   | "listPermissions"

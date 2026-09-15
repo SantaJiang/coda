@@ -1,5 +1,13 @@
 import { For, Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
-import { activityDiff, activityStatus, activitySummary, stepBody, stepLabel } from "../lib/activity"
+import {
+  activityDiff,
+  activityFailureCount,
+  activityStatus,
+  activitySummary,
+  stepBody,
+  stepLabel,
+  stepPresentation,
+} from "../lib/activity"
 import type { Part, ReasoningPart } from "../lib/types"
 import { useProjects, useRuntime } from "../store/app"
 import { MarkdownView } from "./MarkdownView"
@@ -31,6 +39,7 @@ export function WorkGroup(props: {
   onToggle?: () => void
 }) {
   const [localOpen, setLocalOpen] = createSignal(false)
+  const [openSteps, setOpenSteps] = createSignal<Record<string, boolean>>({})
   const [line, setLine] = createSignal({ current: "", previous: "", flipping: false, tick: 0 })
   const [clock, setClock] = createSignal(0)
   const runtime = useRuntime()
@@ -45,7 +54,12 @@ export function WorkGroup(props: {
     return activityStatus(parts(), Date.now())
   }
   const summary = createMemo(() => activitySummary(parts()))
+  const summaryParts = createMemo(() => {
+    const [action = "", ...detail] = summary().split(" ")
+    return { action, detail: detail.join(" ") }
+  })
   const diff = createMemo(() => activityDiff(parts()))
+  const failures = createMemo(() => activityFailureCount(parts()))
   const thoughtOnly = createMemo(() => {
     const list = parts()
     return list.length > 0 && list.every((part) => part.type === "reasoning")
@@ -62,6 +76,9 @@ export function WorkGroup(props: {
     if (!parts().length) return
     if (props.onToggle) props.onToggle()
     else setLocalOpen((value) => !value)
+  }
+  const toggleStep = (id: string) => {
+    setOpenSteps((value) => ({ ...value, [id]: !value[id] }))
   }
 
   let shown = ""
@@ -133,7 +150,7 @@ export function WorkGroup(props: {
   })
 
   return (
-    <div class="work-group" classList={{ open: open(), live: props.live }}>
+    <div class="work-group" classList={{ open: open(), live: props.live, failed: failures() > 0 }}>
       <Show when={showHead()}>
         <button
           type="button"
@@ -143,7 +160,12 @@ export function WorkGroup(props: {
           disabled={!parts().length}
         >
           <span class="work-summary">
-            <span class="work-summary-text">{summary()}</span>
+            <span class="work-summary-text work-summary-parts">
+              <span class="work-summary-action">{summaryParts().action}</span>
+              <Show when={summaryParts().detail}>
+                {" "}<span class="work-summary-detail">{summaryParts().detail}</span>
+              </Show>
+            </span>
             <Show when={diff()}>
               {(value) => (
                 <span class="work-diff">
@@ -155,6 +177,9 @@ export function WorkGroup(props: {
                   </Show>
                 </span>
               )}
+            </Show>
+            <Show when={failures() > 0}>
+              <span class="work-failure">{failures()} failed</span>
             </Show>
             <Show when={parts().length}>
               <Icon name="chevron-right" class="work-summary-caret" />
@@ -168,7 +193,13 @@ export function WorkGroup(props: {
             when={thoughtOnly()}
             fallback={
               <Index each={stepParts()}>
-                {(part) => <WorkStep part={part()} />}
+                {(part) => (
+                  <WorkStep
+                    part={part()}
+                    open={openSteps()[part().id] === true}
+                    onToggle={() => toggleStep(part().id)}
+                  />
+                )}
               </Index>
             }
           >
@@ -190,7 +221,7 @@ export function WorkGroup(props: {
           aria-expanded={open()}
           disabled={!parts().length}
         >
-          <span class="work-status" aria-label={line().current}>
+          <span class="work-status" role="status" aria-live="polite" aria-atomic="true" aria-label={line().current}>
             <For each={[line().tick]}>
               {() => (
                 <span class="work-status-flip" classList={{ flipping: line().flipping }}>
@@ -213,27 +244,38 @@ export function WorkGroup(props: {
   )
 }
 
-function WorkStep(props: { part: Part }) {
-  const [open, setOpen] = createSignal(false)
+function WorkStep(props: { part: Part; open: boolean; onToggle: () => void }) {
   const label = createMemo(() => stepLabel(props.part))
+  const presentation = createMemo(() => stepPresentation(props.part))
   const body = createMemo(() => stepBody(props.part).trim())
   const running = () => {
     if (props.part.type !== "tool") return false
     const status = (props.part as { state?: { status?: string } }).state?.status
     return status === "pending" || status === "running"
   }
+  const failed = () => props.part.type === "tool" && props.part.state.status === "error"
 
   return (
-    <div class="work-step" classList={{ open: open(), running: running() }}>
+    <div class="work-step" classList={{ open: props.open, running: running(), failed: failed() }}>
       <button
         type="button"
         class="work-step-head"
-        onClick={() => body() && setOpen((value) => !value)}
+        onClick={() => body() && props.onToggle()}
         disabled={!body()}
+        aria-expanded={body() ? props.open : undefined}
+        aria-label={label()}
       >
-        <span class="work-step-label">{label()}</span>
+        <span class="work-step-label" aria-hidden="true">
+          <span class="work-step-action">{presentation().action}</span>
+          <Show when={presentation().detail}>
+            {" "}<span class="work-step-detail">{presentation().detail}</span>
+          </Show>
+          <Show when={presentation().context}>
+            {" "}<span class="work-step-context">{presentation().context}</span>
+          </Show>
+        </span>
       </button>
-      <Show when={open() && body()}>
+      <Show when={props.open && body()}>
         <Show
           when={props.part.type === "reasoning"}
           fallback={<pre class="work-step-body">{body()}</pre>}

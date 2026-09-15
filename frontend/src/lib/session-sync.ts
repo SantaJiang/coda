@@ -1,4 +1,4 @@
-import type { Message, Part, SessionStatus, TextPart } from "./types"
+import type { Message, Part, ReasoningPart, SessionStatus, TextPart } from "./types"
 
 function preferMessage(local: Message, incoming: Message): Message {
   if (local.role !== "assistant" || incoming.role !== "assistant") return incoming
@@ -24,7 +24,19 @@ export function mergeMessages(local: Message[], incoming: Message[]): Message[] 
 }
 
 function preferPart(local: Part, incoming: Part): Part {
-  if ((incoming.type === "text" || incoming.type === "reasoning") && local.type === incoming.type) {
+  if (incoming.type === "reasoning" && local.type === "reasoning") {
+    const localText = local.text ?? ""
+    const incomingText = incoming.text ?? ""
+    const localDone = Number.isFinite(Number(local.time?.end))
+    const incomingDone = Number.isFinite(Number(incoming.time?.end))
+    const time = localDone && !incomingDone ? local.time : (incoming.time ?? local.time)
+    return {
+      ...incoming,
+      text: localText.length > incomingText.length ? localText : incomingText,
+      ...(time ? { time } : {}),
+    } satisfies ReasoningPart
+  }
+  if (incoming.type === "text" && local.type === "text") {
     const localText = (local as TextPart).text ?? ""
     const incomingText = (incoming as TextPart).text ?? ""
     if (localText.length > incomingText.length) return local
@@ -58,4 +70,31 @@ export function applyDerivedStatus(
   if (!derived) return current
   if (merge && current?.type === "idle" && derived.type === "busy") return current
   return derived
+}
+
+export function resolveSessionStatus(
+  sessionID: string,
+  live: Record<string, SessionStatus> | null,
+  current: SessionStatus | undefined,
+  derived: SessionStatus | null,
+  merge = false,
+  lastRole?: Message["role"],
+) {
+  const settled = derived?.type === "idle" && lastRole !== "user"
+  if (live) {
+    const fromLive = live[sessionID] ?? { type: "idle" as const }
+    if (settled && fromLive.type !== "idle") return { type: "idle" as const }
+    return fromLive
+  }
+  if (settled) return derived ?? { type: "idle" as const }
+  return applyDerivedStatus(current, derived, merge)
+}
+
+export function resolveRacingSessionStatus(
+  current: SessionStatus | undefined,
+  derived: SessionStatus | null,
+  lastRole?: Message["role"],
+): SessionStatus | undefined {
+  if (derived?.type === "idle" && lastRole !== "user") return derived
+  return current ?? derived ?? undefined
 }

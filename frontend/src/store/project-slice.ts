@@ -17,9 +17,9 @@ import {
   samePath,
   basename,
 } from "../lib/persist"
-import { applyDerivedStatus, mergeMessages, mergeParts } from "../lib/session-sync"
+import { mergeMessages, mergeParts, resolveRacingSessionStatus, resolveSessionStatus } from "../lib/session-sync"
 import { deriveStatusFromMessages, hasFailingAssistant } from "../lib/session-status"
-import type { BackendProject, PermissionRequest, Project, QuestionRequest, Session, Todo } from "../lib/types"
+import type { BackendProject, Message, Part, PermissionRequest, Project, QuestionRequest, Session, Todo } from "../lib/types"
 import type { ProjectApi } from "./contracts"
 import { purgeSession, syncSessionRequests } from "./gc"
 import {
@@ -41,6 +41,47 @@ export type ProjectSlice = ProjectApi & {
 
 const newDraftPatch = { selectedSessionId: null, draft: true, draftPlanMode: false }
 let detailGen = 0
+
+function statusKey(status: ReturnType<typeof deriveStatusFromMessages> | undefined) {
+  if (!status) return ""
+  return `${status.type}:${status.type === "retry" ? `${status.attempt ?? ""}:${status.next ?? ""}` : ""}`
+}
+
+function valueLength(value: unknown) {
+  if (value === undefined) return 0
+  try {
+    return JSON.stringify(value)?.length ?? 0
+  } catch {
+    return -1
+  }
+}
+
+function partKey(part: Part) {
+  if (part.type === "text") return `${part.id}:text:${part.text.length}`
+  if (part.type === "reasoning") {
+    return `${part.id}:reasoning:${part.text.length}:${part.time?.start ?? ""}:${part.time?.end ?? ""}`
+  }
+  if (part.type === "tool") {
+    const state = part.state
+    const title = "title" in state ? state.title ?? "" : ""
+    const metadata = "metadata" in state ? state.metadata : undefined
+    const output = state.status === "completed" ? state.output?.length ?? 0 : 0
+    const error = state.status === "error" ? state.error?.length ?? 0 : 0
+    const time = "time" in state ? state.time : undefined
+    const end = time && "end" in time ? time.end ?? "" : ""
+    return `${part.id}:tool:${state.status}:${title}:${valueLength(state.input)}:${valueLength(metadata)}:${output}:${error}:${end}`
+  }
+  return `${part.id}:${part.type}`
+}
+
+function sessionSnapshotKey(status: ReturnType<typeof deriveStatusFromMessages> | undefined, messages: Message[], parts: Record<string, Part[]>) {
+  const content = messages.map((message) => {
+    const completed = message.role === "assistant" ? message.time.completed ?? "" : ""
+    const info = `${message.id}:${message.role}:${completed}:${Boolean(message.role === "assistant" && message.error)}`
+    return `${info}[${(parts[message.id] ?? []).map(partKey).join(",")}]`
+  })
+  return `${statusKey(status)}|${content.join("|")}`
+}
 
 export function createProjectSlice(handle: StoreHandle): ProjectSlice {
   const { state, setState, client } = handle
@@ -110,11 +151,13 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
   async function loadSessionDetail(session: Session, opts: { merge?: boolean } = {}) {
     const gen = ++detailGen
     const directory = directoryFor(state, session)
-    const [messages, todos, permissions, questions] = await Promise.all([
+    const snapshotBefore = sessionSnapshotKey(state.status[session.id], state.messages[session.id] ?? [], state.parts)
+    const [messages, todos, permissions, questions, statuses] = await Promise.all([
       client.listMessages(directory, session.id),
       client.listTodos(directory, session.id).catch(() => [] as Todo[]),
       client.listPermissions(directory).catch(() => [] as PermissionRequest[]),
       client.listQuestions(directory).catch(() => [] as QuestionRequest[]),
+      client.listSessionStatuses(directory).catch(() => null),
     ])
     if (gen !== detailGen) return
 
@@ -122,9 +165,12 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       produce((draft) => {
         const infos = messages.map((item) => item.info)
         const localMessages = draft.messages[session.id] ?? []
-        const nextMessages = opts.merge ? mergeMessages(localMessages, infos) : infos
+        const stateUnchanged =
+          sessionSnapshotKey(draft.status[session.id], localMessages, draft.parts) === snapshotBefore
+        const shouldMerge = Boolean(opts.merge) || !stateUnchanged
+        const nextMessages = shouldMerge ? mergeMessages(localMessages, infos) : infos
         draft.messages[session.id] = nextMessages
-        if (opts.merge) {
+        if (shouldMerge) {
           for (const item of messages) {
             draft.parts[item.info.id] = mergeParts(draft.parts[item.info.id] ?? [], item.parts ?? [])
           }
@@ -134,11 +180,18 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
           }
         }
         draft.todos[session.id] = todos ?? []
-        const derived = applyDerivedStatus(
-          draft.status[session.id],
-          deriveStatusFromMessages(nextMessages),
-          Boolean(opts.merge),
-        )
+        const fromMessages = deriveStatusFromMessages(nextMessages)
+        const lastRole = nextMessages[nextMessages.length - 1]?.role
+        const derived = stateUnchanged
+          ? resolveSessionStatus(
+              session.id,
+              statuses,
+              draft.status[session.id],
+              fromMessages,
+              Boolean(opts.merge),
+              lastRole,
+            )
+          : resolveRacingSessionStatus(draft.status[session.id], fromMessages, lastRole)
         if (derived) draft.status[session.id] = derived
         draft.sessionErrors[session.id] = hasFailingAssistant(nextMessages)
         if (draft.planModeBySession[session.id] === undefined) {

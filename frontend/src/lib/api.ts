@@ -8,6 +8,7 @@ import type {
   PermissionRequest,
   QuestionRequest,
   Session,
+  SessionStatus,
   Todo,
 } from "./types"
 
@@ -122,6 +123,10 @@ export async function listProjects() {
 
 export async function listSessions(directory: string, extra?: Record<string, string>) {
   return request<Session[]>("GET", "/session", { directory, extraQuery: extra })
+}
+
+export async function listSessionStatuses(directory: string) {
+  return request<Record<string, SessionStatus>>("GET", "/session/status", { directory })
 }
 
 export async function createSession(

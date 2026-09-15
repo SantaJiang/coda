@@ -1,7 +1,7 @@
 import { For, Index, Match, Show, Switch, type JSX, createEffect, createMemo, createSignal } from "solid-js"
 import {
   changedFiles,
-  formatWorkedFor,
+  formatDuration,
   groupActivityBlocks,
   isWorkLive,
   splitProcessAndAnswer,
@@ -34,7 +34,18 @@ export type ChatTurn = {
 
 export type TimelineItem =
   | ({ kind: "turn" } & ChatTurn)
-  | { kind: "compaction"; status: "running" | "done"; summary?: string }
+  | { kind: "compaction"; status: "running" | "done" | "error"; summary?: string; error?: string }
+
+export function compactionLabel(status: Extract<TimelineItem, { kind: "compaction" }>["status"]) {
+  if (status === "error") return "Context compaction failed"
+  if (status === "running") return "Context compaction interrupted"
+  return "Context compacted"
+}
+
+export function isInterruptedTurn(live: boolean, busy: boolean, message?: AssistantMessage) {
+  if (live || busy || !message) return false
+  return !message.time.completed && !message.error
+}
 
 function partsOf(messageID: string, partsByMessage: Record<string, Part[]>) {
   return partsByMessage[messageID] ?? []
@@ -73,58 +84,78 @@ function assistantPlainText(message: Message, partsByMessage: Record<string, Par
 
 export function groupTurns(messages: Message[], partsByMessage: Record<string, Part[]> = {}): TimelineItem[] {
   const items: TimelineItem[] = []
-  let turn: ChatTurn | undefined
-
-  const flush = () => {
-    if (!turn) return
-    if (turn.user || turn.assistants.length) items.push({ kind: "turn", ...turn })
-    turn = undefined
-  }
+  const turnsByUser = new Map<string, Extract<TimelineItem, { kind: "turn" }>>()
+  const compactionsByUser = new Map<string, Extract<TimelineItem, { kind: "compaction" }>>()
+  let currentTurn: Extract<TimelineItem, { kind: "turn" }> | undefined
 
   for (const message of messages) {
     if (message.role === "user") {
       if (isCompactionUser(message, partsByMessage)) {
-        flush()
-        items.push({ kind: "compaction", status: "running" })
+        const item: Extract<TimelineItem, { kind: "compaction" }> = { kind: "compaction", status: "running" }
+        items.push(item)
+        compactionsByUser.set(message.id, item)
+        currentTurn = undefined
         continue
       }
       if (isSystemUser(message, partsByMessage)) {
-        flush()
+        currentTurn = undefined
         continue
       }
-      flush()
-      turn = { user: message, assistants: [] }
+      const item: Extract<TimelineItem, { kind: "turn" }> = { kind: "turn", user: message, assistants: [] }
+      items.push(item)
+      turnsByUser.set(message.id, item)
+      currentTurn = item
       continue
     }
 
-    const pending = items[items.length - 1]
+    const info = message as AssistantMessage
+    const pending = info.parentID ? compactionsByUser.get(info.parentID) : undefined
+    const parent = info.parentID ? turnsByUser.get(info.parentID) : undefined
+    const tail = items[items.length - 1]
     const absorb =
       isCompactionAssistant(message) ||
-      (pending?.kind === "compaction" && pending.status === "running" && !turn)
+      Boolean(pending) ||
+      (!parent && tail?.kind === "compaction" && tail.status === "running" && !currentTurn)
     if (absorb) {
-      flush()
-      const status = assistantSettled(message) ? "done" : "running"
+      const target = pending ?? (tail?.kind === "compaction" ? tail : undefined)
+      const aborted = isAbortError(info.error)
+      const status = aborted ? "running" : info.error ? "error" : assistantSettled(message) ? "done" : "running"
       const summary = assistantPlainText(message, partsByMessage) || undefined
-      if (pending?.kind === "compaction" && pending.status === "running") {
-        pending.status = status
-        if (summary) pending.summary = summary
+      const error =
+        !aborted && info.error
+          ? formatSessionErrorMessage(info.error.data?.message) || "Context compaction failed"
+          : undefined
+      if (target) {
+        target.status = status
+        if (summary) target.summary = summary
+        if (error) target.error = error
       } else {
-        items.push({ kind: "compaction", status, summary })
+        items.push({ kind: "compaction", status, summary, error })
       }
       continue
     }
 
-    if (!turn) turn = { assistants: [] }
-    turn.assistants.push(message)
+    if (parent) {
+      parent.assistants.push(message)
+      continue
+    }
+    if (!currentTurn) {
+      currentTurn = { kind: "turn", assistants: [] }
+      items.push(currentTurn)
+    }
+    currentTurn.assistants.push(message)
   }
-  flush()
   return items
 }
 
 function isVisiblePart(part: Part) {
   if (HIDDEN.has(part.type)) return false
-  if (part.type === "tool" && (part as { tool?: string }).tool === "todowrite") return false
-  if (part.type === "tool" && (part as { tool?: string }).tool === "question") return false
+  if (part.type === "tool" && (part as { tool?: string }).tool === "todowrite") {
+    return part.state.status === "completed" || part.state.status === "error"
+  }
+  if (part.type === "tool" && (part as { tool?: string }).tool === "question") {
+    return part.state.status === "completed" || part.state.status === "error"
+  }
   if (part.type === "text" && (part as TextPart).ignored) return false
   if (part.type === "text" && (part as TextPart).synthetic) return false
   return true
@@ -303,8 +334,8 @@ function UserBubble(props: { message: Message; parts: Part[] }) {
 function ActivityBlocks(props: {
   getBlocks: () => ActivityBlock[]
   live: boolean
-  opened: () => Record<number, boolean>
-  onToggle: (index: number) => void
+  opened: () => Record<string, boolean>
+  onToggle: (key: string) => void
 }) {
   return (
     <Index each={props.getBlocks()}>
@@ -320,8 +351,8 @@ function ActivityBlocks(props: {
               (isWorkLive(block().parts) ||
                 (index === props.getBlocks().length - 1 && block().kind === "work"))
             }
-            open={props.opened()[index] === true}
-            onToggle={() => props.onToggle(index)}
+            open={props.opened()[block().key] === true}
+            onToggle={() => props.onToggle(block().key)}
           />
         </Show>
       )}
@@ -335,7 +366,10 @@ function WorkedFor(props: { durationMs: number; children: JSX.Element }) {
     <div class="worked-for" classList={{ open: open() }}>
       <button type="button" class="work-head" onClick={() => setOpen((value) => !value)} aria-expanded={open()}>
         <span class="work-summary">
-          <span class="work-summary-text">{formatWorkedFor(props.durationMs)}</span>
+          <span class="work-summary-text work-summary-parts">
+            <span class="work-summary-action">Worked for</span>{" "}
+            <span class="work-summary-detail">{formatDuration(props.durationMs)}</span>
+          </span>
           <Icon name="chevron-right" class="work-summary-caret" />
         </span>
       </button>
@@ -351,7 +385,7 @@ function AssistantTurn(props: {
   partsByMessage: Record<string, Part[]>
   live: boolean
 }) {
-  const [opened, setOpened] = createSignal<Record<number, boolean>>({})
+  const [opened, setOpened] = createSignal<Record<string, boolean>>({})
   const parts = createMemo(() => collectParts(props.assistants, props.partsByMessage))
   const blocks = createMemo(() => groupActivityBlocks(parts()))
   const split = createMemo(() => splitProcessAndAnswer(blocks()))
@@ -365,13 +399,15 @@ function AssistantTurn(props: {
   })
   const lastError = createMemo(() => lastAssistant()?.error)
   const stopped = createMemo(() => isAbortError(lastError()))
+  const runtime = useRuntime()
+  const interrupted = createMemo(() => isInterruptedTurn(props.live, runtime.busy(), lastAssistant()))
   const error = createMemo(() => (stopped() ? "" : formatSessionErrorMessage(lastError()?.data?.message ?? "")))
   const copyText = createMemo(() => {
     const answerParts = split().answer.flatMap((block) => block.parts)
     return partsPlainText(answerParts.length ? answerParts : parts())
   })
-  const toggle = (index: number) => {
-    setOpened((prev) => ({ ...prev, [index]: !prev[index] }))
+  const toggle = (key: string) => {
+    setOpened((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
   createEffect(() => {
@@ -415,6 +451,9 @@ function AssistantTurn(props: {
         <Show when={stopped()}>
           <div class="stop-mark">Stopped</div>
         </Show>
+        <Show when={interrupted()}>
+          <div class="stop-mark">Interrupted</div>
+        </Show>
         <Show when={error()}>
           <div class="error-card">{error()}</div>
         </Show>
@@ -436,15 +475,16 @@ function AssistantTurn(props: {
   )
 }
 
-export function CompactionMark(props: { live: boolean; summary?: string }) {
+export function CompactionMark(props: { live: boolean; status: "running" | "done" | "error"; summary?: string; error?: string }) {
   const [open, setOpen] = createSignal(false)
   const projects = useProjects()
   const summary = () => props.summary?.trim() ?? ""
   const expandable = () => !props.live && Boolean(summary())
   const liveLabel = () => (projects.connection() === "disconnected" ? "Reconnecting…" : "Compacting context")
+  const label = () => compactionLabel(props.status)
 
   return (
-    <div class="compaction-mark" classList={{ live: props.live, open: open() }}>
+    <div class="compaction-mark" classList={{ live: props.live, open: open(), failed: props.status === "error" }}>
       <Show
         when={props.live}
         fallback={
@@ -453,7 +493,7 @@ export function CompactionMark(props: { live: boolean; summary?: string }) {
               when={expandable()}
               fallback={
                 <div class="work-summary">
-                  <span class="work-summary-text">Context compacted</span>
+                  <span class="work-summary-text">{label()}</span>
                 </div>
               }
             >
@@ -464,7 +504,7 @@ export function CompactionMark(props: { live: boolean; summary?: string }) {
                 aria-expanded={open()}
               >
                 <span class="work-summary">
-                  <span class="work-summary-text">Context compacted</span>
+                  <span class="work-summary-text">{label()}</span>
                   <Icon name="chevron-right" class="work-summary-caret" />
                 </span>
               </button>
@@ -473,6 +513,9 @@ export function CompactionMark(props: { live: boolean; summary?: string }) {
               <div class="compaction-body">
                 <MarkdownView text={summary()} />
               </div>
+            </Show>
+            <Show when={props.status === "error"}>
+              <div class="error-card">{props.error || "Context compaction failed"}</div>
             </Show>
           </>
         }

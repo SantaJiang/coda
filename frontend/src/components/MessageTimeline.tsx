@@ -12,6 +12,15 @@ function asTurn(item: TimelineItem) {
 }
 
 export function MessageTimeline() {
+  const projects = useProjects()
+  return (
+    <Show keyed when={projects.selectedSessionId()}>
+      {(_sessionID) => <SessionTimeline />}
+    </Show>
+  )
+}
+
+function SessionTimeline() {
   const runtime = useRuntime()
   const projects = useProjects()
   let scroller: HTMLDivElement | undefined
@@ -32,6 +41,17 @@ export function MessageTimeline() {
     if (!scroller) return
     stick = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
   }
+  const pauseAutoScroll = () => {
+    stick = false
+  }
+  const onWheel = (event: WheelEvent) => {
+    if (event.deltaY < 0) pauseAutoScroll()
+  }
+  const onPointerDown = (event: PointerEvent) => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    if (target.closest(".work-head, .work-status-head, .work-step-head")) pauseAutoScroll()
+  }
 
   createEffect(
     on(
@@ -47,7 +67,14 @@ export function MessageTimeline() {
   )
 
   return (
-    <div class="timeline" ref={scroller} onScroll={onScroll}>
+    <div
+      class="timeline"
+      ref={scroller}
+      onScroll={onScroll}
+      onWheel={onWheel}
+      onPointerDown={onPointerDown}
+      aria-busy={runtime.busy()}
+    >
       <div class="timeline-inner">
         <Index each={items()}>
           {(item, index) => (
@@ -56,7 +83,9 @@ export function MessageTimeline() {
                 {(compaction) => (
                   <CompactionMark
                     live={runtime.busy() && index === items().length - 1 && compaction().status === "running"}
+                    status={compaction().status}
                     summary={compaction().summary}
+                    error={compaction().error}
                   />
                 )}
               </Match>

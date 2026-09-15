@@ -2,8 +2,8 @@ import type { AssistantMessage, Message, Part, ReasoningPart, ToolPart } from ".
 import { basename } from "./path"
 
 export type ActivityBlock =
-  | { kind: "work"; parts: Part[] }
-  | { kind: "answer"; parts: Part[] }
+  | { kind: "work"; key: string; parts: Part[] }
+  | { kind: "answer"; key: string; parts: Part[] }
 
 export type ActivityDiff = {
   added: number
@@ -24,7 +24,7 @@ export function groupActivityBlocks(parts: Part[]): ActivityBlock[] {
     const kind = part.type === "tool" || part.type === "reasoning" ? "work" : "answer"
     const last = blocks[blocks.length - 1]
     if (last && last.kind === kind) last.parts.push(part)
-    else blocks.push({ kind, parts: [part] })
+    else blocks.push({ kind, key: `${kind}:${part.id}`, parts: [part] })
   }
   return blocks
 }
@@ -71,7 +71,7 @@ function toolPath(part: ToolPart) {
   return value ? String(value) : ""
 }
 
-type Bucket = "edit" | "explore" | "search" | "browser" | "command" | "lint"
+type Bucket = "edit" | "explore" | "search" | "browser" | "command" | "lint" | "question" | "todo"
 
 function bucketOf(tool: string): Bucket {
   const name = tool.toLowerCase()
@@ -84,8 +84,10 @@ function bucketOf(tool: string): Bucket {
   ) {
     return "edit"
   }
-  if (name === "read" || name === "glob" || name === "list" || name === "ls") return "explore"
-  if (name === "grep") return "search"
+  if (name === "read") return "explore"
+  if (name === "glob" || name === "grep" || name === "list" || name === "ls") return "search"
+  if (name === "question") return "question"
+  if (name === "todowrite" || name === "todo") return "todo"
   if (name.includes("lint")) return "lint"
   if (name === "webfetch" || name === "websearch") return "browser"
   return "command"
@@ -153,6 +155,10 @@ export function activityDiff(parts: Part[]): ActivityDiff | null {
   }
   if (added === 0 && removed === 0) return null
   return { added, removed }
+}
+
+export function activityFailureCount(parts: Part[]) {
+  return parts.filter((part) => part.type === "tool" && part.state.status === "error").length
 }
 
 export function changedFiles(parts: Part[]): ChangedFile[] {
@@ -224,7 +230,7 @@ export function activitySummary(parts: Part[]) {
     edit: new Set<string>(),
     explore: new Set<string>(),
   }
-  const counts = { edit: 0, explore: 0, search: 0, browser: 0, command: 0, lint: 0 }
+  const counts = { edit: 0, explore: 0, search: 0, browser: 0, command: 0, lint: 0, question: 0, todo: 0 }
 
   for (const part of tools) {
     const bucket = bucketOf(part.tool)
@@ -249,6 +255,8 @@ export function activitySummary(parts: Part[]) {
   if (counts.lint) bits.push(plural(counts.lint, "1 lint", `${counts.lint} lints`))
   if (counts.browser) bits.push(plural(counts.browser, "1 browser action", `${counts.browser} browser actions`))
   if (counts.command) bits.push(plural(counts.command, "ran 1 command", `ran ${counts.command} commands`))
+  if (counts.question) bits.push(plural(counts.question, "asked 1 question", `asked ${counts.question} questions`))
+  if (!bits.length && counts.todo) bits.push("checked to-do list")
   return capitalize(bits.join(", "))
 }
 
@@ -343,14 +351,19 @@ export function activityStatus(parts: Part[], now = Date.now()): string {
   )
   if (running) return liveStepLabel(running, now)
 
-  let lastReasoning = -1
+  let lastReasoning: ReasoningPart | undefined
+  let lastReasoningIndex = -1
   let lastTool = -1
   parts.forEach((part, index) => {
-    if (part.type === "reasoning") lastReasoning = index
+    if (part.type === "reasoning") {
+      lastReasoning = part
+      lastReasoningIndex = index
+    }
     if (part.type === "tool") lastTool = index
   })
+  if (lastReasoningIndex > lastTool) return lastReasoning?.time?.end ? "Thought" : "Thinking"
   if (lastTool >= 0) return "Planning next moves"
-  return lastReasoning > lastTool ? "Thought" : "Thinking"
+  return "Thinking"
 }
 
 function liveStepLabel(part: ToolPart, now: number) {
@@ -393,15 +406,36 @@ function liveStepLabel(part: ToolPart, now: number) {
   return capitalize(name)
 }
 
-function thoughtLabel(parts: Part[]) {
-  const texts = parts.filter((part): part is ReasoningPart => part.type === "reasoning")
-  const length = texts.reduce((sum, part) => sum + (part.text?.trim().length ?? 0), 0)
-  return length > 0 && length < 160 ? "Thought briefly" : "Thought"
+export function reasoningDurationMs(parts: Part[]) {
+  let found = false
+  const duration = parts.reduce((total, part) => {
+    if (part.type !== "reasoning" || !part.time) return total
+    const start = Number(part.time.start)
+    const end = Number(part.time.end)
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return total
+    found = true
+    return total + Math.max(0, toMs(end) - toMs(start))
+  }, 0)
+  return found ? duration : null
 }
 
-export function stepLabel(part: Part) {
-  if (part.type === "reasoning") return thoughtLabel([part])
-  if (part.type !== "tool") return ""
+function thoughtLabel(parts: Part[]) {
+  const duration = reasoningDurationMs(parts)
+  return duration !== null ? `Thought ${formatDuration(duration)}` : "Thought"
+}
+
+export type StepPresentation = {
+  action: string
+  detail?: string
+  context?: string
+}
+
+export function stepPresentation(part: Part): StepPresentation {
+  if (part.type === "reasoning") {
+    const duration = reasoningDurationMs([part])
+    return { action: "Thought", detail: duration !== null ? formatDuration(duration) : undefined }
+  }
+  if (part.type !== "tool") return { action: "" }
   const tool = part as ToolPart
   const name = tool.tool.toLowerCase()
   const input = tool.state.input ?? {}
@@ -412,29 +446,65 @@ export function stepLabel(part: Part) {
   const query = String(input.query ?? "")
   const title = "title" in tool.state ? tool.state.title : undefined
   const file = path ? basename(path) : title ? basename(String(title)) : ""
+  const location = stepLocation(input.path ?? input.target_directory ?? input.directory)
+  const suffix = location ? `in ${location}` : undefined
 
   if (name === "read") {
+    const metadata = "metadata" in tool.state ? asRecord(tool.state.metadata) : undefined
+    const display = asRecord(metadata?.display)
+    const shownStart = Number(display?.lineStart)
+    const shownEnd = Number(display?.lineEnd)
+    if (file && Number.isFinite(shownStart) && shownStart >= 1 && Number.isFinite(shownEnd) && shownEnd >= shownStart) {
+      return { action: "Read", detail: `${file} L${shownStart}-${shownEnd}` }
+    }
     const offset = Number(input.offset ?? input.start_line ?? Number.NaN)
     const limit = Number(input.limit ?? Number.NaN)
-    if (file && Number.isFinite(offset) && Number.isFinite(limit)) {
-      return `Read ${file} L${offset}-${offset + limit}`
+    if (file && Number.isFinite(offset) && offset >= 1 && Number.isFinite(limit) && limit >= 1) {
+      return { action: "Read", detail: `${file} L${offset}-${offset + limit - 1}` }
     }
-    return file ? `Read ${file}` : "Read file"
+    return { action: "Read", detail: file || "file" }
   }
-  if (name === "glob") return pattern ? `Searched files ${truncate(pattern, 64)}` : "Searched files"
-  if (name === "grep") return pattern ? `Grepped ${truncate(pattern, 64)}` : "Grepped"
-  if (name === "list" || name === "ls") return path ? `Listed ${truncate(path, 48)}` : "Listed directory"
-  if (name === "edit") return file ? `Edited ${file}` : "Edited file"
-  if (name === "write") return file ? `Wrote ${file}` : "Wrote file"
+  if (name === "glob") {
+    return { action: "Searched files", detail: pattern ? truncate(pattern, 64) : undefined, context: suffix }
+  }
+  if (name === "grep") {
+    return { action: "Grepped", detail: pattern ? truncate(pattern, 64) : undefined, context: suffix }
+  }
+  if (name === "list" || name === "ls") return { action: "Listed", detail: stepLocation(path) || "directory" }
+  if (name === "edit" || name === "multiedit") return { action: "Edited", detail: file || "file" }
+  if (name === "write") return { action: "Wrote", detail: file || "file" }
+  if (name === "apply_patch" || name === "applypatch") {
+    return file ? { action: "Patched", detail: file } : { action: "Applied patch" }
+  }
   if (name === "bash" || name === "shell") {
-    const action = commandAction(command)
-    if (action && action !== truncate(command) && action !== truncate(command, 42)) return `Ran ${action}`
-    return command ? `Ran ${truncate(command)}` : "Ran command"
+    const titled = title && String(title).trim() !== command.trim() ? String(title).trim() : ""
+    const described = String(input.description ?? input.title ?? "").trim()
+    const action = described || titled || commandAction(command)
+    if (action && action !== truncate(command) && action !== truncate(command, 42)) return { action: "Ran", detail: action }
+    return { action: "Ran", detail: command ? truncate(command) : "command" }
   }
-  if (name === "webfetch") return url ? `Fetched ${hostFromUrl(url)}` : "Fetched page"
-  if (name === "websearch") return query ? `Searched ${truncate(query)}` : "Searched web"
-  if (title) return String(title)
-  return tool.tool
+  if (name === "webfetch") return { action: "Fetched", detail: url ? hostFromUrl(url) : "page" }
+  if (name === "websearch") return { action: "Searched", detail: query ? truncate(query) : "web" }
+  if (name === "question") {
+    const questions = Array.isArray(input.questions) ? input.questions : []
+    const first = asRecord(questions[0])
+    const detail = String(first?.header ?? first?.question ?? "").trim()
+    return { action: "Asked", detail: detail ? truncate(detail, 64) : "a question" }
+  }
+  if (name === "todowrite" || name === "todo") return { action: "Checked", detail: "to-do list" }
+  if (title) return { action: capitalize(tool.tool), detail: String(title) }
+  return { action: capitalize(tool.tool) }
+}
+
+function stepLocation(value: unknown) {
+  const raw = String(value ?? "").trim().replace(/[\\/]+$/, "")
+  if (!raw) return ""
+  return truncate(looksLikePath(raw) ? basename(raw) || raw : raw, 48)
+}
+
+export function stepLabel(part: Part) {
+  const value = stepPresentation(part)
+  return [value.action, value.detail, value.context].filter(Boolean).join(" ")
 }
 
 export function stepBody(part: Part) {
@@ -477,12 +547,16 @@ export function workDurationMs(assistants: Message[], parts: Part[]) {
 }
 
 export function formatWorkedFor(ms: number) {
+  return `Worked for ${formatDuration(ms)}`
+}
+
+export function formatDuration(ms: number) {
   const seconds = Math.max(1, Math.round(ms / 1000) || 1)
-  if (seconds < 60) return `Worked for ${seconds}s`
+  if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   const rest = seconds % 60
-  if (minutes < 60) return rest ? `Worked for ${minutes}m ${rest}s` : `Worked for ${minutes}m`
+  if (minutes < 60) return rest ? `${minutes}m ${rest}s` : `${minutes}m`
   const hours = Math.floor(minutes / 60)
   const remain = minutes % 60
-  return remain ? `Worked for ${hours}h ${remain}m` : `Worked for ${hours}h`
+  return remain ? `${hours}h ${remain}m` : `${hours}h`
 }
