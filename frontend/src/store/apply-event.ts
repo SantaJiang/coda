@@ -1,10 +1,11 @@
 import { autoReplyForMode } from "../lib/permissions"
-import { isAbortError } from "../lib/session-status"
+import { formatSessionErrorMessage, isAbortError } from "../lib/session-status"
 import { isLocalProject, missingDirectoryMessage, parseMissingDirectory } from "../lib/persist"
 import { samePath } from "../lib/path"
 import { upsertById } from "../lib/upsert"
 import type {
   AssistantError,
+  AssistantMessage,
   Message,
   Part,
   PermissionRequest,
@@ -58,6 +59,21 @@ function asQuestion(props: Record<string, unknown>): QuestionRequest | undefined
   const direct = props as unknown as QuestionRequest
   if (direct?.id) return direct
   return (props.question ?? props.request ?? props) as QuestionRequest
+}
+
+function attachSessionError(draft: AppState, sessionID: string, error: AssistantError, message: string) {
+  const msgs = draft.messages[sessionID] ?? []
+  for (let index = msgs.length - 1; index >= 0; index -= 1) {
+    const item = msgs[index]
+    if (item.role !== "assistant") continue
+    const assistant = item as AssistantMessage
+    if (!assistant.error) {
+      assistant.error = error
+      if (!assistant.time.completed) assistant.time = { ...assistant.time, completed: Date.now() }
+    }
+    return
+  }
+  draft.sessionErrorText[sessionID] = message
 }
 
 const upsertSession: EventHandler = (draft, { props, directory }) => {
@@ -206,6 +222,15 @@ const handlers: Record<string, EventHandler> = {
           if (!isLocalProject(project) && samePath(project.path, missingPath)) project.missing = true
         }
       }
+      return
+    }
+    if (sessionID) {
+      attachSessionError(
+        draft,
+        sessionID,
+        detail ?? { name: "UnknownError", data: { message: String(message) } },
+        formatSessionErrorMessage(String(message)),
+      )
     }
   },
 }

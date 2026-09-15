@@ -1,0 +1,215 @@
+diff --git a/packages/core/src/filesystem/search.ts b/packages/core/src/filesystem/search.ts
+index c7738388bc..03e12ecf35 100644
+--- a/packages/core/src/filesystem/search.ts
++++ b/packages/core/src/filesystem/search.ts
+@@ -232,7 +232,15 @@ export const fffLayer = Layer.effect(
+   }),
+ )
+ 
+-const layer = Layer.unwrap(Effect.sync(() => (Flag.OPENCODE_DISABLE_FFF || !Fff.available() ? ripgrepLayer : fffLayer)))
++const layer = Layer.unwrap(
++  Effect.sync(() => {
++    try {
++      return Flag.OPENCODE_DISABLE_FFF || !Fff.available() ? ripgrepLayer : fffLayer
++    } catch {
++      return ripgrepLayer
++    }
++  }),
++)
+ 
+ export const locationLayer = layer
+ 
+diff --git a/packages/core/src/plugin/provider/opencode.ts b/packages/core/src/plugin/provider/opencode.ts
+index 7bd78cae41..46cfc26ec6 100644
+--- a/packages/core/src/plugin/provider/opencode.ts
++++ b/packages/core/src/plugin/provider/opencode.ts
+@@ -279,7 +279,9 @@ function credential(http: HttpClient.HttpClient, server: string, token: typeof T
+       ],
+       { concurrency: 2 },
+     )
+-    const org = orgs.toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))[0]
++    const org = orgs
++      .filter((item) => item != null && typeof item.name === "string" && typeof item.id === "string")
++      .toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))[0]
+     return Credential.OAuth.make({
+       type: "oauth" as const,
+       methodID,
+diff --git a/packages/core/src/skill.ts b/packages/core/src/skill.ts
+index be1cd1d49a..75aca4ff6b 100644
+--- a/packages/core/src/skill.ts
++++ b/packages/core/src/skill.ts
+@@ -28,7 +28,9 @@ export const Info = Skill.Info
+ export type Info = Skill.Info
+ 
+ export const available = (skills: ReadonlyArray<Info>, agent: AgentV2.Info) =>
+-  skills.filter((skill) => PermissionV2.evaluate("skill", skill.name, agent.permissions).effect !== "deny")
++  skills.filter(
++    (skill) => skill != null && PermissionV2.evaluate("skill", skill.name, agent.permissions).effect !== "deny",
++  )
+ 
+ const Frontmatter = Schema.Struct({
+   name: Schema.String.pipe(Schema.optional),
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
+index 662585020a..84f961fa74 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
+@@ -316,12 +316,23 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
+       yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
+         Effect.catchCause((cause) =>
+           Effect.gen(function* () {
+-            yield* Effect.logError("prompt_async failed", { sessionID: ctx.params.sessionID, cause })
+-            yield* events.publish(Session.Event.Error, {
+-              sessionID: ctx.params.sessionID,
+-              error: new NamedError.Unknown({ message: Cause.pretty(cause) }).toObject(),
+-            })
+-          }),
++            const sessionID = ctx.params.sessionID
++            const pretty = Cause.pretty(cause)
++            yield* Effect.logError("prompt_async failed", { sessionID, cause })
++            const error = new NamedError.Unknown({ message: pretty }).toObject()
++            yield* events.publish(Session.Event.Error, { sessionID, error })
++            const match = yield* session
++              .findMessage(sessionID, (item) => item.info.role === "assistant")
++              .pipe(Effect.catch(() => Effect.succeed(Option.none())))
++            if (Option.isSome(match) && match.value.info.role === "assistant" && !match.value.info.error) {
++              yield* session.updateMessage({
++                ...match.value.info,
++                error,
++                time: { ...match.value.info.time, completed: Date.now() },
++              })
++            }
++            yield* statusSvc.set(sessionID, { type: "idle" })
++          }).pipe(Effect.catch((error) => Effect.logError("prompt_async recovery failed", { error }))),
+         ),
+         Effect.forkIn(scope, { startImmediately: true }),
+       )
+diff --git a/packages/opencode/src/session/system.ts b/packages/opencode/src/session/system.ts
+index 61ab74d9f1..9a5a890dc7 100644
+--- a/packages/opencode/src/session/system.ts
++++ b/packages/opencode/src/session/system.ts
+@@ -63,17 +63,15 @@ const layer = Layer.effect(
+   Effect.gen(function* () {
+     const skill = yield* Skill.Service
+     const mcp = yield* MCP.Service
+-    const locations = yield* LocationServiceMap.Service
++    yield* LocationServiceMap.Service
+ 
+     return Service.of({
+       environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
+-        const ctx = yield* InstanceState.context
+-        const references = yield* Effect.gen(function* () {
+-          return (yield* (yield* Reference.Service).list()).filter((reference) => reference.description !== undefined)
+-        }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
+-        return [
+-          [
+-            `You are powered by the model named ${model.api.id}. The exact model ID is ${model.providerID}/${model.api.id}`,
++        return yield* Effect.gen(function* () {
++          const ctx = yield* InstanceState.context
++          const modelID = model.api?.id ?? model.id
++          const env = [
++            `You are powered by the model named ${modelID}. The exact model ID is ${model.providerID}/${modelID}`,
+             `Here is some useful information about the environment you are running in:`,
+             `<env>`,
+             `  Working directory: ${ctx.directory}`,
+@@ -82,32 +80,56 @@ const layer = Layer.effect(
+             `  Platform: ${process.platform}`,
+             `  Today's date: ${new Date().toDateString()}`,
+             `</env>`,
+-          ].join("\n"),
+-          references.length === 0
+-            ? undefined
+-            : [
+-                "Project references provide additional directories that can be accessed when relevant.",
+-                "<available_references>",
+-                ...references
+-                  .toSorted((a, b) => a.name.localeCompare(b.name))
+-                  .flatMap((reference) => [
+-                    "  <reference>",
+-                    `    <name>${reference.name}</name>`,
+-                    `    <path>${reference.path}</path>`,
+-                    ...(reference.description === undefined
+-                      ? []
+-                      : [`    <description>${reference.description}</description>`]),
+-                    "  </reference>",
+-                  ]),
+-                "</available_references>",
+-              ].join("\n"),
+-        ].filter((part): part is string => part !== undefined)
++          ].join("\n")
++          const references = yield* Effect.gen(function* () {
++            const svc = yield* Reference.Service
++            const list = yield* svc.list()
++            return list.filter(
++              (reference) =>
++                reference != null && typeof reference.name === "string" && reference.description !== undefined,
++            )
++          }).pipe(
++            Effect.provide(LocationServiceMap.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))),
++            Effect.catchCause((cause) =>
++              Effect.logWarning("failed to load project references", { cause }).pipe(Effect.as([])),
++            ),
++          )
++          return [
++            env,
++            references.length === 0
++              ? undefined
++              : [
++                  "Project references provide additional directories that can be accessed when relevant.",
++                  "<available_references>",
++                  ...references
++                    .toSorted((a, b) => a.name.localeCompare(b.name))
++                    .flatMap((reference) => [
++                      "  <reference>",
++                      `    <name>${reference.name}</name>`,
++                      `    <path>${reference.path}</path>`,
++                      ...(reference.description === undefined
++                        ? []
++                        : [`    <description>${reference.description}</description>`]),
++                      "  </reference>",
++                    ]),
++                  "</available_references>",
++                ].join("\n"),
++          ].filter((part): part is string => part !== undefined)
++        }).pipe(
++          Effect.catchCause((cause) =>
++            Effect.logWarning("system prompt environment failed", { cause }).pipe(Effect.as([] as string[])),
++          ),
++        )
+       }),
+ 
+       skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info) {
+         if (Permission.disabled(["skill"], agent.permission).has("skill")) return
+ 
+-        const list = yield* skill.available(agent)
++        const list = yield* skill.available(agent).pipe(
++          Effect.catchCause((cause) =>
++            Effect.logWarning("failed to list skills", { cause }).pipe(Effect.as([] as Skill.Info[])),
++          ),
++        )
+ 
+         return [
+           "Skills provide specialized instructions and workflows for specific tasks.",
+diff --git a/packages/opencode/src/skill/index.ts b/packages/opencode/src/skill/index.ts
+index 5a04ec2139..e04842bf5a 100644
+--- a/packages/opencode/src/skill/index.ts
++++ b/packages/opencode/src/skill/index.ts
+@@ -309,7 +309,9 @@ const layer = Layer.effect(
+ 
+     const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info) {
+       const s = yield* InstanceState.get(state)
+-      const list = Object.values(s.skills).toSorted((a, b) => a.name.localeCompare(b.name))
++      const list = Object.values(s.skills)
++        .filter((skill): skill is Info => skill != null && typeof skill.name === "string")
++        .toSorted((a, b) => a.name.localeCompare(b.name))
+       if (!agent) return list
+       return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
+     })
+@@ -319,7 +321,7 @@ const layer = Layer.effect(
+ )
+ 
+ export function fmt(list: Info[], opts: { verbose: boolean }) {
+-  const described = list.filter((skill) => skill.description !== undefined)
++  const described = list.filter((skill) => skill != null && skill.description !== undefined)
+   if (described.length === 0) return "No skills are currently available."
+   if (opts.verbose) {
+     return [

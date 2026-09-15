@@ -1757,9 +1757,16 @@ button.ctx-pill:hover {
   background: var(--bg-hover);
 }
 
+.model-select-menu {
+  width: 260px;
+  min-width: 260px;
+  max-width: 260px;
+}
+
 .model-menu-list {
   max-height: 220px;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .model-menu-name {
@@ -1975,26 +1982,6 @@ button.ctx-pill:hover {
   letter-spacing: 0.04em;
 }
 
-.model-list-toggle {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 32px;
-  margin-bottom: 8px;
-  padding: 0 2px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-align: left;
-}
-
-.model-list-toggle:hover {
-  color: var(--text);
-}
-
 .model-list-empty {
   padding: 12px;
   border: 1px dashed var(--border);
@@ -2012,15 +1999,6 @@ button.ctx-pill:hover {
   border: 1px solid var(--border);
   border-radius: 10px;
   margin-bottom: 6px;
-}
-
-.model-row.compact {
-  padding: 6px 10px;
-}
-
-.discovered-scroll {
-  max-height: 160px;
-  overflow: auto;
 }
 
 .model-row-name {

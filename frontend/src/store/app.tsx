@@ -4,8 +4,8 @@ import * as api from "../lib/api"
 import { subscribeEvents } from "../lib/events"
 import {
   loadConfiguredModels,
-  loadPinnedModelKeys,
   loadSelectedModelKey,
+  menuDiscoveredModels,
   mergeSelectables,
   resolveSelectedKey,
   toBackendPatch,
@@ -99,7 +99,6 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     if (selectedId && selectedId !== last) saveLastProject(selectedId)
     setState("draft", true)
     setState("configuredModels", configured)
-    setState("pinnedModelKeys", loadPinnedModelKeys())
     persistSelection(handle, resolveSelectedKey(configured, mergeSelectables(configured, []), loadSelectedModelKey()))
 
     for (const project of initial) {
@@ -144,12 +143,11 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
       if (typeof patch.keepBackendAlive === "boolean" && patch.keepBackendAlive !== state.keepBackendAlive) {
         setState("keepBackendAlive", patch.keepBackendAlive)
       }
-      if (patch.models || "selectedModelKey" in patch || patch.pinnedModelKeys) {
+      if (patch.models || "selectedModelKey" in patch) {
         const configured = loadConfiguredModels()
-        const pinned = loadPinnedModelKeys()
-        const extras = state.discoveredModels.filter((item) => pinned.includes(item.key))
+        const extras = menuDiscoveredModels(state.discoveredModels)
         const nextKey = resolveSelectedKey(configured, mergeSelectables(configured, extras), loadSelectedModelKey())
-        setState({ configuredModels: configured, pinnedModelKeys: pinned, selectedModelKey: nextKey })
+        setState({ configuredModels: configured, selectedModelKey: nextKey })
       }
     }
     const unsubscribeShared = onSharedChange(applySharedPatch)

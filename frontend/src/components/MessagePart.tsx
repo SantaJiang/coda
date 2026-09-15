@@ -19,7 +19,7 @@ import type {
   UserMessage,
 } from "../lib/types"
 import { useModels, useProjects, useRuntime } from "../store/app"
-import { isAbortError } from "../lib/session-status"
+import { formatSessionErrorMessage, isAbortError } from "../lib/session-status"
 import { MarkdownView } from "./MarkdownView"
 import { WorkGroup } from "./WorkGroup"
 import { ChangedFiles } from "./ChangedFiles"
@@ -365,7 +365,7 @@ function AssistantTurn(props: {
   })
   const lastError = createMemo(() => lastAssistant()?.error)
   const stopped = createMemo(() => isAbortError(lastError()))
-  const error = createMemo(() => (stopped() ? "" : (lastError()?.data?.message ?? "")))
+  const error = createMemo(() => (stopped() ? "" : formatSessionErrorMessage(lastError()?.data?.message ?? "")))
   const copyText = createMemo(() => {
     const answerParts = split().answer.flatMap((block) => block.parts)
     return partsPlainText(answerParts.length ? answerParts : parts())

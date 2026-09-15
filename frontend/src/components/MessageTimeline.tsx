@@ -75,6 +75,9 @@ export function MessageTimeline() {
         <Show when={showLiveTail()}>
           <WorkGroup parts={[]} live />
         </Show>
+        <Show when={!runtime.busy() && runtime.sessionError()}>
+          <div class="error-card">{runtime.sessionError()}</div>
+        </Show>
       </div>
     </div>
   )

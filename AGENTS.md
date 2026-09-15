@@ -63,5 +63,6 @@ git -C backend apply ../patches/backend/<name>.patch
 | 补丁 | 位置 | 作用 |
 |---|---|---|
 | `session-permission-refresh-per-step.patch` | `packages/opencode/src/session/prompt.ts` 的 `runLoop` | 每个 step 循环开头重新 `sessions.get(sessionID)`，让前端**运行中**切换权限模式（PATCH `/session/:id/permission`）在下一个 step 立即生效，而不是等下一条消息。上游是在循环外只读一次快照。 |
+| `prompt-failure-surface.patch` | `prompt_async` 失败处理、`SystemPrompt` 引用/技能加载、`FileSystemSearch` 的 fff 探测、技能列表排序 | 安装版 sidecar 里 `prompt_async` 崩溃后只发 `session.error`、不写助手消息、会话像没反应；补丁会把错误写回最后一条助手消息并置 idle。`SystemPrompt.environment` 加载引用失败时必须用 `Effect.as([])` 恢复，不能 `.pipe(Effect.succeed([]))`（那会把 Effect 对象当函数调用，打包后报 `t[0] is not a function`）。同时兜住 location/fff/技能列表里的空项。 |
 
 以后对 `backend/` 的任何行为性修改（非第 1 条的关键字替换），都要同样落成 `patches/backend/` 下的补丁并登记到这张表里。

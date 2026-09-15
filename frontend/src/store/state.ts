@@ -48,6 +48,7 @@ export type AppState = {
   status: Record<string, SessionStatus>
   attention: Record<string, boolean>
   sessionErrors: Record<string, boolean>
+  sessionErrorText: Record<string, string>
   todos: Record<string, Todo[]>
   permissions: Record<string, PermissionRequest>
   questions: Record<string, QuestionRequest>
@@ -57,7 +58,6 @@ export type AppState = {
   configuredModels: ConfiguredModel[]
   selectedModelKey: string | null
   discoveredModels: SelectableModel[]
-  pinnedModelKeys: string[]
   modelMenuOpen: boolean
   modelSettingsOpen: boolean
   modelSettingsError: string | null
@@ -89,6 +89,7 @@ export const initialState: AppState = {
   status: {},
   attention: {},
   sessionErrors: {},
+  sessionErrorText: {},
   todos: {},
   permissions: {},
   questions: {},
@@ -98,7 +99,6 @@ export const initialState: AppState = {
   configuredModels: [],
   selectedModelKey: null,
   discoveredModels: [],
-  pinnedModelKeys: [],
   modelMenuOpen: false,
   modelSettingsOpen: false,
   modelSettingsError: null,

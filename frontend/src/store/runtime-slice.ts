@@ -115,6 +115,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     })
     setState("status", session.id, { type: "busy" })
     setState("sessionErrors", session.id, false)
+    setState("sessionErrorText", session.id, "")
   }
 
   const ensureProjectDirectory = (project: Project): Project | null => {
@@ -459,6 +460,11 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const id = state.selectedSessionId
       if (!id) return []
       return cutAtRevert(state.messages[id] ?? [], selectedSession()?.revert)
+    },
+    sessionError: () => {
+      const id = state.selectedSessionId
+      if (!id) return ""
+      return state.sessionErrorText[id] ?? ""
     },
     partsByMessage: () => state.parts,
     todos: () => {

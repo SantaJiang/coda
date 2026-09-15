@@ -18,6 +18,14 @@ export function deriveStatusFromMessages(messages: Message[]): SessionStatus | n
   return null
 }
 
+export function formatSessionErrorMessage(raw?: string | null) {
+  if (!raw) return ""
+  let text = raw.trim()
+  const wrapped = text.match(/^Cause\(\[Die\(([\s\S]+)\)\]\)$/)
+  if (wrapped?.[1]) text = wrapped[1].trim()
+  return text
+}
+
 export function isAbortError(error?: AssistantError | string | null) {
   if (!error) return false
   if (typeof error === "string") return error.trim().toLowerCase() === "aborted"

@@ -80,7 +80,8 @@ export type ProviderList = {
 const STORAGE_MODELS = "coda.models"
 const STORAGE_SECRETS = "coda.modelSecrets"
 const STORAGE_SELECTED = "coda.selectedModel"
-const STORAGE_PINNED = "coda.pinnedModels"
+
+export const OPENCODE_PROVIDER_ID = "opencode"
 
 function modelUid() {
   return uid("mdl")
@@ -97,6 +98,23 @@ export function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
   return slug || "custom"
+}
+
+export function hostnameSlug(baseURL: string) {
+  try {
+    return slugify(new URL(baseURL.trim()).hostname)
+  } catch {
+    return "custom"
+  }
+}
+
+export function resolveProviderID(form: Pick<ModelForm, "providerID" | "providerName" | "name" | "baseURL">) {
+  const existing = form.providerID.trim()
+  if (existing) return slugify(existing)
+  const label = form.providerName.trim() || form.name.trim()
+  const fromName = slugify(label)
+  if (fromName !== "custom") return fromName
+  return hostnameSlug(form.baseURL)
 }
 
 export function emptyModelForm(): ModelForm {
@@ -188,34 +206,17 @@ export function saveSelectedModelKey(key: string | null) {
   setSharedValue({ selectedModelKey: key })
 }
 
-export function loadPinnedModelKeys(): string[] {
-  const shared = sharedValue("pinnedModelKeys")
-  if (Array.isArray(shared)) return shared.filter((item): item is string => typeof item === "string")
-  try {
-    const raw = localStorage.getItem(STORAGE_PINNED)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as unknown
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []
-  } catch {
-    return []
-  }
-}
-
-export function savePinnedModelKeys(keys: string[]) {
-  localStorage.setItem(STORAGE_PINNED, JSON.stringify(keys))
-  setSharedValue({ pinnedModelKeys: keys })
-}
-
 export function createConfiguredModel(form: ModelForm): ConfiguredModel {
+  const baseURL = form.baseURL.trim().replace(/\/+$/, "")
+  const providerName = form.providerName.trim() || form.name.trim() || hostnameSlug(baseURL)
   const name = form.name.trim() || form.modelID.trim()
-  const providerID = slugify(form.providerID || form.providerName || name)
   return {
     id: modelUid(),
     name,
-    providerID,
-    providerName: form.providerName.trim() || name,
+    providerID: resolveProviderID({ ...form, providerName }),
+    providerName,
     modelID: form.modelID.trim(),
-    baseURL: form.baseURL.trim().replace(/\/+$/, ""),
+    baseURL,
     apiKey: form.apiKey.trim(),
   }
 }
@@ -228,7 +229,7 @@ export function updateConfiguredModel(model: ConfiguredModel, form: ModelForm): 
 export function validateProviderForm(form: Pick<ModelForm, "baseURL" | "apiKey" | "providerID" | "providerName" | "name">) {
   if (!form.baseURL.trim()) return "请填写接口地址"
   if (!form.apiKey.trim()) return "请填写 API Key"
-  if (!slugify(form.providerID || form.providerName || form.name)) return "请选择或填写供应商"
+  if (!(form.providerName.trim() || form.name.trim())) return "请填写接口名称"
   try {
     const url = new URL(form.baseURL.trim())
     if (url.protocol !== "http:" && url.protocol !== "https:") return "接口地址需要是 http 或 https"
@@ -291,6 +292,10 @@ export function variantsByKey(list: ProviderList) {
   return map
 }
 
+export function menuDiscoveredModels(discovered: SelectableModel[]) {
+  return discovered.filter((item) => item.providerID === OPENCODE_PROVIDER_ID)
+}
+
 export function mergeSelectables(configured: ConfiguredModel[], discovered: SelectableModel[]) {
   const coda = configured.map(toSelectable)
   const extras = new Map(discovered.map((item) => [item.key, item]))
@@ -305,7 +310,8 @@ export function mergeSelectables(configured: ConfiguredModel[], discovered: Sele
 export function resolveSelectedKey(configured: ConfiguredModel[], selectables: SelectableModel[], stored: string | null) {
   if (stored && selectables.some((item) => item.key === stored)) return stored
   const first = configured[0]
-  return first ? modelKey(first.providerID, first.modelID) : null
+  if (first) return modelKey(first.providerID, first.modelID)
+  return selectables[0]?.key ?? null
 }
 
 export function toBackendPatch(models: ConfiguredModel[], selectedKey: string | null): ConfigPatch | null {

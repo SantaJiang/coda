@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   deriveStatusFromMessages,
+  formatSessionErrorMessage,
   hasFailingAssistant,
   isAbortError,
   isActiveStatus,
@@ -70,6 +71,14 @@ describe("session status", () => {
     })
     const mixed: Message[] = [assistant("a1", { time: { created: 2, completed: 9 } }), user("u2"), assistant("a2")]
     expect(deriveStatusFromMessages(mixed)).toEqual({ type: "busy" })
+  })
+
+  it("unwraps Cause(Die(...)) session error text", () => {
+    expect(
+      formatSessionErrorMessage("Cause([Die(TypeError: undefined is not an object (evaluating 'a.name'))])"),
+    ).toBe("TypeError: undefined is not an object (evaluating 'a.name')")
+    expect(formatSessionErrorMessage("provider down")).toBe("provider down")
+    expect(formatSessionErrorMessage("")).toBe("")
   })
 
   it("detects an assistant error on the session", () => {

@@ -2,11 +2,11 @@ import {
   createConfiguredModel,
   discoveredFromProviderList,
   formatVariantLabel,
+  menuDiscoveredModels,
   mergeSelectables,
   modelKey,
   resolveSelectedKey,
   saveConfiguredModels,
-  savePinnedModelKeys,
   saveSelectedModelKey,
   toBackendPatch,
   variantsByKey,
@@ -18,10 +18,7 @@ import type { ModelApi } from "./contracts"
 import { selectedProjectOf, type StoreHandle } from "./handle"
 
 export function selectableModelsOf(state: AppState) {
-  return mergeSelectables(
-    state.configuredModels,
-    state.discoveredModels.filter((item) => state.pinnedModelKeys.includes(item.key)),
-  )
+  return mergeSelectables(state.configuredModels, menuDiscoveredModels(state.discoveredModels))
 }
 
 export function selectedModelOf(state: AppState) {
@@ -40,7 +37,7 @@ export function createModelSlice(handle: StoreHandle): ModelApi {
   const selectedModel = () => selectedModelOf(state)
 
   const applyConfiguredModels = async (models: ConfiguredModel[], preferredKey?: string | null) => {
-    const extras = state.discoveredModels.filter((item) => state.pinnedModelKeys.includes(item.key))
+    const extras = menuDiscoveredModels(state.discoveredModels)
     const selectables = mergeSelectables(models, extras)
     const nextKey = resolveSelectedKey(models, selectables, preferredKey ?? state.selectedModelKey)
     setState("configuredModels", models)
@@ -58,7 +55,7 @@ export function createModelSlice(handle: StoreHandle): ModelApi {
       const discovered = discoveredFromProviderList(list)
       setState("discoveredModels", discovered)
       setState("modelVariants", variantsByKey(list))
-      const extras = discovered.filter((item) => state.pinnedModelKeys.includes(item.key))
+      const extras = menuDiscoveredModels(discovered)
       const nextKey = resolveSelectedKey(
         state.configuredModels,
         mergeSelectables(state.configuredModels, extras),
@@ -86,8 +83,6 @@ export function createModelSlice(handle: StoreHandle): ModelApi {
     modelSettingsOpen: () => state.modelSettingsOpen,
     modelSettingsError: () => state.modelSettingsError,
     configuredModels: () => state.configuredModels,
-    discoveredModels: () => state.discoveredModels,
-    isPinned: (key) => state.pinnedModelKeys.includes(key),
     selectModel: (key) => {
       persistSelection(handle, key)
       const variants = state.modelVariants[key] ?? []
@@ -111,7 +106,7 @@ export function createModelSlice(handle: StoreHandle): ModelApi {
         setState("modelSettingsError", "请至少勾选一个模型")
         return
       }
-      const sample = createConfiguredModel({ ...form, modelID: unique[0], name: unique[0] })
+      const sample = createConfiguredModel({ ...form, modelID: unique[0] })
       const providerID = sample.providerID
       const existing = new Map(state.configuredModels.map((item) => [`${item.providerID}/${item.modelID}`, item]))
       const others = state.configuredModels.filter((item) => item.providerID !== providerID)
@@ -138,24 +133,6 @@ export function createModelSlice(handle: StoreHandle): ModelApi {
         await applyConfiguredModels(state.configuredModels.filter((item) => item.id !== id))
       } catch (error) {
         setState("modelSettingsError", error instanceof Error ? error.message : "删除后同步失败")
-      }
-    },
-    pinDiscoveredModel: (key) => {
-      if (state.pinnedModelKeys.includes(key)) {
-        persistSelection(handle, key)
-        return
-      }
-      const keys = [...state.pinnedModelKeys, key]
-      setState("pinnedModelKeys", keys)
-      savePinnedModelKeys(keys)
-      persistSelection(handle, key)
-    },
-    unpinDiscoveredModel: (key) => {
-      const keys = state.pinnedModelKeys.filter((item) => item !== key)
-      setState("pinnedModelKeys", keys)
-      savePinnedModelKeys(keys)
-      if (state.selectedModelKey === key) {
-        persistSelection(handle, resolveSelectedKey(state.configuredModels, selectableModels(), null))
       }
     },
     refreshDiscovered,

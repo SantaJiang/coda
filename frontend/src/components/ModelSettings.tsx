@@ -1,7 +1,6 @@
 import { For, Show, createEffect, createSignal } from "solid-js"
 import {
   emptyModelForm,
-  slugify,
   validateProviderForm,
   type ModelForm,
 } from "../lib/models"
@@ -14,19 +13,16 @@ export function ModelSettings() {
   const models = useModels()
   const [form, setForm] = createSignal<ModelForm>(emptyModelForm())
   const [presetId, setPresetId] = createSignal<string>(CUSTOM_PRESET_ID)
-  const [providerTouched, setProviderTouched] = createSignal(false)
   const [formError, setFormError] = createSignal<string | null>(null)
   const [saving, setSaving] = createSignal(false)
   const [loadingModels, setLoadingModels] = createSignal(false)
   const [remoteModels, setRemoteModels] = createSignal<RemoteModel[]>([])
   const [checked, setChecked] = createSignal<string[]>([])
   const [customModelID, setCustomModelID] = createSignal("")
-  const [showDiscovered, setShowDiscovered] = createSignal(false)
 
   const resetForm = () => {
     setForm(emptyModelForm())
     setPresetId(CUSTOM_PRESET_ID)
-    setProviderTouched(false)
     setFormError(null)
     setRemoteModels([])
     setChecked([])
@@ -37,19 +33,12 @@ export function ModelSettings() {
     const open = models.modelSettingsOpen()
     if (open && !wasOpen) {
       resetForm()
-      void models.refreshDiscovered()
     }
     return open
   })
 
   const update = <K extends keyof ModelForm>(key: K, value: ModelForm[K]) => {
-    setForm((current) => {
-      const next = { ...current, [key]: value }
-      if (!providerTouched() && (key === "name" || key === "providerName")) {
-        next.providerID = slugify(next.providerName || next.name)
-      }
-      return next
-    })
+    setForm((current) => ({ ...current, [key]: value }))
   }
 
   const applyPreset = (id: string) => {
@@ -59,7 +48,6 @@ export function ModelSettings() {
     setCustomModelID("")
     setFormError(null)
     if (id === CUSTOM_PRESET_ID) {
-      setProviderTouched(false)
       setForm({
         ...emptyModelForm(),
         apiKey: form().apiKey,
@@ -68,7 +56,6 @@ export function ModelSettings() {
     }
     const preset = presetById(id)
     if (!preset) return
-    setProviderTouched(true)
     setForm({
       name: preset.name,
       providerID: preset.id,
@@ -93,7 +80,6 @@ export function ModelSettings() {
       baseURL: model.baseURL,
       apiKey: model.apiKey,
     })
-    setProviderTouched(true)
     setFormError(null)
     setRemoteModels(siblings.map((item) => ({ id: item.modelID, name: item.name })))
     setChecked(siblings.map((item) => item.modelID))
@@ -190,7 +176,7 @@ export function ModelSettings() {
                     <div class="model-row-main">
                       <div class="model-row-name">{model.name}</div>
                       <div class="model-row-meta">
-                        {model.providerID} / {model.modelID}
+                        {model.providerName || model.providerID} / {model.modelID}
                       </div>
                     </div>
                     <div class="model-row-actions">
@@ -204,42 +190,6 @@ export function ModelSettings() {
                   </div>
                 )}
               </For>
-            </Show>
-          </section>
-
-          <section class="model-list discovered">
-            <button type="button" class="model-list-toggle" onClick={() => setShowDiscovered((open) => !open)}>
-              已连接（{models.discoveredModels().length}）
-            </button>
-            <Show when={showDiscovered()}>
-              <Show
-                when={models.discoveredModels().length > 0}
-                fallback={<div class="model-list-empty">当前没有已连接的供应商</div>}
-              >
-                <div class="discovered-scroll">
-                  <For each={models.discoveredModels()}>
-                    {(model) => (
-                      <div class="model-row compact">
-                        <div class="model-row-main">
-                          <div class="model-row-name">{model.name}</div>
-                          <div class="model-row-meta">{model.key}</div>
-                        </div>
-                        <button
-                          type="button"
-                          class="text-btn"
-                          onClick={() =>
-                            models.isPinned(model.key)
-                              ? models.unpinDiscoveredModel(model.key)
-                              : models.pinDiscoveredModel(model.key)
-                          }
-                        >
-                          {models.isPinned(model.key) ? "移出菜单" : "加入菜单"}
-                        </button>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </Show>
             </Show>
           </section>
 
@@ -267,6 +217,19 @@ export function ModelSettings() {
                 自定义
               </button>
             </div>
+            <Show when={presetId() === CUSTOM_PRESET_ID}>
+              <label class="field">
+                <span>接口名称</span>
+                <input
+                  value={form().providerName}
+                  placeholder="例如 公司网关"
+                  onInput={(event) => {
+                    const value = event.currentTarget.value
+                    setForm((current) => ({ ...current, providerName: value, name: value }))
+                  }}
+                />
+              </label>
+            </Show>
             <label class="field">
               <span>接口地址</span>
               <input
@@ -285,20 +248,6 @@ export function ModelSettings() {
                 onInput={(event) => update("apiKey", event.currentTarget.value)}
               />
             </label>
-            <Show when={presetId() === CUSTOM_PRESET_ID}>
-              <label class="field">
-                <span>供应商 ID</span>
-                <input
-                  value={form().providerID}
-                  placeholder="my-provider"
-                  onInput={(event) => {
-                    setProviderTouched(true)
-                    update("providerID", event.currentTarget.value)
-                    update("providerName", event.currentTarget.value)
-                  }}
-                />
-              </label>
-            </Show>
             <div class="dialog-actions split">
               <button type="button" class="ghost-btn" disabled={loadingModels()} onClick={() => void fetchModels()}>
                 {loadingModels() ? "获取中…" : "获取模型列表"}

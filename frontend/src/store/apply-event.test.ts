@@ -84,7 +84,13 @@ describe("applyClientEvent", () => {
   })
 
   it("keeps session errors on the session instead of the global banner", () => {
-    const state = draft({ selectedSessionId: "s1", error: null })
+    const state = draft({
+      selectedSessionId: "s1",
+      error: null,
+      messages: {
+        s1: [{ id: "a1", sessionID: "s1", role: "assistant", time: { created: 1 } }],
+      },
+    })
     applyClientEvent(state, {
       event: {
         type: "session.error",
@@ -92,6 +98,27 @@ describe("applyClientEvent", () => {
       },
     })
     expect(state.sessionErrors.s1).toBe(true)
+    expect(state.error).toBeNull()
+    expect(state.messages.s1[0]).toMatchObject({
+      role: "assistant",
+      error: { data: { message: "model failed" } },
+    })
+    expect(state.messages.s1[0]?.time.completed).toEqual(expect.any(Number))
+  })
+
+  it("keeps a session error card when no assistant message exists yet", () => {
+    const state = draft({ selectedSessionId: "s1", error: null })
+    applyClientEvent(state, {
+      event: {
+        type: "session.error",
+        properties: {
+          sessionID: "s1",
+          error: { data: { message: "Cause([Die(TypeError: undefined is not an object (evaluating 'a.name'))])" } },
+        },
+      },
+    })
+    expect(state.sessionErrors.s1).toBe(true)
+    expect(state.sessionErrorText.s1).toBe("TypeError: undefined is not an object (evaluating 'a.name')")
     expect(state.error).toBeNull()
   })
 

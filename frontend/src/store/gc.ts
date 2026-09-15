@@ -9,6 +9,7 @@ export function purgeSession(draft: AppState, sessionID: string) {
   delete draft.status[sessionID]
   delete draft.attention[sessionID]
   delete draft.sessionErrors[sessionID]
+  delete draft.sessionErrorText[sessionID]
   delete draft.queuedBySession[sessionID]
   delete draft.sendingBySession[sessionID]
   delete draft.drafts[`session:${sessionID}`]
