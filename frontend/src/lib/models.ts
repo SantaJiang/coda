@@ -229,7 +229,7 @@ export function updateConfiguredModel(model: ConfiguredModel, form: ModelForm): 
 export function validateProviderForm(form: Pick<ModelForm, "baseURL" | "apiKey" | "providerID" | "providerName" | "name">) {
   if (!form.baseURL.trim()) return "请填写接口地址"
   if (!form.apiKey.trim()) return "请填写 API Key"
-  if (!(form.providerName.trim() || form.name.trim())) return "请填写接口名称"
+  if (!(form.providerName.trim() || form.name.trim())) return "请填写模型名称"
   try {
     const url = new URL(form.baseURL.trim())
     if (url.protocol !== "http:" && url.protocol !== "https:") return "接口地址需要是 http 或 https"

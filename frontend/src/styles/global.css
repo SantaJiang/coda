@@ -1896,6 +1896,12 @@ button.ctx-pill:hover {
   line-height: 1.5;
 }
 
+.model-settings-dialog {
+  height: min(640px, calc(100vh - 48px));
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .settings-dialog {
   width: min(420px, 100%);
 }
@@ -2121,8 +2127,6 @@ button.ctx-pill:hover {
 }
 
 .model-pick-list {
-  max-height: 180px;
-  overflow: auto;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 4px;

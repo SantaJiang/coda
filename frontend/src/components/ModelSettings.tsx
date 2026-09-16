@@ -154,15 +154,18 @@ export function ModelSettings() {
   return (
     <Show when={models.modelSettingsOpen()}>
       <div class="dialog-overlay" onMouseDown={onOverlay} onKeyDown={onKeyDown}>
-        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="model-settings-title">
+        <div
+          class="dialog model-settings-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="model-settings-title"
+        >
           <header class="dialog-head">
             <h2 id="model-settings-title">配置模型</h2>
             <button type="button" class="icon-btn" onClick={() => models.closeModelSettings()} aria-label="关闭">
               <Icon name="times" />
             </button>
           </header>
-
-          <p class="dialog-hint">选择厂商，填入 API Key，拉取可用模型后勾选加入输入框菜单。密钥只保存在本机。</p>
 
           <section class="model-list">
             <div class="model-list-title">已添加</div>
@@ -219,10 +222,10 @@ export function ModelSettings() {
             </div>
             <Show when={presetId() === CUSTOM_PRESET_ID}>
               <label class="field">
-                <span>接口名称</span>
+                <span>模型名称</span>
                 <input
                   value={form().providerName}
-                  placeholder="例如 公司网关"
+                  placeholder="例如 我的模型"
                   onInput={(event) => {
                     const value = event.currentTarget.value
                     setForm((current) => ({ ...current, providerName: value, name: value }))

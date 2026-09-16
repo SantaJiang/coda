@@ -8,12 +8,12 @@ const CHOICES: Array<{ id: SendShortcut; name: () => string; hint: () => string 
   {
     id: "enter",
     name: () => "Enter",
-    hint: () => "换行使用 Shift+Enter",
+    hint: () => `换行使用 ${modifierLabel()}+Enter`,
   },
   {
     id: "mod-enter",
     name: () => `${modifierLabel()}+Enter`,
-    hint: () => "Enter 用于换行",
+    hint: () => "换行使用 Enter",
   },
 ]
 

@@ -1,5 +1,5 @@
 import { Show, createEffect, onCleanup, onMount } from "solid-js"
-import { isSendHotkey } from "../lib/settings"
+import { isNewlineHotkey, isSendHotkey } from "../lib/settings"
 import { useChrome, useModels, useProjects, useRuntime } from "../store/app"
 import { isLocalProject } from "../lib/persist"
 import { AttachmentStrip } from "./AttachmentStrip"
@@ -85,9 +85,28 @@ export function Composer() {
     onCleanup(() => document.removeEventListener("keydown", onKey))
   })
 
+  const insertNewline = () => {
+    if (!area) return
+    area.focus()
+    const start = area.selectionStart ?? area.value.length
+    const end = area.selectionEnd ?? start
+    const inserted = typeof document.execCommand === "function" && document.execCommand("insertText", false, "\n")
+    if (!inserted) {
+      area.value = `${area.value.slice(0, start)}\n${area.value.slice(end)}`
+      area.setSelectionRange(start + 1, start + 1)
+    }
+    runtime.setComposer(area.value)
+    resize()
+  }
+
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape" && !event.isComposing) {
       if (runtime.busy() && !chrome.overlayOpen()) event.preventDefault()
+      return
+    }
+    if (isNewlineHotkey(event, chrome.sendShortcut())) {
+      event.preventDefault()
+      insertNewline()
       return
     }
     if (isSendHotkey(event, chrome.sendShortcut())) {

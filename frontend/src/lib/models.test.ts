@@ -95,7 +95,7 @@ describe("createConfiguredModel", () => {
 })
 
 describe("validateProviderForm", () => {
-  it("asks for an interface name instead of a provider id", () => {
+  it("asks for a model name instead of a provider id", () => {
     expect(
       validateProviderForm({
         baseURL: "https://api.example.com/v1",
@@ -104,7 +104,7 @@ describe("validateProviderForm", () => {
         providerName: "",
         name: "",
       }),
-    ).toBe("请填写接口名称")
+    ).toBe("请填写模型名称")
   })
 })
 

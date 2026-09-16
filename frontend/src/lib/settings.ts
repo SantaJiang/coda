@@ -19,10 +19,15 @@ export function sendShortcutLabel(shortcut: SendShortcut) {
 }
 
 export function isSendHotkey(event: KeyboardEvent, shortcut: SendShortcut) {
-  if (event.key !== "Enter" || event.isComposing || event.shiftKey) return false
-  const mod = isMacPlatform() ? event.metaKey : event.ctrlKey
-  if (shortcut === "enter") return !event.metaKey && !event.ctrlKey && !event.altKey
-  return mod && !event.altKey
+  if (event.key !== "Enter" || event.isComposing || event.altKey) return false
+  const modded = event.metaKey || event.ctrlKey
+  return shortcut === "mod-enter" ? modded : !modded
+}
+
+export function isNewlineHotkey(event: KeyboardEvent, shortcut: SendShortcut) {
+  if (shortcut !== "enter") return false
+  if (event.key !== "Enter" || event.isComposing || event.altKey) return false
+  return event.metaKey || event.ctrlKey
 }
 
 export function loadSendShortcut(): SendShortcut {
