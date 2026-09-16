@@ -911,7 +911,11 @@ button.ctx-pill:hover {
   color: var(--danger);
 }
 
-.user-bubble .markdown,
+.user-bubble .user-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .assistant-body .markdown {
   font-size: var(--font-chat);
   line-height: var(--line-chat);

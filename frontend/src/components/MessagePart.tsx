@@ -255,11 +255,13 @@ function useModelName() {
   return (providerID?: string, modelID?: string) => models.nameFor(providerID, modelID)
 }
 
-function MessagePartView(props: { part: Part }) {
+function MessagePartView(props: { part: Part; plain?: boolean }) {
   return (
     <Switch>
       <Match when={props.part.type === "text"}>
-        <MarkdownView text={(props.part as TextPart).text} />
+        <Show when={props.plain} fallback={<MarkdownView text={(props.part as TextPart).text} />}>
+          <div class="user-text">{(props.part as TextPart).text}</div>
+        </Show>
       </Match>
       <Match when={props.part.type === "file"}>
         <div class="file-chip">{(props.part as FilePart).filename || (props.part as FilePart).url || "附件"}</div>
@@ -288,7 +290,7 @@ function UserBubble(props: { message: Message; parts: Part[] }) {
     <article class="turn" data-role="user">
       <div class="turn-stack">
         <div class="user-bubble">
-          <For each={parts()}>{(part) => <MessagePartView part={part} />}</For>
+          <For each={parts()}>{(part) => <MessagePartView part={part} plain />}</For>
         </div>
         <MessageMeta
           agent={user().agent}
