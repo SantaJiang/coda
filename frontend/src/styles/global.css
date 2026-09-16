@@ -1163,14 +1163,14 @@ button.ctx-pill:hover {
 
 .work-group:hover .work-summary-caret,
 .work-group.open .work-summary-caret,
-.worked-for .work-summary-caret,
+.worked-for > .work-head .work-summary-caret,
 .compaction-mark:hover .work-summary-caret,
 .compaction-mark.open .work-summary-caret {
   opacity: 1;
 }
 
 .work-group.open .work-summary-caret,
-.worked-for.open .work-summary-caret,
+.worked-for.open > .work-head .work-summary-caret,
 .compaction-mark.open .work-summary-caret {
   transform: rotate(90deg);
 }
