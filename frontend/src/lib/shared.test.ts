@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { mergeForWrite, mergeHydrated, type SharedSettings } from "./shared"
+import { mergeForWrite, mergeHydrated, stripRetiredSettings, type SharedSettings } from "./shared"
 
 const seed: SharedSettings = {
   models: [{ id: "m1", name: "M", providerID: "p", providerName: "P", modelID: "m", baseURL: "u", apiKey: "k" }],
@@ -49,5 +49,18 @@ describe("mergeForWrite", () => {
     const file: SharedSettings = { theme: "light", selectedModelKey: "a/b" }
     const merged = mergeForWrite(file, { theme: "light" }, ["selectedModelKey"])
     expect(merged).toEqual({ theme: "light" })
+  })
+})
+
+describe("stripRetiredSettings", () => {
+  it("drops the retired pinned-models key from an old settings file", () => {
+    const file = { theme: "light", pinnedModelKeys: ["opencode/big-pickle"] } as unknown as SharedSettings
+    const stripped = stripRetiredSettings(file)
+    expect(stripped).toEqual({ theme: "light" })
+    expect(stripped).not.toHaveProperty("pinnedModelKeys")
+  })
+
+  it("leaves a current settings file untouched", () => {
+    expect(stripRetiredSettings(seed)).toEqual(seed)
   })
 })

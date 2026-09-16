@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  clearRetiredModelStorage,
   createConfiguredModel,
   emptyModelForm,
   menuDiscoveredModels,
@@ -7,6 +8,7 @@ import {
   resolveProviderID,
   resolveSelectedKey,
   toBackendPatch,
+  validateFetchForm,
   validateProviderForm,
   type SelectableModel,
 } from "./models"
@@ -95,7 +97,7 @@ describe("createConfiguredModel", () => {
 })
 
 describe("validateProviderForm", () => {
-  it("asks for a model name instead of a provider id", () => {
+  it("asks for an interface name instead of a provider id", () => {
     expect(
       validateProviderForm({
         baseURL: "https://api.example.com/v1",
@@ -104,7 +106,13 @@ describe("validateProviderForm", () => {
         providerName: "",
         name: "",
       }),
-    ).toBe("请填写模型名称")
+    ).toBe("请填写接口名称")
+  })
+
+  it("lets fetching the model list only require the endpoint and key", () => {
+    expect(validateFetchForm({ baseURL: "https://api.example.com/v1", apiKey: "sk-test" })).toBeNull()
+    expect(validateFetchForm({ baseURL: "", apiKey: "sk-test" })).toBe("请填写接口地址")
+    expect(validateFetchForm({ baseURL: "https://api.example.com/v1", apiKey: "" })).toBe("请填写 API Key")
   })
 })
 
@@ -133,5 +141,15 @@ describe("mergeSelectables and resolveSelectedKey", () => {
       },
     ])
     expect(resolveSelectedKey([], selectables, null)).toBe("opencode/big-pickle")
+  })
+})
+
+describe("clearRetiredModelStorage", () => {
+  it("drops the pinned-models key left behind by older versions", () => {
+    localStorage.setItem("coda.pinnedModels", JSON.stringify(["opencode/big-pickle"]))
+    localStorage.setItem("coda.models", "[]")
+    clearRetiredModelStorage()
+    expect(localStorage.getItem("coda.pinnedModels")).toBeNull()
+    expect(localStorage.getItem("coda.models")).toBe("[]")
   })
 })

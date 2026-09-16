@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createSignal } from "solid-js"
 import {
   emptyModelForm,
+  validateFetchForm,
   validateProviderForm,
   type ModelForm,
 } from "../lib/models"
@@ -91,7 +92,7 @@ export function ModelSettings() {
   }
 
   const fetchModels = async () => {
-    const error = validateProviderForm(form())
+    const error = validateFetchForm(form())
     if (error) {
       setFormError(error)
       return
@@ -222,10 +223,10 @@ export function ModelSettings() {
             </div>
             <Show when={presetId() === CUSTOM_PRESET_ID}>
               <label class="field">
-                <span>模型名称</span>
+                <span>接口名称</span>
                 <input
                   value={form().providerName}
-                  placeholder="例如 我的模型"
+                  placeholder="例如 我的代理"
                   onInput={(event) => {
                     const value = event.currentTarget.value
                     setForm((current) => ({ ...current, providerName: value, name: value }))

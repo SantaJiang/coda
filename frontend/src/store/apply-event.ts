@@ -67,11 +67,14 @@ function attachSessionError(draft: AppState, sessionID: string, error: Assistant
     const item = msgs[index]
     if (item.role !== "assistant") continue
     const assistant = item as AssistantMessage
-    if (!assistant.error) {
+    // 只归因到仍在进行中的那条助手消息（无 error 且未完成）。
+    // 若崩溃发生在新助手消息创建之前，上一轮已完成的助手消息不应被误标，
+    // 此时回退到会话级错误卡片由时间线底部展示。
+    if (!assistant.error && !assistant.time.completed) {
       assistant.error = error
-      if (!assistant.time.completed) assistant.time = { ...assistant.time, completed: Date.now() }
+      assistant.time = { ...assistant.time, completed: Date.now() }
+      return
     }
-    return
   }
   draft.sessionErrorText[sessionID] = message
 }

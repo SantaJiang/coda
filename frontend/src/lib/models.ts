@@ -80,8 +80,18 @@ export type ProviderList = {
 const STORAGE_MODELS = "coda.models"
 const STORAGE_SECRETS = "coda.modelSecrets"
 const STORAGE_SELECTED = "coda.selectedModel"
+const STORAGE_PINNED = "coda.pinnedModels"
 
 export const OPENCODE_PROVIDER_ID = "opencode"
+
+// pinned 模型已下线：菜单只保留配置模型 + OpenCode 免费模型，清掉老版本留下的键。
+export function clearRetiredModelStorage() {
+  try {
+    localStorage.removeItem(STORAGE_PINNED)
+  } catch {
+    // ignore when storage is unavailable
+  }
+}
 
 function modelUid() {
   return uid("mdl")
@@ -226,16 +236,22 @@ export function updateConfiguredModel(model: ConfiguredModel, form: ModelForm): 
   return { ...next, id: model.id }
 }
 
-export function validateProviderForm(form: Pick<ModelForm, "baseURL" | "apiKey" | "providerID" | "providerName" | "name">) {
+export function validateFetchForm(form: Pick<ModelForm, "baseURL" | "apiKey">) {
   if (!form.baseURL.trim()) return "请填写接口地址"
   if (!form.apiKey.trim()) return "请填写 API Key"
-  if (!(form.providerName.trim() || form.name.trim())) return "请填写模型名称"
   try {
     const url = new URL(form.baseURL.trim())
     if (url.protocol !== "http:" && url.protocol !== "https:") return "接口地址需要是 http 或 https"
   } catch {
     return "接口地址不是合法 URL"
   }
+  return null
+}
+
+export function validateProviderForm(form: Pick<ModelForm, "baseURL" | "apiKey" | "providerID" | "providerName" | "name">) {
+  const endpoint = validateFetchForm(form)
+  if (endpoint) return endpoint
+  if (!(form.providerName.trim() || form.name.trim())) return "请填写接口名称"
   return null
 }
 

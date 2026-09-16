@@ -50,7 +50,7 @@ index be1cd1d49a..75aca4ff6b 100644
  const Frontmatter = Schema.Struct({
    name: Schema.String.pipe(Schema.optional),
 diff --git a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
-index 662585020a..84f961fa74 100644
+index 662585020a..4a20e1d2a0 100644
 --- a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
 +++ b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
 @@ -316,12 +316,23 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
@@ -71,7 +71,7 @@ index 662585020a..84f961fa74 100644
 +            const match = yield* session
 +              .findMessage(sessionID, (item) => item.info.role === "assistant")
 +              .pipe(Effect.catch(() => Effect.succeed(Option.none())))
-+            if (Option.isSome(match) && match.value.info.role === "assistant" && !match.value.info.error) {
++            if (Option.isSome(match) && match.value.info.role === "assistant" && !match.value.info.error && !match.value.info.time.completed) {
 +              yield* session.updateMessage({
 +                ...match.value.info,
 +                error,
@@ -84,15 +84,10 @@ index 662585020a..84f961fa74 100644
          Effect.forkIn(scope, { startImmediately: true }),
        )
 diff --git a/packages/opencode/src/session/system.ts b/packages/opencode/src/session/system.ts
-index 61ab74d9f1..9a5a890dc7 100644
+index 61ab74d9f1..e6c4220959 100644
 --- a/packages/opencode/src/session/system.ts
 +++ b/packages/opencode/src/session/system.ts
-@@ -63,17 +63,15 @@ const layer = Layer.effect(
-   Effect.gen(function* () {
-     const skill = yield* Skill.Service
-     const mcp = yield* MCP.Service
--    const locations = yield* LocationServiceMap.Service
-+    yield* LocationServiceMap.Service
+@@ -67,13 +67,11 @@ const layer = Layer.effect(
  
      return Service.of({
        environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
@@ -144,7 +139,7 @@ index 61ab74d9f1..9a5a890dc7 100644
 +                reference != null && typeof reference.name === "string" && reference.description !== undefined,
 +            )
 +          }).pipe(
-+            Effect.provide(LocationServiceMap.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))),
++            Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))),
 +            Effect.catchCause((cause) =>
 +              Effect.logWarning("failed to load project references", { cause }).pipe(Effect.as([])),
 +            ),

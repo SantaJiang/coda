@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { compactionLabel, groupTurns, isInterruptedTurn, nextLiveItemKey } from "./MessagePart"
-import type { AssistantMessage, Message, Part, UserMessage } from "../lib/types"
+import { compactionLabel, groupTurns, isInterruptedTurn, isVisiblePart, nextLiveItemKey, timelineItemKey } from "./MessagePart"
+import type { AssistantMessage, Message, Part, ReasoningPart, TextPart, ToolPart, UserMessage } from "../lib/types"
 
 const user = (id: string, created: number): UserMessage => ({
   id,
@@ -42,7 +42,7 @@ describe("groupTurns", () => {
     }
 
     expect(groupTurns([compactUser, failed], parts)).toEqual([
-      { kind: "compaction", status: "error", error: "provider down" },
+      { kind: "compaction", id: "compact", status: "error", error: "provider down" },
     ])
   })
 
@@ -54,7 +54,9 @@ describe("groupTurns", () => {
     const items = groupTurns([user("u1", 1), compactUser, assistant("a1", "u1", 3)], parts)
     const turns = items.filter((item) => item.kind === "turn")
 
-    expect(items.filter((item) => item.kind === "compaction")).toEqual([{ kind: "compaction", status: "running" }])
+    expect(items.filter((item) => item.kind === "compaction")).toEqual([
+      { kind: "compaction", id: "compact", status: "running" },
+    ])
     expect(turns).toHaveLength(1)
     expect(turns[0].assistants.map((message) => message.id)).toEqual(["a1"])
   })
@@ -68,7 +70,9 @@ describe("groupTurns", () => {
       compact: [{ id: "p1", sessionID: "s1", messageID: "compact", type: "compaction" }],
     }
 
-    expect(groupTurns([compactUser, aborted], parts)).toEqual([{ kind: "compaction", status: "running" }])
+    expect(groupTurns([compactUser, aborted], parts)).toEqual([
+      { kind: "compaction", id: "compact", status: "running" },
+    ])
   })
 
   it("does not present an unfinished idle compaction as completed", () => {
@@ -85,6 +89,51 @@ describe("isInterruptedTurn", () => {
     expect(isInterruptedTurn(false, true, unfinished)).toBe(false)
     expect(isInterruptedTurn(true, true, unfinished)).toBe(false)
     expect(isInterruptedTurn(false, false, assistant("a2", "u1", 1))).toBe(false)
+  })
+})
+
+describe("isVisiblePart", () => {
+  const reasoning = (text?: string): ReasoningPart => ({
+    id: "r1",
+    sessionID: "s1",
+    messageID: "a1",
+    type: "reasoning",
+    text: text ?? "",
+  })
+
+  const text = (over: Partial<TextPart> = {}): TextPart => ({
+    id: "t1",
+    sessionID: "s1",
+    messageID: "a1",
+    type: "text",
+    text: "hello",
+    ...over,
+  })
+
+  const tool = (name: string, status: ToolPart["state"]["status"]): Part => ({
+    id: `tool-${name}-${status}`,
+    sessionID: "s1",
+    messageID: "a1",
+    type: "tool",
+    tool: name,
+    state: { status, input: {} },
+  }) as Part
+
+  it("hides encrypted reasoning without displayable text so Thinking never expands into an empty panel", () => {
+    expect(isVisiblePart(reasoning(""))).toBe(false)
+    expect(isVisiblePart(reasoning("   \n  "))).toBe(false)
+    expect(isVisiblePart(reasoning("thinking out loud"))).toBe(true)
+  })
+
+  it("keeps the existing visibility rules for other parts", () => {
+    expect(isVisiblePart(text())).toBe(true)
+    expect(isVisiblePart(text({ ignored: true }))).toBe(false)
+    expect(isVisiblePart(text({ synthetic: true }))).toBe(false)
+    expect(isVisiblePart(tool("todowrite", "running"))).toBe(false)
+    expect(isVisiblePart(tool("todowrite", "completed"))).toBe(true)
+    expect(isVisiblePart(tool("question", "pending"))).toBe(false)
+    expect(isVisiblePart(tool("question", "error"))).toBe(true)
+    expect(isVisiblePart(tool("bash", "running"))).toBe(true)
   })
 })
 
@@ -112,5 +161,32 @@ describe("nextLiveItemKey", () => {
   it("drops the live turn once the session is idle", () => {
     const items = groupTurns([user("u1", 1), assistant("a1", "u1", 2, { time: { created: 2 } })])
     expect(nextLiveItemKey("turn:u1", false, items)).toBe("")
+  })
+
+  it("does not keep a finished compaction live through the latch", () => {
+    const compactUser = user("compact", 1)
+    const done = assistant("summary", "compact", 2)
+    const parts: Record<string, Part[]> = {
+      compact: [{ id: "p1", sessionID: "s1", messageID: "compact", type: "compaction" }],
+    }
+    const items = groupTurns([compactUser, done], parts)
+    expect(nextLiveItemKey("compaction:compact", true, items)).toBe("")
+  })
+
+  it("keys compactions by user id so appended turns do not move them", () => {
+    const compactUser = user("compact", 1)
+    const parts: Record<string, Part[]> = {
+      compact: [{ id: "p1", sessionID: "s1", messageID: "compact", type: "compaction" }],
+    }
+    const before = groupTurns([user("u1", 0), compactUser], parts)
+    const after = groupTurns([user("u1", 0), compactUser, user("u2", 3)], parts)
+    const compactionBefore = before.find((entry) => entry.kind === "compaction")
+    const compactionAfter = after.find((entry) => entry.kind === "compaction")
+    expect(compactionBefore && timelineItemKey(compactionBefore, before.indexOf(compactionBefore))).toBe(
+      "compaction:compact",
+    )
+    expect(compactionAfter && timelineItemKey(compactionAfter, after.indexOf(compactionAfter))).toBe(
+      "compaction:compact",
+    )
   })
 })

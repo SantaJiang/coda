@@ -7,7 +7,6 @@ import type { Project } from "./types"
 export type SharedSettings = {
   models?: ConfiguredModel[]
   selectedModelKey?: string | null
-  pinnedModelKeys?: string[]
   theme?: Theme
   sendShortcut?: SendShortcut
   permissionMode?: PermissionMode
@@ -105,10 +104,17 @@ async function readSettingsFile(): Promise<SharedSettings | null> {
     const raw = await invokeSettings<string | null>("settings_read")
     if (!raw) return null
     const parsed = JSON.parse(raw) as unknown
-    return parsed && typeof parsed === "object" ? (parsed as SharedSettings) : null
+    return parsed && typeof parsed === "object" ? stripRetiredSettings(parsed as SharedSettings) : null
   } catch {
     return null
   }
+}
+
+// 已下线的字段：不再读写 pinned 模型。读文件时统一剔除，
+// 避免老 settings.json 里的残留键被合并回内存又写回文件。
+export function stripRetiredSettings(settings: SharedSettings) {
+  const { pinnedModelKeys: _retired, ...rest } = settings as SharedSettings & { pinnedModelKeys?: string[] }
+  return rest
 }
 
 function scheduleWrite() {

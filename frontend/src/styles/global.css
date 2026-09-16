@@ -1902,6 +1902,15 @@ button.ctx-pill:hover {
   overflow-y: auto;
 }
 
+.model-settings-dialog .dialog-head {
+  position: sticky;
+  top: -16px;
+  z-index: 1;
+  margin: -16px -18px 8px;
+  padding: 16px 18px 8px;
+  background: var(--bg-elevated);
+}
+
 .settings-dialog {
   width: min(420px, 100%);
 }

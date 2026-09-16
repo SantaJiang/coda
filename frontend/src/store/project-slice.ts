@@ -47,29 +47,35 @@ function statusKey(status: ReturnType<typeof deriveStatusFromMessages> | undefin
   return `${status.type}:${status.type === "retry" ? `${status.attempt ?? ""}:${status.next ?? ""}` : ""}`
 }
 
-function valueLength(value: unknown) {
-  if (value === undefined) return 0
+function hashValue(value: unknown) {
+  if (value === undefined) return "0"
+  let raw: string
   try {
-    return JSON.stringify(value)?.length ?? 0
+    raw = JSON.stringify(value) ?? ""
   } catch {
-    return -1
+    return "-1"
   }
+  let hash = 5381
+  for (let index = 0; index < raw.length; index += 1) {
+    hash = ((hash << 5) + hash + raw.charCodeAt(index)) | 0
+  }
+  return `${raw.length}:${hash}`
 }
 
 function partKey(part: Part) {
-  if (part.type === "text") return `${part.id}:text:${part.text.length}`
+  if (part.type === "text") return `${part.id}:text:${hashValue(part.text)}`
   if (part.type === "reasoning") {
-    return `${part.id}:reasoning:${part.text.length}:${part.time?.start ?? ""}:${part.time?.end ?? ""}`
+    return `${part.id}:reasoning:${hashValue(part.text)}:${part.time?.start ?? ""}:${part.time?.end ?? ""}`
   }
   if (part.type === "tool") {
     const state = part.state
     const title = "title" in state ? state.title ?? "" : ""
     const metadata = "metadata" in state ? state.metadata : undefined
-    const output = state.status === "completed" ? state.output?.length ?? 0 : 0
-    const error = state.status === "error" ? state.error?.length ?? 0 : 0
+    const output = state.status === "completed" ? hashValue(state.output) : "0"
+    const error = state.status === "error" ? hashValue(state.error) : "0"
     const time = "time" in state ? state.time : undefined
     const end = time && "end" in time ? time.end ?? "" : ""
-    return `${part.id}:tool:${state.status}:${title}:${valueLength(state.input)}:${valueLength(metadata)}:${output}:${error}:${end}`
+    return `${part.id}:tool:${state.status}:${hashValue(title)}:${hashValue(state.input)}:${hashValue(metadata)}:${output}:${error}:${end}`
   }
   return `${part.id}:${part.type}`
 }

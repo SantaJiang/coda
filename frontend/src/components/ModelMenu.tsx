@@ -14,7 +14,7 @@ function ModelMenuRow(props: { model: SelectableModel; active: boolean; free?: b
     >
       <span class="model-menu-name">{props.model.name}</span>
       <Show when={props.free}>
-        <span class="model-menu-tag">Free</span>
+        <span class="model-menu-tag">免费</span>
       </Show>
     </button>
   )

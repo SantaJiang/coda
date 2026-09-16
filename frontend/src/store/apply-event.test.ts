@@ -123,6 +123,28 @@ describe("applyClientEvent", () => {
     expect(state.error).toBeNull()
   })
 
+  it("does not misattribute a crash to the previous completed turn", () => {
+    const state = draft({
+      selectedSessionId: "s1",
+      error: null,
+      messages: {
+        s1: [
+          { id: "u1", sessionID: "s1", role: "user", time: { created: 1 } },
+          { id: "a1", sessionID: "s1", role: "assistant", time: { created: 1, completed: 2 } },
+        ],
+      },
+    })
+    applyClientEvent(state, {
+      event: {
+        type: "session.error",
+        properties: { sessionID: "s1", error: { data: { message: "boom" } } },
+      },
+    })
+    expect(state.sessionErrors.s1).toBe(true)
+    expect(state.messages.s1[1]).not.toHaveProperty("error")
+    expect(state.sessionErrorText.s1).toBe("boom")
+  })
+
   it("does not flag a session as errored when the user stopped it", () => {
     const aborted = { name: "MessageAbortedError", data: { message: "Aborted" } }
     const state = draft({ selectedSessionId: "other", error: null })

@@ -5,13 +5,14 @@ import "./styles/global.css"
 import { applyWindowChromeAttr } from "./lib/platform"
 import { hydrateShared } from "./lib/shared"
 import { initTheme, loadTheme } from "./lib/theme"
-import { loadConfiguredModels, loadSelectedModelKey } from "./lib/models"
+import { clearRetiredModelStorage, loadConfiguredModels, loadSelectedModelKey } from "./lib/models"
 import { loadPermissionMode } from "./lib/permissions"
 import { loadKeepBackendAlive, loadSendShortcut } from "./lib/settings"
 import { loadLastProject, loadProjects } from "./lib/persist"
 import App from "./App"
 
 async function boot() {
+  clearRetiredModelStorage()
   try {
     await hydrateShared(() => ({
       models: loadConfiguredModels(),

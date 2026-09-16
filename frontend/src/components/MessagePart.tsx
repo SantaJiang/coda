@@ -14,6 +14,7 @@ import type {
   FilePart,
   Message,
   Part,
+  ReasoningPart,
   RetryPart,
   TextPart,
   UserMessage,
@@ -34,7 +35,7 @@ export type ChatTurn = {
 
 export type TimelineItem =
   | ({ kind: "turn" } & ChatTurn)
-  | { kind: "compaction"; status: "running" | "done" | "error"; summary?: string; error?: string }
+  | { kind: "compaction"; id: string; status: "running" | "done" | "error"; summary?: string; error?: string }
 
 export function compactionLabel(status: Extract<TimelineItem, { kind: "compaction" }>["status"]) {
   if (status === "error") return "Context compaction failed"
@@ -84,7 +85,7 @@ function isStreamingItem(item: TimelineItem) {
 }
 
 export function timelineItemKey(item: TimelineItem, index: number) {
-  if (item.kind === "compaction") return `compaction:${index}`
+  if (item.kind === "compaction") return `compaction:${item.id || index}`
   return `turn:${item.user?.id ?? item.assistants[0]?.id ?? index}`
 }
 
@@ -93,7 +94,14 @@ export function nextLiveItemKey(latched: string, busy: boolean, items: TimelineI
   const item = index >= 0 ? items[index] : undefined
   if (!busy || !item) return ""
   const key = timelineItemKey(item, index)
-  if (key === latched || isStreamingItem(item)) return key
+  // 已完成的 compaction 不应靠闩锁保持 live（否则 done 的总结会继续转圈）。
+  // turn 需要在 step 间隙保持 live（中间 assistant 先 settle，下一步还没创建），
+  // compaction 是单条总结，完成后就应回到 settled 展示。
+  if (key === latched) {
+    if (item.kind === "compaction") return isStreamingItem(item) ? key : ""
+    return key
+  }
+  if (isStreamingItem(item)) return key
   return ""
 }
 
@@ -114,7 +122,11 @@ export function groupTurns(messages: Message[], partsByMessage: Record<string, P
   for (const message of messages) {
     if (message.role === "user") {
       if (isCompactionUser(message, partsByMessage)) {
-        const item: Extract<TimelineItem, { kind: "compaction" }> = { kind: "compaction", status: "running" }
+        const item: Extract<TimelineItem, { kind: "compaction" }> = {
+          kind: "compaction",
+          id: message.id,
+          status: "running",
+        }
         items.push(item)
         compactionsByUser.set(message.id, item)
         currentTurn = undefined
@@ -153,7 +165,7 @@ export function groupTurns(messages: Message[], partsByMessage: Record<string, P
         if (summary) target.summary = summary
         if (error) target.error = error
       } else {
-        items.push({ kind: "compaction", status, summary, error })
+        items.push({ kind: "compaction", id: info.parentID ?? info.id, status, summary, error })
       }
       continue
     }
@@ -171,8 +183,12 @@ export function groupTurns(messages: Message[], partsByMessage: Record<string, P
   return items
 }
 
-function isVisiblePart(part: Part) {
+export function isVisiblePart(part: Part) {
   if (HIDDEN.has(part.type)) return false
+  // 部分模型只返回加密 reasoning（text 为空，内容在 metadata.reasoningEncryptedContent 里，
+  // 已在线上 DB 确认），没有可展示的文字就直接隐藏，避免点开 Thinking 后看到空面板；
+  // 流式文本进来后会自动出现。
+  if (part.type === "reasoning") return Boolean((part as ReasoningPart).text?.trim())
   if (part.type === "tool" && (part as { tool?: string }).tool === "todowrite") {
     return part.state.status === "completed" || part.state.status === "error"
   }
