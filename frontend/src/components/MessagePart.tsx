@@ -74,6 +74,29 @@ function assistantSettled(message: Message) {
   return Boolean(info.time.completed) || Boolean(info.error)
 }
 
+function isStreamingTurn(turn: ChatTurn) {
+  return turn.assistants.length === 0 || turn.assistants.some((message) => !assistantSettled(message))
+}
+
+function isStreamingItem(item: TimelineItem) {
+  if (item.kind === "compaction") return item.status === "running"
+  return isStreamingTurn(item)
+}
+
+export function timelineItemKey(item: TimelineItem, index: number) {
+  if (item.kind === "compaction") return `compaction:${index}`
+  return `turn:${item.user?.id ?? item.assistants[0]?.id ?? index}`
+}
+
+export function nextLiveItemKey(latched: string, busy: boolean, items: TimelineItem[]) {
+  const index = items.length - 1
+  const item = index >= 0 ? items[index] : undefined
+  if (!busy || !item) return ""
+  const key = timelineItemKey(item, index)
+  if (key === latched || isStreamingItem(item)) return key
+  return ""
+}
+
 function assistantPlainText(message: Message, partsByMessage: Record<string, Part[]>) {
   return partsOf(message.id, partsByMessage)
     .filter((part): part is TextPart => part.type === "text")

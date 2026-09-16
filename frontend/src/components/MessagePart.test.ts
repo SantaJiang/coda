@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compactionLabel, groupTurns, isInterruptedTurn } from "./MessagePart"
+import { compactionLabel, groupTurns, isInterruptedTurn, nextLiveItemKey } from "./MessagePart"
 import type { AssistantMessage, Message, Part, UserMessage } from "../lib/types"
 
 const user = (id: string, created: number): UserMessage => ({
@@ -85,5 +85,32 @@ describe("isInterruptedTurn", () => {
     expect(isInterruptedTurn(false, true, unfinished)).toBe(false)
     expect(isInterruptedTurn(true, true, unfinished)).toBe(false)
     expect(isInterruptedTurn(false, false, assistant("a2", "u1", 1))).toBe(false)
+  })
+})
+
+describe("nextLiveItemKey", () => {
+  it("leaves a settled turn alone while the next prompt is still in flight", () => {
+    const items = groupTurns([user("u1", 1), assistant("a1", "u1", 2)])
+    expect(nextLiveItemKey("", true, items)).toBe("")
+  })
+
+  it("marks the trailing turn live once its reply starts streaming", () => {
+    const items = groupTurns([user("u1", 1), assistant("a1", "u1", 2, { time: { created: 2 } })])
+    expect(nextLiveItemKey("", true, items)).toBe("turn:u1")
+  })
+
+  it("keeps a latched turn live when a step settles before the next one starts", () => {
+    const items = groupTurns([user("u1", 1), assistant("a1", "u1", 2)])
+    expect(nextLiveItemKey("turn:u1", true, items)).toBe("turn:u1")
+  })
+
+  it("moves the live turn to the newer question", () => {
+    const items = groupTurns([user("u1", 1), assistant("a1", "u1", 2), user("u2", 3)])
+    expect(nextLiveItemKey("turn:u1", true, items)).toBe("turn:u2")
+  })
+
+  it("drops the live turn once the session is idle", () => {
+    const items = groupTurns([user("u1", 1), assistant("a1", "u1", 2, { time: { created: 2 } })])
+    expect(nextLiveItemKey("turn:u1", false, items)).toBe("")
   })
 })

@@ -1,6 +1,13 @@
-import { Index, Match, Show, Switch, createEffect, createMemo, on } from "solid-js"
+import { Index, Match, Show, Switch, createEffect, createMemo, createSignal, on } from "solid-js"
 import { useProjects, useRuntime } from "../store/app"
-import { ChatTurnView, CompactionMark, groupTurns, type TimelineItem } from "./MessagePart"
+import {
+  ChatTurnView,
+  CompactionMark,
+  groupTurns,
+  nextLiveItemKey,
+  timelineItemKey,
+  type TimelineItem,
+} from "./MessagePart"
 import { WorkGroup } from "./WorkGroup"
 
 function asCompaction(item: TimelineItem) {
@@ -30,12 +37,21 @@ function SessionTimeline() {
 
   const items = createMemo(() => groupTurns(messages(), runtime.partsByMessage()))
   const last = createMemo(() => items()[items().length - 1])
+  const [liveKey, setLiveKey] = createSignal("")
   const waiting = createMemo(() => {
     const item = last()
     return Boolean(runtime.busy() && item?.kind === "turn" && item.assistants.length === 0)
   })
   const reconnecting = createMemo(() => projects.connection() === "disconnected")
   const showLiveTail = createMemo(() => waiting() || (reconnecting() && !runtime.busy()))
+  const isLive = (item: TimelineItem, index: number) => liveKey() === timelineItemKey(item, index)
+
+  createEffect(
+    on(
+      () => [runtime.busy(), items()] as const,
+      ([busy, list]) => setLiveKey((latched) => nextLiveItemKey(latched, busy, list)),
+    ),
+  )
 
   const onScroll = () => {
     if (!scroller) return
@@ -82,7 +98,7 @@ function SessionTimeline() {
               <Match when={asCompaction(item())}>
                 {(compaction) => (
                   <CompactionMark
-                    live={runtime.busy() && index === items().length - 1 && compaction().status === "running"}
+                    live={isLive(item(), index)}
                     status={compaction().status}
                     summary={compaction().summary}
                     error={compaction().error}
@@ -94,7 +110,7 @@ function SessionTimeline() {
                   <ChatTurnView
                     turn={turn()}
                     partsByMessage={runtime.partsByMessage()}
-                    live={runtime.busy() && index === items().length - 1}
+                    live={isLive(item(), index)}
                   />
                 )}
               </Match>
