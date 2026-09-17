@@ -67,6 +67,14 @@ git -C backend apply ../patches/backend/<name>.patch
 
 以后对 `backend/` 的任何行为性修改（非第 1 条的关键字替换），都要同样落成 `patches/backend/` 下的补丁并登记到这张表里。
 
+GitHub Actions 不能去上游拉本地独有的子模块提交。`.gitmodules` 指向公开镜像 [SantaJiang/coda-backend](https://github.com/SantaJiang/coda-backend) 的 `coda` 分支。改完后端、准备让 CI 用这份代码时，把当前 `backend` HEAD 推上去：
+
+```bash
+git -C backend push coda HEAD:coda
+```
+
+本地同步上游仍用 `anomalyco/opencode`（可加 remote 名 `upstream`）。同步、打补丁、关键字替换完成后再推到 `coda-backend`，父仓库的 gitlink SHA 才能在 Actions 里 checkout 到。
+
 ## 5. 版本号
 
 当前软件版本是 **1.0.0**。下面四处必须保持同一个 `x.y.z`，改一处就要一起改：
@@ -99,8 +107,8 @@ bun run test
 
 工作流：`.github/workflows/release.yml`。
 
-- **触发**：推送到 `main`，且相对上一提交的 `tauri.conf.json` 版本发生了中版本或主版本变化。当前仓库从 `0.1.0` 升到 `1.0.0` 的这次推送会打第一包。
-- **跳过**：只改补丁号，或版本没变。
+- **触发**：推送到 `main`，且相对上一提交的 `tauri.conf.json` 版本发生了中版本或主版本变化；或当前是 `x.y.0` 但还没有对应的 `vX.Y.0` Release（例如第一次 `1.0.0` 打包失败后的修复提交）。
+- **跳过**：只改补丁号，或该中版本已经打过包。
 - **手动**：GitHub Actions 里 `workflow_dispatch`，勾选 force 可对当前版本强制再打一包（例如安装包坏了要重出）。
 - **平台**（每个 runner 上走 `scripts/pack.sh`，不跑 `bun test`）：
   - Windows x64 → NSIS `setup.exe`（`windows-latest`）

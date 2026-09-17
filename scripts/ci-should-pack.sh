@@ -79,4 +79,16 @@ if [[ "$(major_minor "$current")" != "$(major_minor "$prev")" ]]; then
   exit 0
 fi
 
+patch="$(printf '%s\n' "$current" | awk -F. '{print $3}')"
+tag_exists=false
+if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
+  if git -C "$ROOT" ls-remote --exit-code --tags origin "refs/tags/v${current}" >/dev/null 2>&1; then
+    tag_exists=true
+  fi
+fi
+if [[ "$patch" == "0" && "$tag_exists" == "false" ]]; then
+  write_output "$current" "$prev" "true" "中版本 $current 还没有 GitHub Release，继续打包"
+  exit 0
+fi
+
 write_output "$current" "$prev" "false" "仅补丁号或版本未变 $prev -> $current，跳过打包"

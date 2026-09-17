@@ -61,9 +61,18 @@ jobs:
       run:
         shell: bash
     steps:
+      # GITHUB_TOKEN is scoped to this repo. Fetch the public backend
+      # submodule without it, otherwise GitHub treats the request as
+      # authenticated and rejects the other repository.
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Checkout backend submodule
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --force
 
       - name: Add Git Bash to PATH
         if: runner.os == 'Windows'
