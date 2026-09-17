@@ -66,3 +66,50 @@ git -C backend apply ../patches/backend/<name>.patch
 | `prompt-failure-surface.patch` | `prompt_async` 失败处理、`SystemPrompt` 引用/技能加载、`FileSystemSearch` 的 fff 探测、技能列表排序 | 安装版 sidecar 里 `prompt_async` 崩溃后只发 `session.error`、不写助手消息、会话像没反应；补丁会把错误写回最后一条未完成助手消息并置 idle（已完成的历史轮次不再误标，崩溃早于新消息时走会话级错误卡）。`SystemPrompt.environment` 加载引用失败时必须用 `Effect.as([])` 恢复，不能 `.pipe(Effect.succeed([]))`（那会把 Effect 对象当函数调用，打包后报 `t[0] is not a function`）。同时兜住 location/fff/技能列表里的空项。 |
 
 以后对 `backend/` 的任何行为性修改（非第 1 条的关键字替换），都要同样落成 `patches/backend/` 下的补丁并登记到这张表里。
+
+## 5. 版本号
+
+当前软件版本是 **1.0.0**。下面四处必须保持同一个 `x.y.z`，改一处就要一起改：
+
+| 文件 | 字段 |
+|---|---|
+| `frontend/package.json` | `version` |
+| `frontend/src-tauri/tauri.conf.json` | `version`（GitHub Actions 以这里为准） |
+| `frontend/src-tauri/Cargo.toml` | `version` |
+| `frontend/src-tauri/Cargo.lock` | `name = "coda"` 那一条的 `version` |
+
+版本含义：
+
+- **中版本 / 主版本**：`1.0.0` → `1.1.0`，或 `1.1.0` → `2.0.0`。推到 `main` 后 GitHub Actions **会**编译并打包。
+- **补丁号**（最后那位）：`1.0.0` → `1.0.1`。只用于修 bug、不发安装包，Actions **不会**打包。
+
+不要只改补丁号却指望 CI 出包；需要新安装包就升中版本（或主版本）。
+
+## 6. 本地自动化测试
+
+GitHub 打包 **故意不跑测试**，直接编译安装包。测试只在本地跑，发布中版本之前必须先通过：
+
+```bash
+bun run test
+```
+
+这会执行 `frontend/` 下的 Vitest。提交前的代码审查（第 3 条）要把测试失败当成审查不通过，不要提交。
+
+## 7. GitHub Actions 打包
+
+工作流：`.github/workflows/release.yml`。
+
+- **触发**：推送到 `main`，且相对上一提交的 `tauri.conf.json` 版本发生了中版本或主版本变化。当前仓库从 `0.1.0` 升到 `1.0.0` 的这次推送会打第一包。
+- **跳过**：只改补丁号，或版本没变。
+- **手动**：GitHub Actions 里 `workflow_dispatch`，勾选 force 可对当前版本强制再打一包（例如安装包坏了要重出）。
+- **平台**（每个 runner 上走 `scripts/pack.sh`，不跑 `bun test`）：
+  - Windows x64 → NSIS `setup.exe`（`windows-latest`）
+  - macOS Apple Silicon → `dmg`（`macos-14`，`aarch64-apple-darwin`）
+  - Linux x64 → `deb`（`ubuntu-22.04`；CI 不打 rpm）
+- **产物**：发布到 GitHub Release，tag 为 `vX.Y.Z`（例如 `v1.0.0`）。
+
+CI 里后端 `bun install` 会带 `HUSKY=0`，避免子模块的 husky hook 把打包打断。本地 `./scripts/pack.sh` 默认仍按当前机器打全套（Linux 本地仍是 deb+rpm）；要用 CI 同款目标可以：
+
+```bash
+PACK_BUNDLES=deb ./scripts/pack.sh
+```

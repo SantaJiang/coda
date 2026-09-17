@@ -45,7 +45,11 @@ if [[ "$HOST" == *windows* ]]; then
 fi
 
 echo "==> 安装后端依赖"
-bun install --cwd "$BACKEND"
+if [[ "${CI:-}" == "true" ]]; then
+  HUSKY=0 bun install --cwd "$BACKEND" --frozen-lockfile
+else
+  HUSKY=0 bun install --cwd "$BACKEND"
+fi
 
 echo "==> 编译内置后端 (当前平台 ${HOST})"
 # 与 run.sh 的源码后端同一 channel，才会读写 opencode-local.db

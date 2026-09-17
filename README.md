@@ -32,12 +32,24 @@ chmod +x ./run.sh
 git submodule update --init --recursive
 ```
 
+## 测试
+
+```bash
+bun run test
+```
+
+只在本地跑。GitHub Actions 打包时会跳过测试，直接编译安装包。
+
 ## 打包
+
+当前版本 **1.0.0**。本地：
 
 ```bash
 ./scripts/pack.sh
 ```
 
 脚本会编译内置后端、前端与 Rust，并按当前系统生成可独立运行的安装包：macOS 为 dmg，Windows 为 exe，Linux 为 deb 与 rpm。安装后直接打开即可，不必再跑 `./run.sh`。
+
+推到 `main` 且 **中版本号**变化时（例如 `1.0.0` → `1.1.0`），GitHub Actions 会为 Windows、macOS Apple Silicon、Linux deb 各打一包，并挂到 `vX.Y.Z` Release。只升补丁号（例如 `1.0.1`）不会打包。
 
 开发版和安装版读写同一份用户数据：会话在 `~/.local/share/opencode`，模型与界面设置在系统的 Coda 配置目录。

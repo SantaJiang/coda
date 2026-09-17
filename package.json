@@ -1,10 +1,12 @@
 {
   "name": "coda",
   "private": true,
+  "version": "1.0.0",
   "description": "Coda — 精简桌面 Agent 客户端",
   "scripts": {
     "dev": "bash ./run.sh",
     "dev:web": "bash ./run.sh --web",
+    "test": "bun run --cwd frontend test",
     "pack": "bash ./scripts/pack.sh",
     "clean": "bash ./scripts/clean.sh"
   }

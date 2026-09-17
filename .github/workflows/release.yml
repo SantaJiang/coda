@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Force packaging even when only the patch version changed
+        type: boolean
+        default: false
+
+# Tests stay local (`bun run test`). This workflow only compiles and packs.
+permissions:
+  contents: write
+
+jobs:
+  gate:
+    name: Check minor version
+    runs-on: ubuntu-22.04
+    outputs:
+      should_pack: ${{ steps.check.outputs.should_pack }}
+      version: ${{ steps.check.outputs.version }}
+      reason: ${{ steps.check.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: check
+        env:
+          FORCE_PACK: ${{ github.event_name == 'workflow_dispatch' && inputs.force == true }}
+        run: bash ./scripts/ci-should-pack.sh
+      - name: Decision
+        run: echo "${{ steps.check.outputs.reason }}"
+
+  pack:
+    name: Pack ${{ matrix.name }}
+    needs: gate
+    if: needs.gate.outputs.should_pack == 'true'
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            bundles: nsis
+            artifact: coda-windows-x64
+          - name: macOS Apple Silicon
+            os: macos-14
+            bundles: dmg
+            artifact: coda-macos-aarch64
+          - name: Linux deb
+            os: ubuntu-22.04
+            bundles: deb
+            artifact: coda-linux-amd64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Add Git Bash to PATH
+        if: runner.os == 'Windows'
+        run: echo "C:/Program Files/Git/bin" >> "$GITHUB_PATH"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri
+
+      - name: Install Linux packaging deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Build installers
+        env:
+          PACK_BUNDLES: ${{ matrix.bundles }}
+        run: bash ./scripts/pack.sh
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          path: |
+            frontend/src-tauri/target/release/bundle/**/*.dmg
+            frontend/src-tauri/target/release/bundle/**/*.exe
+            frontend/src-tauri/target/release/bundle/**/*.deb
+
+  release:
+    name: GitHub Release
+    needs: [gate, pack]
+    if: needs.gate.outputs.should_pack == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.gate.outputs.version }}
+          name: Coda ${{ needs.gate.outputs.version }}
+          generate_release_notes: true
+          make_latest: true
+          files: |
+            dist/**/*.dmg
+            dist/**/*.exe
+            dist/**/*.deb
+          fail_on_unmatched_files: true
