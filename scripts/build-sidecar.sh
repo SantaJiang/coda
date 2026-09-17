@@ -52,8 +52,17 @@ else
 fi
 
 echo "==> 编译内置后端 (当前平台 ${HOST})"
-# 与 run.sh 的源码后端同一 channel，才会读写 opencode-local.db
-OPENCODE_CHANNEL=local bun run --cwd "$PKG" script/build.ts --single --skip-embed-web-ui --skip-install
+# Channel 必须是 local，才会读写 opencode-local.db（与 run.sh 同源）。
+# 版本必须用 packages/opencode 的真实 semver：OpenCode Zen 免费档会校验
+# User-Agent `opencode/<version>` >= 1.17.0；不设 OPENCODE_VERSION 时构建脚本
+# 会写成 0.0.0-local-<timestamp>，免费模型会全部被拒。
+OPENCODE_VERSION="$(bun -e 'console.log(JSON.parse(await Bun.file("package.json").text()).version)' --cwd "$PKG")"
+if [[ -z "$OPENCODE_VERSION" ]]; then
+  echo "无法从 $PKG/package.json 读取 version。"
+  exit 1
+fi
+echo "==> sidecar 版本 ${OPENCODE_VERSION}（channel=local）"
+OPENCODE_CHANNEL=local OPENCODE_VERSION="$OPENCODE_VERSION" bun run --cwd "$PKG" script/build.ts --single --skip-embed-web-ui --skip-install
 
 if [[ ! -f "$SRC_BIN" ]]; then
   echo "后端编译完成，但找不到二进制：$SRC_BIN"

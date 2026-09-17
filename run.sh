@@ -146,11 +146,21 @@ kill_stale_vite
 kill_port "$PORT"
 kill_port 1420
 
-echo "==> 启动 Coda 后端  http://127.0.0.1:$PORT"
+BACKEND_VERSION="$(bun -e 'console.log(JSON.parse(await Bun.file("package.json").text()).version)' --cwd "$PKG_DIR")"
+if [[ -z "${BACKEND_VERSION:-}" ]]; then
+  echo "无法从 $PKG_DIR/package.json 读取 version。"
+  exit 1
+fi
+
+echo "==> 启动 Coda 后端  http://127.0.0.1:$PORT  (${BACKEND_VERSION})"
 (
   cd "$BACKEND_ROOT"
   CODA_PORT="$PORT" OPENCODE_DISABLE_AUTOUPDATE=1 \
-    bun --cwd "$PKG_DIR" --conditions=browser src/index.ts serve --port "$PORT" --hostname 127.0.0.1
+    bun --cwd "$PKG_DIR" --conditions=browser \
+      --define OPENCODE_VERSION="'${BACKEND_VERSION}'" \
+      --define OPENCODE_CHANNEL="'local'" \
+      --user-agent="opencode/${BACKEND_VERSION}" \
+      src/index.ts serve --port "$PORT" --hostname 127.0.0.1
 ) >"$BACKEND_LOG" 2>&1 &
 echo $! >"$BACKEND_PID_FILE"
 
