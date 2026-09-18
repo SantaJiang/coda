@@ -1,6 +1,7 @@
-use tauri::{Manager, RunEvent};
+use tauri::RunEvent;
 
 mod backend;
+mod paths;
 
 #[tauri::command]
 fn path_exists(path: String) -> bool {
@@ -8,17 +9,17 @@ fn path_exists(path: String) -> bool {
 }
 
 #[tauri::command]
-fn settings_read(app: tauri::AppHandle) -> Option<String> {
-    let dir = app.path().app_config_dir().ok()?;
-    std::fs::read_to_string(dir.join("settings.json")).ok()
+fn settings_read() -> Option<String> {
+    std::fs::read_to_string(paths::settings_path()).ok()
 }
 
 #[tauri::command]
-fn settings_write(app: tauri::AppHandle, content: String) -> bool {
-    let Ok(dir) = app.path().app_config_dir() else {
+fn settings_write(content: String) -> bool {
+    let path = paths::settings_path();
+    let Some(dir) = path.parent() else {
         return false;
     };
-    if std::fs::create_dir_all(&dir).is_err() {
+    if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
     let tmp = dir.join("settings.json.tmp");
@@ -30,7 +31,7 @@ fn settings_write(app: tauri::AppHandle, content: String) -> bool {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
     }
-    std::fs::rename(&tmp, dir.join("settings.json")).is_ok()
+    std::fs::rename(&tmp, path).is_ok()
 }
 
 #[cfg(target_os = "macos")]
@@ -44,6 +45,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![path_exists, settings_read, settings_write])
         .setup(|app| {
+            paths::migrate_legacy();
             #[cfg(target_os = "macos")]
             mac_traffic_lights::install_main(app);
             backend::ensure_running(&app.handle());

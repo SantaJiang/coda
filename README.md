@@ -52,4 +52,13 @@ bun run test
 
 推到 `main` 且 **中版本号**变化时（例如 `1.0.0` → `1.1.0`），GitHub Actions 会为 Windows、macOS Apple Silicon、Linux deb 各打一包，并挂到 `vX.Y.Z` Release。只升补丁号（例如 `1.0.1`）不会打包。
 
-开发版和安装版读写同一份用户数据：会话在 `~/.local/share/opencode`，模型与界面设置在系统的 Coda 配置目录。
+开发版和安装版读写同一份用户数据，全部集中在 `~/.coda`（可用 `CODA_HOME` 覆盖）：
+
+| 路径 | 内容 |
+|---|---|
+| `~/.coda/settings.json` | 界面设置、已配置模型 |
+| `~/.coda/opencode.jsonc` | 运行时供应商配置 |
+| `~/.coda/data/` | 会话库、凭据 |
+| `~/.coda/logs/` | 后端日志 |
+
+首次启动会把旧的 `~/Library/Application Support/ai.coda.app/settings.json`、`~/.config/opencode` 和 `~/.local/share/opencode` **复制**过来，不删除原文件。

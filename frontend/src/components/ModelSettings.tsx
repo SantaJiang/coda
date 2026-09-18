@@ -5,7 +5,8 @@ import {
   validateProviderForm,
   type ModelForm,
 } from "../lib/models"
-import { CUSTOM_PRESET_ID, PROVIDER_PRESETS, presetByBaseURL, presetById } from "../lib/presets"
+import { CUSTOM_PRESET_ID, PROVIDER_PRESETS, normalizeProviderBaseURL, presetByBaseURL, presetById } from "../lib/presets"
+import { importedPresetId, parseImportedProviders, type ImportedProvider } from "../lib/provider-import"
 import { listRemoteModels, type RemoteModel } from "../lib/remote-models"
 import { useModels } from "../store/app"
 import { Icon } from "./Icon"
@@ -20,6 +21,8 @@ export function ModelSettings() {
   const [remoteModels, setRemoteModels] = createSignal<RemoteModel[]>([])
   const [checked, setChecked] = createSignal<string[]>([])
   const [customModelID, setCustomModelID] = createSignal("")
+  const [importText, setImportText] = createSignal("")
+  const [importing, setImporting] = createSignal(false)
 
   const resetForm = () => {
     setForm(emptyModelForm())
@@ -28,6 +31,7 @@ export function ModelSettings() {
     setRemoteModels([])
     setChecked([])
     setCustomModelID("")
+    setImportText("")
   }
 
   createEffect((wasOpen?: boolean) => {
@@ -91,8 +95,28 @@ export function ModelSettings() {
     setChecked((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
   }
 
+  const applyImported = (imported: ImportedProvider) => {
+    const baseURL = normalizeProviderBaseURL(imported.form.baseURL, imported.form.providerID)
+    setPresetId(importedPresetId(imported))
+    setForm({ ...imported.form, baseURL })
+    setRemoteModels(imported.models)
+    setChecked(imported.models.map((item) => item.id))
+    setFormError(null)
+  }
+
+  const namesFor = (ids: string[]) => {
+    const names: Record<string, string> = {}
+    for (const model of remoteModels()) {
+      if (ids.includes(model.id) && model.name.trim()) names[model.id] = model.name.trim()
+    }
+    return names
+  }
+
   const fetchModels = async () => {
-    const error = validateFetchForm(form())
+    const current = form()
+    const baseURL = normalizeProviderBaseURL(current.baseURL, current.providerID || presetId())
+    if (baseURL !== current.baseURL) setForm({ ...current, baseURL })
+    const error = validateFetchForm({ ...current, baseURL })
     if (error) {
       setFormError(error)
       return
@@ -100,9 +124,17 @@ export function ModelSettings() {
     setLoadingModels(true)
     setFormError(null)
     try {
-      const list = await listRemoteModels(form().baseURL, form().apiKey)
+      const list = await listRemoteModels(baseURL, current.apiKey)
+      const named = new Map(remoteModels().map((item) => [item.id, item.name]))
       const extra = checked().filter((id) => !list.some((item) => item.id === id))
-      setRemoteModels([...list, ...extra.map((id) => ({ id, name: id }))])
+      setRemoteModels([
+        ...list.map((item) => {
+          const previous = named.get(item.id)
+          const name = previous && previous !== item.id ? previous : item.name || previous || item.id
+          return { ...item, name }
+        }),
+        ...extra.map((id) => ({ id, name: named.get(id) || id })),
+      ])
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "获取模型列表失败")
     } finally {
@@ -118,9 +150,42 @@ export function ModelSettings() {
     setCustomModelID("")
   }
 
+  const importProviders = async () => {
+    setImporting(true)
+    setFormError(null)
+    try {
+      const imported = parseImportedProviders(importText())
+      if (imported.length === 1) {
+        applyImported(imported[0])
+        return
+      }
+      for (const item of imported) {
+        const ids = item.models.map((model) => model.id)
+        const names: Record<string, string> = {}
+        for (const model of item.models) names[model.id] = model.name
+        await models.saveConfiguredProvider(
+          { ...item.form, baseURL: normalizeProviderBaseURL(item.form.baseURL, item.form.providerID) },
+          ids,
+          names,
+        )
+      }
+      resetForm()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "解析 JSON 失败")
+    } finally {
+      setImporting(false)
+    }
+  }
+
   const submit = async (event: Event) => {
     event.preventDefault()
-    const error = validateProviderForm(form())
+    const current = form()
+    const next = {
+      ...current,
+      baseURL: normalizeProviderBaseURL(current.baseURL, current.providerID || presetId()),
+    }
+    if (next.baseURL !== current.baseURL) setForm(next)
+    const error = validateProviderForm(next)
     if (error) {
       setFormError(error)
       return
@@ -133,7 +198,7 @@ export function ModelSettings() {
     setSaving(true)
     setFormError(null)
     try {
-      await models.saveConfiguredProvider(form(), selected)
+      await models.saveConfiguredProvider(next, selected, namesFor(selected))
       resetForm()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "保存失败")
@@ -151,6 +216,8 @@ export function ModelSettings() {
   }
 
   const keyPlaceholder = () => presetById(presetId())?.keyPlaceholder ?? "sk-..."
+  const activePreset = () => presetById(presetId())
+  const addressPlaceholder = () => activePreset()?.baseURL || "https://api.openai.com/v1"
 
   return (
     <Show when={models.modelSettingsOpen()}>
@@ -234,11 +301,14 @@ export function ModelSettings() {
                 />
               </label>
             </Show>
+            <Show when={activePreset()?.hint}>
+              <div class="field-hint">{activePreset()?.hint}</div>
+            </Show>
             <label class="field">
               <span>接口地址</span>
               <input
                 value={form().baseURL}
-                placeholder="https://api.openai.com/v1"
+                placeholder={addressPlaceholder()}
                 onInput={(event) => update("baseURL", event.currentTarget.value)}
               />
             </label>
@@ -300,6 +370,20 @@ export function ModelSettings() {
                 </button>
               </div>
             </label>
+            <details class="import-json">
+              <summary>粘贴供应商 JSON</summary>
+              <textarea
+                value={importText()}
+                rows={6}
+                placeholder={'例如 "namo_hw": { "options": { "baseURL": "https://.../v1" }, "models": { "model-id": { "name": "显示名" } } }'}
+                onInput={(event) => setImportText(event.currentTarget.value)}
+              />
+              <div class="dialog-actions split">
+                <button type="button" class="ghost-btn" disabled={importing() || !importText().trim()} onClick={() => void importProviders()}>
+                  {importing() ? "解析中…" : "填入表单"}
+                </button>
+              </div>
+            </details>
             <Show when={formError() || models.modelSettingsError()}>
               <div class="dialog-error">{formError() || models.modelSettingsError()}</div>
             </Show>

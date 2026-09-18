@@ -7,6 +7,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
+use crate::paths;
+
 const DEFAULT_PORT: &str = "4096";
 
 static OWNED: Mutex<Option<Child>> = Mutex::new(None);
@@ -18,11 +20,8 @@ fn port() -> String {
         .unwrap_or_else(|| DEFAULT_PORT.to_string())
 }
 
-fn keep_alive(app: &AppHandle) -> bool {
-    let Ok(dir) = app.path().app_config_dir() else {
-        return false;
-    };
-    let Ok(raw) = fs::read_to_string(dir.join("settings.json")) else {
+fn keep_alive(_app: &AppHandle) -> bool {
+    let Ok(raw) = fs::read_to_string(paths::settings_path()) else {
         return false;
     };
     serde_json::from_str::<serde_json::Value>(&raw)
@@ -73,7 +72,8 @@ pub fn stop_if_needed(app: &AppHandle) {
 
 fn spawn(app: &AppHandle, port: &str) -> Result<(), String> {
     let sidecar = sidecar_path(app).ok_or("bundled coda-backend binary is missing")?;
-    let log_dir = app.path().app_log_dir().map_err(|err| err.to_string())?;
+    paths::migrate_legacy();
+    let log_dir = paths::logs_dir();
     fs::create_dir_all(&log_dir).map_err(|err| err.to_string())?;
 
     let log = OpenOptions::new()
@@ -83,15 +83,16 @@ fn spawn(app: &AppHandle, port: &str) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
     let log_err = log.try_clone().map_err(|err| err.to_string())?;
 
-    // 与 run.sh 同源：会话库在 ~/.local/share/opencode/opencode-local.db，
-    // 配置在 ~/.config/opencode。不要改 XDG_* / CODA_CONFIG*，否则会读到空库。
+    // 用户数据全部集中在 ~/.coda（可用 CODA_HOME 覆盖）。
+    let home = paths::coda_home();
     let mut cmd = Command::new(&sidecar);
     cmd.args(["serve", "--port", port, "--hostname", "127.0.0.1"])
         .env("CODA_PORT", port)
+        .env("CODA_HOME", &home)
         .env("OPENCODE_DISABLE_AUTOUPDATE", "1")
         .env("OPENCODE_CLIENT", "coda")
         .env("OPENCODE_CHANNEL", "local")
-        .env("OPENCODE_DB", opencode_local_db())
+        .env("OPENCODE_DB", paths::local_db_path())
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err));
@@ -101,29 +102,6 @@ fn spawn(app: &AppHandle, port: &str) -> Result<(), String> {
     let mut slot = OWNED.lock().map_err(|err| err.to_string())?;
     *slot = Some(child);
     Ok(())
-}
-
-fn user_home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-}
-
-fn opencode_data_dir() -> PathBuf {
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        if !xdg.trim().is_empty() {
-            return PathBuf::from(xdg).join("opencode");
-        }
-    }
-    user_home()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".local")
-        .join("share")
-        .join("opencode")
-}
-
-fn opencode_local_db() -> PathBuf {
-    opencode_data_dir().join("opencode-local.db")
 }
 
 fn sidecar_path(app: &AppHandle) -> Option<PathBuf> {

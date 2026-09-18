@@ -147,7 +147,10 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
         const configured = loadConfiguredModels()
         const extras = menuDiscoveredModels(state.discoveredModels)
         const nextKey = resolveSelectedKey(configured, mergeSelectables(configured, extras), loadSelectedModelKey())
+        persistSelection(handle, nextKey)
         setState({ configuredModels: configured, selectedModelKey: nextKey })
+        const backendPatch = toBackendPatch(configured, nextKey)
+        if (backendPatch) void client.patchGlobalConfig(backendPatch).catch(() => undefined)
       }
     }
     const unsubscribeShared = onSharedChange(applySharedPatch)

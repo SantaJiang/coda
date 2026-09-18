@@ -74,7 +74,7 @@ async function requestModels(url: string, apiKey: string) {
 
 export async function listRemoteModels(baseURL: string, apiKey: string): Promise<RemoteModel[]> {
   const url = modelsEndpoint(baseURL)
-  const response = await requestModels(url, apiKey.trim())
+  const response = await requestModels(url, apiKey.trim() || "lm-studio")
   if (!response.ok) {
     throw new Error(await readError(response))
   }

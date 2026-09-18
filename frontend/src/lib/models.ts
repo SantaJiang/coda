@@ -1,5 +1,6 @@
 import { hasSharedValue, setSharedValue, sharedValue } from "./shared"
 import { uid } from "./uid"
+import { isApiKeyOptional, LOCAL_COMPAT_API_KEY, normalizeProviderBaseURL } from "./presets"
 
 export type ModelRef = {
   providerID: string
@@ -120,7 +121,11 @@ export function hostnameSlug(baseURL: string) {
 
 export function resolveProviderID(form: Pick<ModelForm, "providerID" | "providerName" | "name" | "baseURL">) {
   const existing = form.providerID.trim()
-  if (existing) return slugify(existing)
+  if (existing) {
+    const lower = existing.toLowerCase()
+    if (/^[a-z0-9][a-z0-9_-]*$/.test(lower)) return lower
+    return slugify(existing)
+  }
   const label = form.providerName.trim() || form.name.trim()
   const fromName = slugify(label)
   if (fromName !== "custom") return fromName
@@ -217,17 +222,18 @@ export function saveSelectedModelKey(key: string | null) {
 }
 
 export function createConfiguredModel(form: ModelForm): ConfiguredModel {
-  const baseURL = form.baseURL.trim().replace(/\/+$/, "")
+  const baseURL = normalizeProviderBaseURL(form.baseURL, form.providerID)
   const providerName = form.providerName.trim() || form.name.trim() || hostnameSlug(baseURL)
   const name = form.name.trim() || form.modelID.trim()
+  const providerID = resolveProviderID({ ...form, providerName, baseURL })
   return {
     id: modelUid(),
     name,
-    providerID: resolveProviderID({ ...form, providerName }),
+    providerID,
     providerName,
     modelID: form.modelID.trim(),
     baseURL,
-    apiKey: form.apiKey.trim(),
+    apiKey: form.apiKey.trim() || (isApiKeyOptional(baseURL, providerID) ? LOCAL_COMPAT_API_KEY : ""),
   }
 }
 
@@ -236,9 +242,9 @@ export function updateConfiguredModel(model: ConfiguredModel, form: ModelForm): 
   return { ...next, id: model.id }
 }
 
-export function validateFetchForm(form: Pick<ModelForm, "baseURL" | "apiKey">) {
+export function validateFetchForm(form: Pick<ModelForm, "baseURL" | "apiKey"> & { providerID?: string }) {
   if (!form.baseURL.trim()) return "请填写接口地址"
-  if (!form.apiKey.trim()) return "请填写 API Key"
+  if (!form.apiKey.trim() && !isApiKeyOptional(form.baseURL, form.providerID)) return "请填写 API Key"
   try {
     const url = new URL(form.baseURL.trim())
     if (url.protocol !== "http:" && url.protocol !== "https:") return "接口地址需要是 http 或 https"

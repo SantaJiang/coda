@@ -99,27 +99,28 @@ export function createModelSlice(handle: StoreHandle): ModelApi {
     closeModelMenu: () => setState("modelMenuOpen", false),
     openModelSettings: () => setState({ modelMenuOpen: false, modelSettingsOpen: true, modelSettingsError: null }),
     closeModelSettings: () => setState({ modelSettingsOpen: false, modelSettingsError: null }),
-    saveConfiguredProvider: async (form: ModelForm, modelIDs: string[]) => {
+    saveConfiguredProvider: async (form: ModelForm, modelIDs: string[], modelNames?: Record<string, string>) => {
       setState("modelSettingsError", null)
       const unique = [...new Set(modelIDs.map((item) => item.trim()).filter(Boolean))]
       if (unique.length === 0) {
         setState("modelSettingsError", "请至少勾选一个模型")
         return
       }
-      const sample = createConfiguredModel({ ...form, modelID: unique[0] })
+      const sample = createConfiguredModel({ ...form, modelID: unique[0], name: modelNames?.[unique[0]] || unique[0] })
       const providerID = sample.providerID
       const existing = new Map(state.configuredModels.map((item) => [`${item.providerID}/${item.modelID}`, item]))
       const others = state.configuredModels.filter((item) => item.providerID !== providerID)
       const nextModels = unique.map((modelID) => {
+        const label = modelNames?.[modelID]?.trim() || modelID
         const created = createConfiguredModel({
           ...form,
           providerID,
           providerName: form.providerName.trim() || sample.providerName,
           modelID,
-          name: modelID,
+          name: label,
         })
         const prev = existing.get(`${providerID}/${modelID}`)
-        return prev ? { ...created, id: prev.id, name: prev.name === prev.modelID ? modelID : prev.name } : created
+        return prev ? { ...created, id: prev.id, name: prev.name === prev.modelID ? created.name : prev.name } : created
       })
       try {
         await applyConfiguredModels([...others, ...nextModels], `${providerID}/${unique[0]}`)

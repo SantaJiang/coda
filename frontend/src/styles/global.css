@@ -2126,6 +2126,37 @@ button.ctx-pill:hover {
   color: var(--text);
 }
 
+.field-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.import-json {
+  margin-top: 4px;
+}
+
+.import-json summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.import-json textarea {
+  width: 100%;
+  min-height: 96px;
+  margin-top: 8px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .model-pick-head {
   display: flex;
   align-items: center;

@@ -46,15 +46,15 @@ describe("toBackendPatch", () => {
 })
 
 describe("resolveProviderID", () => {
-  it("keeps an existing provider id", () => {
+  it("keeps underscores in an existing provider id", () => {
     expect(
       resolveProviderID({
-        providerID: "openai",
-        providerName: "OpenAI",
-        name: "OpenAI",
-        baseURL: "https://api.openai.com/v1",
+        providerID: "namo_hw",
+        providerName: "NAMO_HW",
+        name: "NAMO_HW",
+        baseURL: "http://example.com/v1",
       }),
-    ).toBe("openai")
+    ).toBe("namo_hw")
   })
 
   it("slugs an english interface name", () => {
@@ -94,6 +94,21 @@ describe("createConfiguredModel", () => {
     expect(model.providerID).toBe("api-example-com")
     expect(model.baseURL).toBe("https://api.example.com/v1")
   })
+
+  it("appends /v1 and fills a dummy key for LM Studio", () => {
+    const model = createConfiguredModel({
+      ...emptyModelForm(),
+      name: "local",
+      providerID: "lmstudio",
+      providerName: "LM Studio",
+      modelID: "qwen",
+      baseURL: "http://192.168.111.151:1234",
+      apiKey: "",
+    })
+    expect(model.baseURL).toBe("http://192.168.111.151:1234/v1")
+    expect(model.apiKey).toBe("lm-studio")
+    expect(model.providerID).toBe("lmstudio")
+  })
 })
 
 describe("validateProviderForm", () => {
@@ -113,6 +128,7 @@ describe("validateProviderForm", () => {
     expect(validateFetchForm({ baseURL: "https://api.example.com/v1", apiKey: "sk-test" })).toBeNull()
     expect(validateFetchForm({ baseURL: "", apiKey: "sk-test" })).toBe("请填写接口地址")
     expect(validateFetchForm({ baseURL: "https://api.example.com/v1", apiKey: "" })).toBe("请填写 API Key")
+    expect(validateFetchForm({ baseURL: "http://127.0.0.1:1234/v1", apiKey: "", providerID: "lmstudio" })).toBeNull()
   })
 })
 

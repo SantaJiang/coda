@@ -6,7 +6,6 @@ FRONTEND="$ROOT/frontend"
 PORT="${CODA_PORT:-4096}"
 MODE="${1:-tauri}"
 LOG_DIR="$ROOT/.coda"
-BACKEND_LOG="$LOG_DIR/backend.log"
 BACKEND_PID_FILE="$LOG_DIR/backend.pid"
 
 mkdir -p "$LOG_DIR"
@@ -17,6 +16,52 @@ if [[ -f "$ROOT/config/local.env" ]]; then
   source "$ROOT/config/local.env"
   set +a
 fi
+
+CODA_HOME="${CODA_HOME:-$HOME/.coda}"
+export CODA_HOME
+export OPENCODE_CLIENT="${OPENCODE_CLIENT:-coda}"
+
+copy_if_missing() {
+  local src="$1"
+  local dest="$2"
+  if [[ -e "$dest" || ! -e "$src" ]]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$dest")"
+  cp "$src" "$dest"
+}
+
+migrate_coda_home() {
+  mkdir -p "$CODA_HOME/data" "$CODA_HOME/logs" "$CODA_HOME/cache" "$CODA_HOME/state"
+  local settings_src
+  case "$(uname -s)" in
+    Darwin) settings_src="$HOME/Library/Application Support/ai.coda.app/settings.json" ;;
+    MINGW*|MSYS*|CYGWIN*) settings_src="${APPDATA:-$HOME/AppData/Roaming}/ai.coda.app/settings.json" ;;
+    *) settings_src="${XDG_CONFIG_HOME:-$HOME/.config}/ai.coda.app/settings.json" ;;
+  esac
+  copy_if_missing "$settings_src" "$CODA_HOME/settings.json"
+
+  if [[ ! -e "$CODA_HOME/opencode.jsonc" && ! -e "$CODA_HOME/opencode.json" ]]; then
+    local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+    if [[ -e "$cfg/opencode.jsonc" ]]; then
+      copy_if_missing "$cfg/opencode.jsonc" "$CODA_HOME/opencode.jsonc"
+    elif [[ -e "$cfg/opencode.json" ]]; then
+      copy_if_missing "$cfg/opencode.json" "$CODA_HOME/opencode.json"
+    elif [[ -e "$cfg/config.json" ]]; then
+      copy_if_missing "$cfg/config.json" "$CODA_HOME/config.json"
+    fi
+  fi
+
+  if [[ ! -e "$CODA_HOME/data/opencode-local.db" ]]; then
+    local data="${XDG_DATA_HOME:-$HOME/.local/share}/opencode"
+    if [[ -d "$data" ]]; then
+      cp -R "$data/." "$CODA_HOME/data/" 2>/dev/null || true
+    fi
+  fi
+}
+
+migrate_coda_home
+BACKEND_LOG="$CODA_HOME/logs/backend.log"
 
 find_backend_root() {
   if [[ -n "${CODA_BACKEND_ROOT:-}" && -d "$CODA_BACKEND_ROOT" ]]; then
@@ -69,9 +114,9 @@ if [[ ! -d "$FRONTEND" || ! -f "$FRONTEND/package.json" ]]; then
   exit 1
 fi
 
-# 不给后端默认指定 CODA_CONFIG / CODA_CONFIG_DIR，
-# 与安装版共用 ~/.local/share/opencode（会话）和 ~/.config/opencode（配置）。
-# 调用方若已 export 这两项，子进程会继承。
+# 不给后端默认指定 CODA_CONFIG / CODA_CONFIG_DIR。
+# 用户数据全部在 ~/.coda（可用 CODA_HOME 覆盖）：设置、模型、sidecar 配置、会话库。
+# 调用方若已 export CODA_HOME / CODA_CONFIG*，子进程会继承。
 
 kill_port() {
   local port="$1"
@@ -155,7 +200,8 @@ fi
 echo "==> 启动 Coda 后端  http://127.0.0.1:$PORT  (${BACKEND_VERSION})"
 (
   cd "$BACKEND_ROOT"
-  CODA_PORT="$PORT" OPENCODE_DISABLE_AUTOUPDATE=1 \
+  CODA_PORT="$PORT" CODA_HOME="$CODA_HOME" OPENCODE_CLIENT="${OPENCODE_CLIENT}" \
+    OPENCODE_DB="$CODA_HOME/data/opencode-local.db" OPENCODE_DISABLE_AUTOUPDATE=1 \
     bun --cwd "$PKG_DIR" --conditions=browser \
       --define OPENCODE_VERSION="'${BACKEND_VERSION}'" \
       --define OPENCODE_CHANNEL="'local'" \
