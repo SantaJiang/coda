@@ -282,3 +282,84 @@ export async function pickAttachmentFolder(): Promise<string | null | "fallback"
     return "fallback"
   }
 }
+
+const JSON_FILTER = [{ name: "JSON", extensions: ["json"] }]
+
+function ensureJsonPath(path: string) {
+  return path.toLowerCase().endsWith(".json") ? path : `${path}.json`
+}
+
+async function invokeUserFile<T>(cmd: "user_file_read" | "user_file_write", args: Record<string, unknown>) {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return (await invoke(cmd, args)) as T
+}
+
+function downloadTextFile(filename: string, contents: string) {
+  const blob = new Blob([contents], { type: "application/json;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function pickBrowserTextFile(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = "application/json,.json"
+    input.addEventListener("change", () => {
+      const file = input.files?.[0]
+      if (!file) {
+        resolve(null)
+        return
+      }
+      void file.text().then(resolve, () => resolve(null))
+    })
+    input.addEventListener("cancel", () => resolve(null))
+    input.click()
+  })
+}
+
+export async function saveTextFile(defaultName: string, contents: string): Promise<boolean> {
+  let picked: string | null = null
+  try {
+    const dialog = await import("@tauri-apps/plugin-dialog")
+    const selected = await dialog.save({
+      defaultPath: defaultName,
+      filters: JSON_FILTER,
+      title: "导出模型配置",
+    })
+    if (typeof selected !== "string" || !selected) return false
+    picked = ensureJsonPath(selected)
+    await invokeUserFile("user_file_write", { path: picked, content: contents })
+    return true
+  } catch (error) {
+    if (picked) throw error instanceof Error ? error : new Error("导出失败")
+    downloadTextFile(defaultName, contents)
+    return true
+  }
+}
+
+export async function openTextFile(): Promise<string | null> {
+  let picked: string | null = null
+  try {
+    const dialog = await import("@tauri-apps/plugin-dialog")
+    const selected = await dialog.open({
+      multiple: false,
+      directory: false,
+      filters: JSON_FILTER,
+      title: "导入模型配置",
+    })
+    const path = Array.isArray(selected) ? selected[0] : selected
+    if (typeof path !== "string" || !path) return null
+    picked = path
+    return await invokeUserFile<string>("user_file_read", { path })
+  } catch (error) {
+    if (picked) throw error instanceof Error ? error : new Error("导入失败")
+    return pickBrowserTextFile()
+  }
+}

@@ -1,4 +1,9 @@
 import {
+  mergeConfiguredModels,
+  replaceConfiguredModels,
+  type ModelConfigImportMode,
+} from "../lib/model-config-file"
+import {
   createConfiguredModel,
   discoveredFromProviderList,
   formatVariantLabel,
@@ -127,6 +132,18 @@ export function createModelSlice(handle: StoreHandle): ModelApi {
         setState("modelSettingsOpen", false)
       } catch (error) {
         setState("modelSettingsError", error instanceof Error ? error.message : "同步到后端失败")
+      }
+    },
+    importConfiguredModels: async (incoming: ConfiguredModel[], mode: ModelConfigImportMode) => {
+      setState("modelSettingsError", null)
+      const next =
+        mode === "merge" ? mergeConfiguredModels(state.configuredModels, incoming) : replaceConfiguredModels(incoming)
+      try {
+        await applyConfiguredModels(next)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "同步到后端失败"
+        setState("modelSettingsError", message)
+        throw error instanceof Error ? error : new Error(message)
       }
     },
     deleteConfiguredModel: async (id) => {

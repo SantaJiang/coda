@@ -1,10 +1,18 @@
 import { For, Show, createEffect, createSignal } from "solid-js"
 import {
+  MODEL_CONFIG_FILENAME,
+  parseModelConfigFile,
+  serializeModelConfig,
+  type ModelConfigImportMode,
+} from "../lib/model-config-file"
+import {
   emptyModelForm,
   validateFetchForm,
   validateProviderForm,
+  type ConfiguredModel,
   type ModelForm,
 } from "../lib/models"
+import { openTextFile, saveTextFile } from "../lib/persist"
 import { CUSTOM_PRESET_ID, PROVIDER_PRESETS, normalizeProviderBaseURL, presetByBaseURL, presetById } from "../lib/presets"
 import { importedPresetId, parseImportedProviders, type ImportedProvider } from "../lib/provider-import"
 import { listRemoteModels, type RemoteModel } from "../lib/remote-models"
@@ -23,6 +31,9 @@ export function ModelSettings() {
   const [customModelID, setCustomModelID] = createSignal("")
   const [importText, setImportText] = createSignal("")
   const [importing, setImporting] = createSignal(false)
+  const [fileBusy, setFileBusy] = createSignal(false)
+  const [fileStatus, setFileStatus] = createSignal<string | null>(null)
+  const [pendingImport, setPendingImport] = createSignal<ConfiguredModel[] | null>(null)
 
   const resetForm = () => {
     setForm(emptyModelForm())
@@ -32,6 +43,8 @@ export function ModelSettings() {
     setChecked([])
     setCustomModelID("")
     setImportText("")
+    setFileStatus(null)
+    setPendingImport(null)
   }
 
   createEffect((wasOpen?: boolean) => {
@@ -39,6 +52,7 @@ export function ModelSettings() {
     if (open && !wasOpen) {
       resetForm()
     }
+    if (!open) setPendingImport(null)
     return open
   })
 
@@ -207,12 +221,70 @@ export function ModelSettings() {
     }
   }
 
+  const applyImport = async (incoming: ConfiguredModel[], mode: ModelConfigImportMode) => {
+    setFileBusy(true)
+    setFormError(null)
+    try {
+      await models.importConfiguredModels(incoming, mode)
+      setPendingImport(null)
+      setFileStatus(mode === "merge" ? "已合并导入" : "已导入")
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "导入失败")
+    } finally {
+      setFileBusy(false)
+    }
+  }
+
+  const importConfig = async () => {
+    if (fileBusy() || pendingImport()) return
+    setFormError(null)
+    setFileStatus(null)
+    setFileBusy(true)
+    try {
+      const raw = await openTextFile()
+      if (raw == null) return
+      const incoming = parseModelConfigFile(raw)
+      if (models.configuredModels().length === 0) {
+        await applyImport(incoming, "replace")
+        return
+      }
+      setPendingImport(incoming)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "导入失败")
+    } finally {
+      setFileBusy(false)
+    }
+  }
+
+  const exportConfig = async () => {
+    if (fileBusy() || pendingImport()) return
+    const list = models.configuredModels()
+    if (!list.length) return
+    setFormError(null)
+    setFileStatus(null)
+    setFileBusy(true)
+    try {
+      const saved = await saveTextFile(MODEL_CONFIG_FILENAME, serializeModelConfig(list))
+      if (saved) setFileStatus("已导出（含明文 API Key）")
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "导出失败")
+    } finally {
+      setFileBusy(false)
+    }
+  }
+
   const onOverlay = (event: MouseEvent) => {
+    if (pendingImport()) return
     if (event.target === event.currentTarget) models.closeModelSettings()
   }
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") models.closeModelSettings()
+    if (event.key !== "Escape") return
+    if (pendingImport()) {
+      if (!fileBusy()) setPendingImport(null)
+      return
+    }
+    models.closeModelSettings()
   }
 
   const keyPlaceholder = () => presetById(presetId())?.keyPlaceholder ?? "sk-..."
@@ -221,6 +293,7 @@ export function ModelSettings() {
 
   return (
     <Show when={models.modelSettingsOpen()}>
+      <>
       <div class="dialog-overlay" onMouseDown={onOverlay} onKeyDown={onKeyDown}>
         <div
           class="dialog model-settings-dialog"
@@ -236,7 +309,25 @@ export function ModelSettings() {
           </header>
 
           <section class="model-list">
-            <div class="model-list-title">已添加</div>
+            <div class="model-list-head">
+              <div class="model-list-title">已添加</div>
+              <div class="model-list-file-actions">
+                <button type="button" class="text-btn" disabled={fileBusy()} onClick={() => void importConfig()}>
+                  导入
+                </button>
+                <button
+                  type="button"
+                  class="text-btn"
+                  disabled={fileBusy() || models.configuredModels().length === 0}
+                  onClick={() => void exportConfig()}
+                >
+                  导出
+                </button>
+              </div>
+            </div>
+            <Show when={fileStatus()}>
+              <div class="field-hint">{fileStatus()}</div>
+            </Show>
             <Show
               when={models.configuredModels().length > 0}
               fallback={<div class="model-list-empty">还没有配置任何模型</div>}
@@ -395,6 +486,63 @@ export function ModelSettings() {
           </form>
         </div>
       </div>
+      <Show when={pendingImport()}>
+        {(incoming) => (
+          <div
+            class="dialog-overlay nested"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !fileBusy()) setPendingImport(null)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !fileBusy()) setPendingImport(null)
+            }}
+          >
+            <div class="dialog confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="model-import-title">
+              <header class="dialog-head">
+                <h2 id="model-import-title">本机已有模型配置</h2>
+                <button
+                  type="button"
+                  class="icon-btn"
+                  aria-label="关闭"
+                  disabled={fileBusy()}
+                  onClick={() => setPendingImport(null)}
+                >
+                  <Icon name="times" />
+                </button>
+              </header>
+              <p class="dialog-hint">
+                导入 {incoming().length} 个模型。相同接口地址和 API Key 只会保留一份，并按模型 ID
+                去重。请选择覆盖本机配置，还是与当前配置合并。
+              </p>
+              <Show when={formError() || models.modelSettingsError()}>
+                <div class="dialog-error">{formError() || models.modelSettingsError()}</div>
+              </Show>
+              <div class="dialog-actions">
+                <button type="button" class="ghost-btn" autofocus disabled={fileBusy()} onClick={() => setPendingImport(null)}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="send-btn stop"
+                  disabled={fileBusy()}
+                  onClick={() => void applyImport(incoming(), "replace")}
+                >
+                  覆盖
+                </button>
+                <button
+                  type="button"
+                  class="send-btn"
+                  disabled={fileBusy()}
+                  onClick={() => void applyImport(incoming(), "merge")}
+                >
+                  {fileBusy() ? "导入中…" : "合并"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Show>
+      </>
     </Show>
   )
 }

@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-user-file-read"
+description = "Allows reading a JSON file the user picked in a system dialog."
+commands.allow = ["user_file_read"]
+
+[[permission]]
+identifier = "allow-user-file-write"
+description = "Allows writing a JSON file the user picked in a system dialog."
+commands.allow = ["user_file_write"]

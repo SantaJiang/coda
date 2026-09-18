@@ -1863,6 +1863,10 @@ button.ctx-pill:hover {
   padding: 24px;
 }
 
+.dialog-overlay.nested {
+  z-index: 60;
+}
+
 .dialog {
   width: min(520px, 100%);
   max-height: min(820px, calc(100vh - 48px));
@@ -2033,12 +2037,33 @@ button.ctx-pill:hover {
   margin-bottom: 16px;
 }
 
+.model-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 .model-list-title,
 .model-form-title {
   margin-bottom: 8px;
   color: var(--text-muted);
   font-size: 12px;
   letter-spacing: 0.04em;
+}
+
+.model-list-head .model-list-title {
+  margin-bottom: 0;
+}
+
+.model-list-file-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.model-list > .field-hint {
+  margin: 0 0 8px;
 }
 
 .model-list-empty {
@@ -2090,6 +2115,12 @@ button.ctx-pill:hover {
 .ghost-btn:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+.text-btn:disabled,
+.ghost-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .text-btn.danger:hover {

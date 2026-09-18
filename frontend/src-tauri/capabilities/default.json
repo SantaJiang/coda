@@ -16,6 +16,8 @@
     "allow-path-exists",
     "allow-settings-read",
     "allow-settings-write",
+    "allow-user-file-read",
+    "allow-user-file-write",
     {
       "identifier": "http:default",
       "allow": [

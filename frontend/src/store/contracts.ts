@@ -1,4 +1,5 @@
 import type { ComposerAttachment } from "../lib/attachments"
+import type { ModelConfigImportMode } from "../lib/model-config-file"
 import type { ConfiguredModel, ModelForm, SelectableModel } from "../lib/models"
 import type { PermissionMode } from "../lib/permissions"
 import type { SendShortcut } from "../lib/settings"
@@ -53,6 +54,7 @@ export type ModelApi = {
   openModelSettings: () => void
   closeModelSettings: () => void
   saveConfiguredProvider: (form: ModelForm, modelIDs: string[], modelNames?: Record<string, string>) => Promise<void>
+  importConfiguredModels: (models: ConfiguredModel[], mode: ModelConfigImportMode) => Promise<void>
   deleteConfiguredModel: (id: string) => Promise<void>
   refreshDiscovered: () => Promise<void>
   setVariant: (value: string | null) => void
