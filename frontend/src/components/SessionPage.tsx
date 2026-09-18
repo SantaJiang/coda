@@ -1,4 +1,5 @@
 import { Show } from "solid-js"
+import { isLocalDraft, draftSidebarTitle } from "../lib/draft-session"
 import { formatSessionTitle } from "../lib/session-label"
 import { useChrome, useProjects, useRuntime } from "../store/app"
 import { Composer } from "./Composer"
@@ -15,9 +16,12 @@ export function SessionPage() {
   const runtime = useRuntime()
   const chrome = useChrome()
   const showAside = () => runtime.hasPlan() && !chrome.planPanelDismissed()
+  const selected = () => projects.selectedSession()
+  const isDraftView = () => !selected() || isLocalDraft(selected())
   const chromeTitle = () => {
-    const session = projects.selectedSession()
-    return session ? formatSessionTitle(session.title) : "新会话"
+    const session = selected()
+    if (!session || isLocalDraft(session)) return draftSidebarTitle(runtime.composer())
+    return formatSessionTitle(session.title)
   }
 
   return (
@@ -36,7 +40,7 @@ export function SessionPage() {
             <div class="session-error">{projects.error()}</div>
           </Show>
           <Show
-            when={projects.selectedSession()}
+            when={!isDraftView()}
             fallback={
               <div class="empty">
                 <div class="empty-composer">

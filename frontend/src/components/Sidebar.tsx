@@ -1,5 +1,6 @@
 import { For, Index, Show, createEffect, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { isLocalProject, projectDisplay } from "../lib/persist"
+import { isLocalDraft } from "../lib/draft-session"
 import { formatSessionTitle } from "../lib/session-label"
 import { isMacPlatform } from "../lib/settings"
 import { type SessionDot } from "../lib/session-status"
@@ -68,6 +69,7 @@ function TreeCollapse(props: { open: boolean; children: JSX.Element }) {
 }
 
 function sessionLabel(session: Session) {
+  if (isLocalDraft(session)) return session.title?.trim() || "新会话"
   return formatSessionTitle(session.title)
 }
 
@@ -290,7 +292,10 @@ export function Sidebar() {
                       {(session) => (
                         <div
                           class="tree-session"
-                          classList={{ active: projects.selectedSessionId() === session.id }}
+                          classList={{
+                            active: projects.selectedSessionId() === session.id,
+                            draft: isLocalDraft(session),
+                          }}
                         >
                           <Show
                             when={editingId() !== session.id}
@@ -324,6 +329,11 @@ export function Sidebar() {
                               onContextMenu={(event) => openSessionMenu(event, session)}
                               onClick={() => void projects.selectSession(session)}
                             >
+                              <Show when={isLocalDraft(session)}>
+                                <span class="tree-draft-icon" title="未提交的草稿">
+                                  <Icon name="pencil" />
+                                </span>
+                              </Show>
                               <span class="truncate">{sessionLabel(session)}</span>
                               <Show when={sessionDot(session.id)}>
                                 {(kind) => (
@@ -379,14 +389,16 @@ export function Sidebar() {
             style={{ position: "fixed", left: `${menu().x}px`, top: `${menu().y}px` }}
             role="menu"
           >
-            <button
-              type="button"
-              class="context-menu-item"
-              role="menuitem"
-              onClick={() => startRename(menu().session)}
-            >
-              重命名
-            </button>
+            <Show when={!isLocalDraft(menu().session)}>
+              <button
+                type="button"
+                class="context-menu-item"
+                role="menuitem"
+                onClick={() => startRename(menu().session)}
+              >
+                重命名
+              </button>
+            </Show>
             <button
               type="button"
               class="context-menu-item danger"

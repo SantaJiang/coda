@@ -1,5 +1,6 @@
 import { produce } from "solid-js/store"
 import { draftKey } from "../lib/draft"
+import { isEmptyDraftContent, isLocalDraft } from "../lib/draft-session"
 import { PLAN_AGENT, DEFAULT_AGENT } from "../lib/config"
 import {
   attachmentFromBrowserFile,
@@ -20,6 +21,12 @@ import { uid } from "../lib/uid"
 import { upsertById } from "../lib/upsert"
 import type { Project } from "../lib/types"
 import type { RuntimeApi } from "./contracts"
+import {
+  persistDraftSessions,
+  reuseOrCreateEmptyDraft,
+  adoptDraftIntoBackendSession,
+  syncDraftSessionMeta,
+} from "./draft-session-state"
 import {
   activePlanMode,
   projectOwningSession,
@@ -56,12 +63,31 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
   const currentAgent = () => (activePlanMode(state) ? PLAN_AGENT : DEFAULT_AGENT)
 
   const writeDraft = (patch: Partial<SessionDraft>) => {
-    const key = activeDraftKey()
-    const prev = state.drafts[key] ?? emptySessionDraft()
-    setState("drafts", key, {
+    const project = selectedProject()
+    const prev = currentDraft()
+    const next = {
       composer: patch.composer ?? prev.composer,
       attachments: patch.attachments ?? prev.attachments,
-    })
+    }
+    const hasContent = !isEmptyDraftContent(next.composer, next.attachments)
+
+    if (project && !project.missing && !state.selectedSessionId && hasContent) {
+      const session = reuseOrCreateEmptyDraft(handle, project, true)
+      const phantomKey = draftKey(null, project.id)
+      setState("drafts", `session:${session.id}`, next)
+      if (phantomKey !== `session:${session.id}`) setState("drafts", phantomKey, emptySessionDraft())
+      syncDraftSessionMeta(handle, project.path, session.id, next.composer)
+      persistDraftSessions(handle)
+      return
+    }
+
+    const key = draftKey(state.selectedSessionId, state.selectedProjectId)
+    setState("drafts", key, next)
+    const session = selectedSession()
+    if (project && session && isLocalDraft(session)) {
+      syncDraftSessionMeta(handle, project.path, session.id, next.composer)
+      persistDraftSessions(handle, !hasContent)
+    }
   }
 
   const setAttachments = (next: ComposerAttachment[]) => writeDraft({ attachments: next })
@@ -224,7 +250,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
 
       if (busy()) {
         const session = selectedSession()
-        if (!session) return
+        if (!session || isLocalDraft(session)) return
         setState("queuedBySession", session.id, [
           ...queuedFor(session.id),
           {
@@ -246,16 +272,24 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       setState("error", null)
       try {
         let session = selectedSession()
-        if (!session) {
+        const local = isLocalDraft(session) ? session : null
+        if (!session || local) {
+          const plan = local ? (state.planModeBySession[local.id] ?? false) : state.draftPlanMode
           session = await client.createSession(
             usable.path,
             model,
             currentAgent(),
             rulesetForProject(usable, state.permissionMode),
           )
+          if (local) {
+            const bundle = state.drafts[`session:${local.id}`] ?? emptySessionDraft()
+            adoptDraftIntoBackendSession(handle, local.id)
+            setState("drafts", `session:${session.id}`, bundle)
+          }
           setState("sessionsByProject", usable.path, (list = []) => upsertById(list, session!))
-          setState("planModeBySession", session.id, state.draftPlanMode)
+          setState("planModeBySession", session.id, plan)
           setState({ selectedSessionId: session.id, draft: false, draftPlanMode: false })
+          persistDraftSessions(handle, true)
           setSending(key, false)
           key = sendingKey(session.id, project.id)
           setSending(key, true)
@@ -277,7 +311,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     abort: async () => {
       const session = selectedSession()
       const project = selectedProject()
-      if (!session || !project) return
+      if (!session || !project || isLocalDraft(session)) return
       refs.skipQueueFlush[session.id] = true
       delete refs.sendAfterIdle[session.id]
       try {
@@ -290,7 +324,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     revertToMessage: async (messageID) => {
       const session = selectedSession()
       const project = selectedProject()
-      if (!session || !project || busy()) return
+      if (!session || !project || busy() || isLocalDraft(session)) return
       const usable = ensureProjectDirectory(project)
       if (!usable) return
       try {
@@ -309,7 +343,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     sendQueuedNow: async (id) => {
       const session = selectedSession()
       const project = selectedProject()
-      if (!session || !project) return
+      if (!session || !project || isLocalDraft(session)) return
       const list = queuedFor(session.id)
       const item = list.find((entry) => entry.id === id)
       if (!item) return

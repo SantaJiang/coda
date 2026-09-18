@@ -441,6 +441,34 @@ a,
   color: var(--text);
 }
 
+.tree-session.draft .tree-session-main {
+  color: var(--text-faint);
+}
+
+.tree-session.draft .tree-session-main:hover,
+.tree-session.draft.active .tree-session-main {
+  color: var(--text);
+}
+
+.tree-draft-icon {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.tree-draft-icon .fa {
+  font-size: 11px;
+}
+
+.tree-session.draft .tree-session-main:hover .tree-draft-icon,
+.tree-session.draft.active .tree-session-main .tree-draft-icon {
+  color: var(--text-muted);
+}
+
 .tree-rename {
   width: 100%;
   height: 28px;

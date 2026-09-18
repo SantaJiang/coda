@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   projects: "coda.projects",
   lastProject: "coda.lastProject",
   projectSessions: "coda.projectSessions.v2",
+  draftSessions: "coda.draftSessions",
   permissionMode: "coda.permissionMode",
   sendShortcut: "coda.sendShortcut",
   theme: "coda.theme",

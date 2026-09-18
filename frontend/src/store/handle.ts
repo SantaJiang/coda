@@ -24,7 +24,11 @@ export function selectedProjectOf(state: AppState) {
 export function selectedSessionOf(state: AppState) {
   const project = selectedProjectOf(state)
   if (!project || !state.selectedSessionId) return undefined
-  return (state.sessionsByProject[project.path] ?? []).find((session) => session.id === state.selectedSessionId)
+  const id = state.selectedSessionId
+  return (
+    (state.draftSessionsByProject[project.path] ?? []).find((session) => session.id === id) ??
+    (state.sessionsByProject[project.path] ?? []).find((session) => session.id === id)
+  )
 }
 
 export function activePlanMode(state: AppState): boolean {
@@ -62,7 +66,9 @@ export function reportError(handle: StoreHandle, error: unknown, fallback: strin
 }
 
 export function projectOwningSession(state: AppState, sessionID: string): Project | undefined {
-  return state.projects.find((entry) =>
-    (state.sessionsByProject[entry.path] ?? []).some((session: Session) => session.id === sessionID),
+  return state.projects.find(
+    (entry) =>
+      (state.sessionsByProject[entry.path] ?? []).some((session: Session) => session.id === sessionID) ||
+      (state.draftSessionsByProject[entry.path] ?? []).some((session: Session) => session.id === sessionID),
   )
 }

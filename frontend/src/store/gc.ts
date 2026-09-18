@@ -14,6 +14,11 @@ export function purgeSession(draft: AppState, sessionID: string) {
   delete draft.sendingBySession[sessionID]
   delete draft.drafts[`session:${sessionID}`]
   delete draft.planModeBySession[sessionID]
+  for (const path of Object.keys(draft.draftSessionsByProject)) {
+    const list = draft.draftSessionsByProject[path]
+    if (!list?.some((session) => session.id === sessionID)) continue
+    draft.draftSessionsByProject[path] = list.filter((session) => session.id !== sessionID)
+  }
   for (const [id, permission] of Object.entries(draft.permissions)) {
     if (permission?.sessionID === sessionID) delete draft.permissions[id]
   }

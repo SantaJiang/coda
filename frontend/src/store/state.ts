@@ -40,6 +40,7 @@ export type AppState = {
   connection: ConnectionState
   projects: Project[]
   sessionsByProject: Record<string, Session[]>
+  draftSessionsByProject: Record<string, Session[]>
   selectedProjectId: string | null
   selectedSessionId: string | null
   draft: boolean
@@ -81,6 +82,7 @@ export const initialState: AppState = {
   connection: "connecting",
   projects: [],
   sessionsByProject: {},
+  draftSessionsByProject: {},
   selectedProjectId: null,
   selectedSessionId: null,
   draft: true,

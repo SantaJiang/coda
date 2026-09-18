@@ -6,7 +6,8 @@ export function projectForSession(state: AppState, session: Session) {
   return state.projects.find(
     (project) =>
       samePath(project.path, session.directory) ||
-      (state.sessionsByProject[project.path] ?? []).some((item) => item.id === session.id),
+      (state.sessionsByProject[project.path] ?? []).some((item) => item.id === session.id) ||
+      (state.draftSessionsByProject[project.path] ?? []).some((item) => item.id === session.id),
   )
 }
 

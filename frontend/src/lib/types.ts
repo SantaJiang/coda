@@ -42,6 +42,8 @@ export type Session = {
     archived?: number
   }
   revert?: SessionRevertState | null
+  /** Frontend-only unsent draft. Never returned by the backend. */
+  localDraft?: boolean
 }
 
 export type SessionStatus =

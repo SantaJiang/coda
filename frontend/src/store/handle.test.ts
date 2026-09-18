@@ -1,10 +1,30 @@
 import { describe, expect, it } from "vitest"
-import { activePlanMode, inferPlanMode } from "./handle"
+import { selectedSessionOf, activePlanMode, inferPlanMode } from "./handle"
 import { initialState, type AppState } from "./state"
 
 function makeState(overrides: Partial<AppState> = {}): AppState {
   return { ...structuredClone(initialState), ...overrides }
 }
+
+describe("selectedSessionOf", () => {
+  it("resolves local drafts from the draft list", () => {
+    const draft = {
+      id: "draft_1",
+      directory: "/tmp/app",
+      title: "新会话",
+      localDraft: true as const,
+      time: { created: 1, updated: 1 },
+    }
+    const state = makeState({
+      projects: [{ id: "p1", name: "app", path: "/tmp/app", expanded: true }],
+      selectedProjectId: "p1",
+      selectedSessionId: "draft_1",
+      draftSessionsByProject: { "/tmp/app": [draft] },
+    })
+    expect(selectedSessionOf(state)?.id).toBe("draft_1")
+    expect(selectedSessionOf(state)?.localDraft).toBe(true)
+  })
+})
 
 describe("activePlanMode", () => {
   it("reads the per-session value when a session is selected", () => {

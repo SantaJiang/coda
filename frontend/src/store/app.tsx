@@ -11,15 +11,18 @@ import {
   toBackendPatch,
 } from "../lib/models"
 import { onSharedChange, type SharedSettings } from "../lib/shared"
+import { newestDraft } from "../lib/draft-session"
 import {
   createLocalProject,
   ensureLocalProject,
   hydrateProjects,
   isLocalProject,
+  loadDraftSessions,
   loadLastProject,
   loadProjects,
   pickSelectedProjectId,
   resolveHomeDir,
+  samePath,
   saveLastProject,
   saveProjects,
   saveProjectSessions,
@@ -27,6 +30,7 @@ import {
 import { applyClientEvent } from "./apply-event"
 import { createChromeSlice } from "./chrome-slice"
 import { StoreProviders } from "./ctx"
+import { flushPendingDraftPersist, persistDraftSessions, rekeyDraftSessions } from "./draft-session-state"
 import { reportError, type StoreHandle } from "./handle"
 import { persistSelection, createModelSlice } from "./model-slice"
 import type { AppPorts } from "./ports"
@@ -101,6 +105,16 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     setState("configuredModels", configured)
     persistSelection(handle, resolveSelectedKey(configured, mergeSelectables(configured, []), loadSelectedModelKey()))
 
+    const hydratedDrafts = loadDraftSessions()
+    setState("draftSessionsByProject", hydratedDrafts.draftSessionsByProject)
+    setState("drafts", hydratedDrafts.drafts)
+    setState("planModeBySession", hydratedDrafts.planModeBySession)
+    const selectedProject = initial.find((project) => project.id === selectedId)
+    const restoredDraft = selectedProject
+      ? newestDraft(hydratedDrafts.draftSessionsByProject[selectedProject.path] ?? [])
+      : undefined
+    if (restoredDraft) setState({ selectedSessionId: restoredDraft.id, draft: true })
+
     for (const project of initial) {
       void projects.hydrateProjectPath(project)
     }
@@ -108,9 +122,16 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     void resolveHomeDir().then((home) => {
       if (!home) return
       let nextSelected: string | null = null
+      let rekeyed = false
       setState(
         produce((draft) => {
+          const previous = draft.projects.find(isLocalProject)
+          const previousPath = previous?.path
           draft.projects = ensureLocalProject(draft.projects, home)
+          if (previousPath && !samePath(previousPath, home)) {
+            rekeyDraftSessions(draft, previousPath, home)
+            rekeyed = true
+          }
           if (!draft.selectedProjectId || !draft.projects.some((project) => project.id === draft.selectedProjectId)) {
             draft.selectedProjectId = pickSelectedProjectId(draft.projects, last)
           }
@@ -118,6 +139,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
         }),
       )
       if (nextSelected) saveLastProject(nextSelected)
+      if (rekeyed) persistDraftSessions(handle, true)
       void projects.refreshProjectSessions(createLocalProject(home))
     })
 
@@ -189,10 +211,15 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     )
 
     onCleanup(() => {
+      flushPendingDraftPersist()
       stop()
       unsubscribeShared()
       window.clearInterval(ping)
+      window.removeEventListener("pagehide", flushPendingDraftPersist)
+      window.removeEventListener("beforeunload", flushPendingDraftPersist)
     })
+    window.addEventListener("pagehide", flushPendingDraftPersist)
+    window.addEventListener("beforeunload", flushPendingDraftPersist)
   })
 
   createEffect(() => {

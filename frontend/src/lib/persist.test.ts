@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { filterProjectSessions, restoreCandidates } from "./persist"
+import { STORAGE_KEYS } from "./config"
+import {
+  filterProjectSessions,
+  hydrateDraftSessions,
+  loadDraftSessions,
+  restoreCandidates,
+  saveDraftSessions,
+  serializeDraftSessions,
+} from "./persist"
 import type { BackendProject, Project, Session } from "./types"
 
 function project(path: string, extra: Partial<Project> = {}): Project {
@@ -101,5 +109,83 @@ describe("filterProjectSessions", () => {
       "/Users/me/app",
     )
     expect(kept.map((item) => item.id)).toEqual(["inside"])
+  })
+})
+
+describe("draft session persistence", () => {
+  it("omits empty drafts from serialized storage", () => {
+    const stored = serializeDraftSessions(
+      {
+        "/tmp/app": [
+          {
+            id: "draft_empty",
+            directory: "/tmp/app",
+            title: "新会话",
+            localDraft: true,
+            time: { created: 1, updated: 1 },
+          },
+          {
+            id: "draft_kept",
+            directory: "/tmp/app",
+            title: "hello",
+            localDraft: true,
+            time: { created: 2, updated: 3 },
+          },
+        ],
+      },
+      {
+        "session:draft_empty": { composer: "  ", attachments: [] },
+        "session:draft_kept": {
+          composer: "hello",
+          attachments: [{ id: "a1", filename: "a.ts", mime: "text/plain", kind: "file", url: "file:///a.ts", label: "TS" }],
+        },
+      },
+      { draft_kept: true },
+    )
+    expect(stored["/tmp/app"]?.map((item) => item.id)).toEqual(["draft_kept"])
+    expect(stored["/tmp/app"]?.[0]).toMatchObject({
+      composer: "hello",
+      planMode: true,
+    })
+  })
+
+  it("round-trips non-empty drafts and drops empties on load", () => {
+    localStorage.removeItem(STORAGE_KEYS.draftSessions)
+    saveDraftSessions(
+      {
+        "/tmp/app": [
+          {
+            id: "draft_kept",
+            directory: "/tmp/app",
+            title: "新会话",
+            localDraft: true,
+            time: { created: 8, updated: 9 },
+          },
+        ],
+      },
+      { "session:draft_kept": { composer: "保存我", attachments: [] } },
+      {},
+    )
+    const loaded = loadDraftSessions()
+    expect(loaded.draftSessionsByProject["/tmp/app"]?.[0]).toMatchObject({
+      id: "draft_kept",
+      title: "保存我",
+      localDraft: true,
+    })
+    expect(loaded.drafts["session:draft_kept"]?.composer).toBe("保存我")
+
+    const hydrated = hydrateDraftSessions({
+      "/tmp/app": [
+        {
+          id: "draft_empty",
+          directory: "/tmp/app",
+          time: { created: 1, updated: 1 },
+          composer: "",
+          attachments: [],
+        },
+      ],
+    })
+    expect(hydrated.draftSessionsByProject["/tmp/app"]).toBeUndefined()
+    localStorage.removeItem(STORAGE_KEYS.draftSessions)
   })
 })

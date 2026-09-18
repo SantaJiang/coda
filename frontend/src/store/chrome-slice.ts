@@ -1,7 +1,9 @@
 import { saveKeepBackendAlive, saveSendShortcut, type SendShortcut } from "../lib/settings"
 import { permissionPreset, savePermissionMode, type PermissionMode } from "../lib/permissions"
+import { isLocalDraft } from "../lib/draft-session"
 import { popoverPatch } from "./state"
 import type { ChromeApi } from "./contracts"
+import { persistDraftSessions } from "./draft-session-state"
 import { activePlanMode, reportError, selectedProjectOf, selectedSessionOf, type StoreHandle } from "./handle"
 import { applySessionPermission, autoReplyPending } from "./permission-sync"
 
@@ -30,6 +32,7 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
       if (id) setState("planModeBySession", id, on)
       else setState("draftPlanMode", on)
       setState("plusMenuOpen", false)
+      if (isLocalDraft(selectedSessionOf(state))) persistDraftSessions(handle)
     },
     openPlusMenu: () => setState(popoverPatch("plus")),
     closePlusMenu: () => setState("plusMenuOpen", false),
@@ -40,7 +43,7 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
       savePermissionMode(mode)
       const session = selectedSessionOf(state)
       const project = selectedProjectOf(state)
-      if (session && project) {
+      if (session && project && !isLocalDraft(session)) {
         try {
           await applySessionPermission(handle, project.path, session.id, mode)
           await autoReplyPending(handle, mode, session.id)

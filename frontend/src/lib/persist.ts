@@ -1,4 +1,10 @@
+import type { ComposerAttachment } from "./attachments"
 import { STORAGE_KEYS } from "./config"
+import {
+  createLocalDraftSession,
+  draftSidebarTitle,
+  isEmptyDraftContent,
+} from "./draft-session"
 import { basename, isWithinPath, parentSegments, samePath } from "./path"
 import { hasSharedValue, setSharedValue, sharedValue } from "./shared"
 import { uid } from "./uid"
@@ -160,6 +166,146 @@ export function clearProjectSessions(projectId: string) {
     localStorage.setItem(STORAGE_KEYS.projectSessions, JSON.stringify(parsed))
   } catch {
     // ignore
+  }
+}
+
+export type PersistedDraftSession = {
+  id: string
+  directory: string
+  time: { created: number; updated: number }
+  composer: string
+  attachments: ComposerAttachment[]
+  planMode?: boolean
+}
+
+export type DraftBundle = {
+  composer: string
+  attachments: ComposerAttachment[]
+}
+
+export type HydratedDraftSessions = {
+  draftSessionsByProject: Record<string, Session[]>
+  drafts: Record<string, DraftBundle>
+  planModeBySession: Record<string, boolean>
+}
+
+function asAttachment(value: unknown): ComposerAttachment | null {
+  if (!value || typeof value !== "object") return null
+  const item = value as Partial<ComposerAttachment>
+  if (!item.id || !item.filename || !item.url) return null
+  if (item.kind !== "file" && item.kind !== "directory") return null
+  return {
+    id: String(item.id),
+    filename: String(item.filename),
+    mime: String(item.mime ?? ""),
+    kind: item.kind,
+    url: String(item.url),
+    label: String(item.label || item.filename),
+  }
+}
+
+function asPersistedDraft(value: unknown, path: string): PersistedDraftSession | null {
+  if (!value || typeof value !== "object") return null
+  const item = value as Partial<PersistedDraftSession>
+  if (!item.id || typeof item.id !== "string") return null
+  const composer = typeof item.composer === "string" ? item.composer : ""
+  const attachments = Array.isArray(item.attachments)
+    ? item.attachments.map(asAttachment).filter((entry): entry is ComposerAttachment => Boolean(entry))
+    : []
+  if (isEmptyDraftContent(composer, attachments)) return null
+  const created = Number(item.time?.created)
+  const updated = Number(item.time?.updated)
+  const now = Date.now()
+  return {
+    id: item.id,
+    directory: typeof item.directory === "string" && item.directory ? item.directory : path,
+    time: {
+      created: Number.isFinite(created) ? created : now,
+      updated: Number.isFinite(updated) ? updated : now,
+    },
+    composer,
+    attachments,
+    planMode: item.planMode === true,
+  }
+}
+
+export function serializeDraftSessions(
+  draftSessionsByProject: Record<string, Session[]>,
+  drafts: Record<string, DraftBundle | undefined>,
+  planModeBySession: Record<string, boolean>,
+): Record<string, PersistedDraftSession[]> {
+  const stored: Record<string, PersistedDraftSession[]> = {}
+  for (const [path, sessions] of Object.entries(draftSessionsByProject)) {
+    const kept: PersistedDraftSession[] = []
+    for (const session of sessions) {
+      if (!session?.id) continue
+      const bundle = drafts[`session:${session.id}`]
+      const composer = bundle?.composer ?? ""
+      const attachments = bundle?.attachments ?? []
+      if (isEmptyDraftContent(composer, attachments)) continue
+      kept.push({
+        id: session.id,
+        directory: session.directory || path,
+        time: {
+          created: session.time?.created ?? Date.now(),
+          updated: session.time?.updated ?? Date.now(),
+        },
+        composer,
+        attachments,
+        planMode: planModeBySession[session.id] === true,
+      })
+    }
+    if (kept.length) stored[path] = kept
+  }
+  return stored
+}
+
+export function hydrateDraftSessions(stored: Record<string, PersistedDraftSession[]>): HydratedDraftSessions {
+  const draftSessionsByProject: Record<string, Session[]> = {}
+  const drafts: Record<string, DraftBundle> = {}
+  const planModeBySession: Record<string, boolean> = {}
+  for (const [path, list] of Object.entries(stored)) {
+    if (!path || !Array.isArray(list)) continue
+    const sessions: Session[] = []
+    for (const raw of list) {
+      const item = asPersistedDraft(raw, path)
+      if (!item) continue
+      const session = createLocalDraftSession(item.directory || path, item.time.created, item.id)
+      session.title = draftSidebarTitle(item.composer)
+      session.time = { created: item.time.created, updated: item.time.updated }
+      sessions.push(session)
+      drafts[`session:${item.id}`] = { composer: item.composer, attachments: item.attachments }
+      if (item.planMode) planModeBySession[item.id] = true
+    }
+    if (sessions.length) draftSessionsByProject[path] = sessions
+  }
+  return { draftSessionsByProject, drafts, planModeBySession }
+}
+
+export function loadDraftSessions(): HydratedDraftSessions {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.draftSessions)
+    if (!raw) return { draftSessionsByProject: {}, drafts: {}, planModeBySession: {} }
+    const parsed = JSON.parse(raw) as Record<string, PersistedDraftSession[]>
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { draftSessionsByProject: {}, drafts: {}, planModeBySession: {} }
+    }
+    return hydrateDraftSessions(parsed)
+  } catch {
+    return { draftSessionsByProject: {}, drafts: {}, planModeBySession: {} }
+  }
+}
+
+export function saveDraftSessions(
+  draftSessionsByProject: Record<string, Session[]>,
+  drafts: Record<string, DraftBundle | undefined>,
+  planModeBySession: Record<string, boolean>,
+) {
+  try {
+    const stored = serializeDraftSessions(draftSessionsByProject, drafts, planModeBySession)
+    localStorage.setItem(STORAGE_KEYS.draftSessions, JSON.stringify(stored))
+  } catch {
+    // ignore quota / private mode
   }
 }
 

@@ -1,4 +1,5 @@
 import { produce } from "solid-js/store"
+import { isLocalDraft, mergeSessionLists } from "../lib/draft-session"
 import {
   createProject,
   clearProjectSessions,
@@ -21,6 +22,12 @@ import { mergeMessages, mergeParts, resolveRacingSessionStatus, resolveSessionSt
 import { deriveStatusFromMessages, hasFailingAssistant } from "../lib/session-status"
 import type { BackendProject, Message, Part, PermissionRequest, Project, QuestionRequest, Session, Todo } from "../lib/types"
 import type { ProjectApi } from "./contracts"
+import {
+  persistDraftSessions,
+  rekeyDraftSessions,
+  removeDraftSessions,
+  startDraftSession,
+} from "./draft-session-state"
 import { purgeSession, syncSessionRequests } from "./gc"
 import {
   inferPlanMode,
@@ -212,7 +219,8 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
 
   return {
     projects: () => state.projects,
-    sessionsFor: (path) => state.sessionsByProject[path] ?? [],
+    sessionsFor: (path) =>
+      mergeSessionLists(state.draftSessionsByProject[path] ?? [], state.sessionsByProject[path] ?? []),
     selectedProject,
     selectedSession,
     selectedSessionId: () => state.selectedSessionId,
@@ -221,7 +229,10 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
     vcsBranch: () => state.vcsBranch,
     refreshProjectSessions,
     hydrateProjectPath,
-    resyncSession: (session) => loadSessionDetail(session, { merge: true }),
+    resyncSession: (session) => {
+      if (isLocalDraft(session)) return Promise.resolve()
+      return loadSessionDetail(session, { merge: true })
+    },
     restoreProjects: async (list) => {
       const groups = restoreCandidates(state.projects, list)
       if (!groups.length) return
@@ -283,14 +294,22 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
           .filter((project) => project.id !== id)
           .map((project) => (project.id === duplicate.id ? restored : project))
         setState("projects", projects)
+        const selectedDraftId = state.selectedSessionId
         setState(
           produce((draft) => {
             delete draft.sessionsByProject[previousPath]
+            rekeyDraftSessions(draft, previousPath, restored.path)
           }),
         )
+        persistDraftSessions(handle, true)
+        const keptDraft =
+          selectedDraftId &&
+          (state.draftSessionsByProject[restored.path] ?? []).some((item) => item.id === selectedDraftId)
         setState({
           selectedProjectId: duplicate.id,
-          ...newDraftPatch,
+          ...(keptDraft
+            ? { selectedSessionId: selectedDraftId, draft: true, draftPlanMode: false }
+            : newDraftPatch),
           error: null,
         })
         saveLastProject(duplicate.id)
@@ -319,8 +338,10 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
           produce((draft) => {
             draft.sessionsByProject[path] = previousSessions.map((session) => ({ ...session, directory: path }))
             delete draft.sessionsByProject[previousPath]
+            rekeyDraftSessions(draft, previousPath, path)
           }),
         )
+        persistDraftSessions(handle, true)
       }
       await refreshProjectSessions(next)
       return next
@@ -338,7 +359,12 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       const changed = state.selectedProjectId !== id
       setState("selectedProjectId", id)
       saveLastProject(id)
-      const sessions = project ? (state.sessionsByProject[project.path] ?? []) : []
+      const sessions = project
+        ? [
+            ...(state.sessionsByProject[project.path] ?? []),
+            ...(state.draftSessionsByProject[project.path] ?? []),
+          ]
+        : []
       if (state.selectedSessionId && !sessions.some((session) => session.id === state.selectedSessionId)) {
         setState(newDraftPatch)
       } else if (changed && !state.selectedSessionId) {
@@ -355,10 +381,13 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       setState(
         produce((draft) => {
           for (const session of draft.sessionsByProject[removed.path] ?? []) purgeSession(draft, session.id)
+          for (const session of draft.draftSessionsByProject[removed.path] ?? []) purgeSession(draft, session.id)
           delete draft.sessionsByProject[removed.path]
+          delete draft.draftSessionsByProject[removed.path]
         }),
       )
       clearProjectSessions(id)
+      persistDraftSessions(handle, true)
       if (state.selectedProjectId === id) {
         const fallback = pickSelectedProjectId(projects, null)
         setState({
@@ -379,6 +408,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       if (local) saveLastProject(local.id)
     },
     renameSession: async (session, title) => {
+      if (isLocalDraft(session)) return
       const trimmed = title.trim()
       if (!trimmed || trimmed === session.title) return
       try {
@@ -392,8 +422,19 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       }
     },
     deleteSession: async (session) => {
+      const directory = directoryFor(state, session)
+      if (isLocalDraft(session)) {
+        removeDraftSessions(handle, [session.id])
+        if (state.selectedSessionId === session.id) {
+          setState({
+            ...newDraftPatch,
+            error: null,
+          })
+        }
+        persistDraftSessions(handle, true)
+        return
+      }
       try {
-        const directory = directoryFor(state, session)
         await client.deleteSession(directory, session.id)
         setState(
           produce((draft) => {
@@ -418,10 +459,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         setState("error", MISSING_DIRECTORY_HINT)
         return
       }
-      setState({
-        ...newDraftPatch,
-        error: null,
-      })
+      startDraftSession(handle, project)
     },
     selectSession: async (session) => {
       const project = projectForSession(state, session)
@@ -429,15 +467,17 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         setState("error", MISSING_DIRECTORY_HINT)
         return
       }
+      const local = isLocalDraft(session)
       setState({
         selectedSessionId: session.id,
         selectedProjectId: project?.id ?? state.selectedProjectId,
-        draft: false,
+        draft: local,
         draftPlanMode: false,
         error: null,
       })
       setState("attention", session.id, false)
       if (project) saveLastProject(project.id)
+      if (local) return
       await loadSessionDetail(session)
     },
   }
