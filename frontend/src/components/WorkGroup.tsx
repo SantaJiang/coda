@@ -70,6 +70,7 @@ export function WorkGroup(props: {
   const thoughtParts = createMemo(() => parts().filter((part) => part.type === "reasoning"))
   const showHead = createMemo(() => Boolean(summary()) && !(props.live && thoughtOnly()))
   const expandable = createMemo(() => parts().length > 0 || (props.live && !reconnecting()))
+  const statusToggle = createMemo(() => props.live && !showHead())
   const open = () => (props.onToggle ? Boolean(props.open) : localOpen())
   const toggle = (event?: MouseEvent) => {
     event?.preventDefault()
@@ -218,9 +219,9 @@ export function WorkGroup(props: {
         <button
           type="button"
           class="work-status-head"
-          onClick={toggle}
-          aria-expanded={open()}
-          disabled={!expandable()}
+          onClick={statusToggle() ? toggle : undefined}
+          aria-expanded={statusToggle() ? open() : undefined}
+          disabled={!statusToggle() || !expandable()}
         >
           <span class="work-status" role="status" aria-live="polite" aria-atomic="true" aria-label={line().current}>
             <For each={[line().tick]}>
@@ -236,7 +237,7 @@ export function WorkGroup(props: {
               )}
             </For>
           </span>
-          <Show when={expandable()}>
+          <Show when={statusToggle() && expandable()}>
             <Icon name="chevron-right" class="work-summary-caret" />
           </Show>
         </button>

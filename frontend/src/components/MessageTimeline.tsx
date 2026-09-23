@@ -61,7 +61,12 @@ function SessionTimeline() {
   const onPointerDown = (event: PointerEvent) => {
     const target = event.target
     if (!(target instanceof Element)) return
-    if (target.closest(".work-head, .work-status-head, .work-step-head")) pauseAutoScroll()
+    if (
+      target.closest(".work-head, .work-step-head") ||
+      target.closest(".work-status-head:not(:disabled)")
+    ) {
+      pauseAutoScroll()
+    }
   }
 
   createEffect(

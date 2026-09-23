@@ -130,6 +130,26 @@ describe("live thought expansion", () => {
     expect(container.querySelector(".reasoning-inline")?.textContent).toContain("step one")
   })
 
+  it("keeps the live status line a pure indicator when the summary head is present", () => {
+    const container = mount(() => <WorkGroup parts={[tool()]} live />)
+
+    const head = container.querySelector(".work-head") as HTMLButtonElement | null
+    expect(head?.textContent).toContain("Explored")
+    expect(head?.querySelector(".work-summary-caret")).toBeTruthy()
+
+    const statusHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
+    expect(statusHead).toBeTruthy()
+    expect(statusHead?.textContent).toContain("Planning next moves")
+    expect(statusHead?.disabled).toBe(true)
+    expect(statusHead?.querySelector(".work-summary-caret")).toBeFalsy()
+
+    statusHead?.click()
+    expect(container.querySelector(".work-steps")).toBeFalsy()
+
+    head?.click()
+    expect(container.querySelector(".work-steps")).toBeTruthy()
+  })
+
   it("mounts the live head for a turn without assistant messages yet", () => {
     const container = mount(() => <ChatTurnView turn={{ assistants: [] }} partsByMessage={{}} live />)
     const statusHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
