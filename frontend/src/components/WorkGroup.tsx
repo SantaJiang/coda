@@ -69,11 +69,12 @@ export function WorkGroup(props: {
   )
   const thoughtParts = createMemo(() => parts().filter((part) => part.type === "reasoning"))
   const showHead = createMemo(() => Boolean(summary()) && !(props.live && thoughtOnly()))
+  const expandable = createMemo(() => parts().length > 0 || (props.live && !reconnecting()))
   const open = () => (props.onToggle ? Boolean(props.open) : localOpen())
   const toggle = (event?: MouseEvent) => {
     event?.preventDefault()
     event?.stopPropagation()
-    if (!parts().length) return
+    if (!expandable()) return
     if (props.onToggle) props.onToggle()
     else setLocalOpen((value) => !value)
   }
@@ -219,7 +220,7 @@ export function WorkGroup(props: {
           class="work-status-head"
           onClick={toggle}
           aria-expanded={open()}
-          disabled={!parts().length}
+          disabled={!expandable()}
         >
           <span class="work-status" role="status" aria-live="polite" aria-atomic="true" aria-label={line().current}>
             <For each={[line().tick]}>
@@ -235,7 +236,7 @@ export function WorkGroup(props: {
               )}
             </For>
           </span>
-          <Show when={parts().length}>
+          <Show when={expandable()}>
             <Icon name="chevron-right" class="work-summary-caret" />
           </Show>
         </button>
@@ -266,12 +267,17 @@ function WorkStep(props: { part: Part; open: boolean; onToggle: () => void }) {
         aria-label={label()}
       >
         <span class="work-step-label" aria-hidden="true">
-          <span class="work-step-action">{presentation().action}</span>
-          <Show when={presentation().detail}>
-            {" "}<span class="work-step-detail">{presentation().detail}</span>
-          </Show>
-          <Show when={presentation().context}>
-            {" "}<span class="work-step-context">{presentation().context}</span>
+          <span class="work-step-text">
+            <span class="work-step-action">{presentation().action}</span>
+            <Show when={presentation().detail}>
+              {" "}<span class="work-step-detail">{presentation().detail}</span>
+            </Show>
+            <Show when={presentation().context}>
+              {" "}<span class="work-step-context">{presentation().context}</span>
+            </Show>
+          </span>
+          <Show when={body()}>
+            <Icon name="chevron-right" class="work-step-caret" />
           </Show>
         </span>
       </button>

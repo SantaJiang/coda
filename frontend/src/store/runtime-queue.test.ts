@@ -69,7 +69,7 @@ function setup(overrides: Partial<AgentClient> = {}, listed = true) {
   })
   const handle: StoreHandle = { state, setState, client: stubClient(overrides) }
   const runtime = createRuntimeSlice(handle, { skipQueueFlush: {}, sendAfterIdle: {}, flushing: {} })
-  return { state, runtime, client: handle.client }
+  return { state, setState, runtime, client: handle.client }
 }
 
 describe("runtime.flushQueue for background sessions", () => {
@@ -107,8 +107,8 @@ describe("runtime.flushQueue for background sessions", () => {
   })
 
   it("does not send while the session is still busy", async () => {
-    const { runtime, state, client } = setup({ promptAsync: vi.fn() })
-    state.status.s1 = { type: "busy" }
+    const { runtime, state, setState, client } = setup({ promptAsync: vi.fn() })
+    setState("status", "s1", { type: "busy" })
 
     await runtime.flushQueue("s1")
 

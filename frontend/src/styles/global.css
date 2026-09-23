@@ -1264,10 +1264,36 @@ button.ctx-pill:hover {
 }
 
 .work-step-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-step-text {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.work-step-caret {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 1em;
+  line-height: 1;
+  opacity: 0;
+  transform: rotate(0deg);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.work-step:hover .work-step-caret,
+.work-step.open .work-step-caret {
+  opacity: 1;
+}
+
+.work-step.open .work-step-caret {
+  transform: rotate(90deg);
 }
 
 .work-step-head:hover:not(:disabled) .work-step-action,

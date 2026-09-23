@@ -36,14 +36,9 @@ function SessionTimeline() {
   const messages = createMemo(() => runtime.messages())
 
   const items = createMemo(() => groupTurns(messages(), runtime.partsByMessage()))
-  const last = createMemo(() => items()[items().length - 1])
   const [liveKey, setLiveKey] = createSignal("")
-  const waiting = createMemo(() => {
-    const item = last()
-    return Boolean(runtime.busy() && item?.kind === "turn" && item.assistants.length === 0)
-  })
   const reconnecting = createMemo(() => projects.connection() === "disconnected")
-  const showLiveTail = createMemo(() => waiting() || (reconnecting() && !runtime.busy()))
+  const showLiveTail = createMemo(() => reconnecting() && !runtime.busy())
   const isLive = (item: TimelineItem, index: number) => liveKey() === timelineItemKey(item, index)
 
   createEffect(

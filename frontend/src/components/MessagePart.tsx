@@ -1,4 +1,4 @@
-import { For, Index, Match, Show, Switch, type JSX, createEffect, createMemo, createSignal } from "solid-js"
+import { For, Index, Match, Show, Switch, type JSX, createEffect, createMemo, createSignal, on } from "solid-js"
 import {
   changedFiles,
   formatDuration,
@@ -27,6 +27,7 @@ import { ChangedFiles } from "./ChangedFiles"
 import { Icon } from "./Icon"
 
 const HIDDEN = new Set(["step-start", "step-finish", "patch", "snapshot", "compaction"])
+const LIVE_BLOCK_KEY = "live"
 
 export type ChatTurn = {
   user?: Message
@@ -377,26 +378,39 @@ function ActivityBlocks(props: {
   live: boolean
   opened: () => Record<string, boolean>
   onToggle: (key: string) => void
+  liveOpen?: () => boolean
+  onToggleLive?: () => void
+  onSettle?: (key: string) => void
 }) {
+  const liveOpen = () => props.liveOpen?.() ?? false
   return (
     <Index each={props.getBlocks()}>
-      {(block, index) => (
-        <Show
-          when={block().kind === "work"}
-          fallback={<For each={block().parts}>{(part) => <MessagePartView part={part} />}</For>}
-        >
-          <WorkGroup
-            getParts={() => block().parts}
-            live={
-              props.live &&
-              (isWorkLive(block().parts) ||
-                (index === props.getBlocks().length - 1 && block().kind === "work"))
-            }
-            open={props.opened()[block().key] === true}
-            onToggle={() => props.onToggle(block().key)}
-          />
-        </Show>
-      )}
+      {(block, index) => {
+        const live = createMemo(
+          () =>
+            props.live &&
+            (isWorkLive(block().parts) ||
+              (index === props.getBlocks().length - 1 && block().kind === "work")),
+        )
+        createEffect(
+          on(live, (isLive, wasLive) => {
+            if (wasLive && !isLive && props.live && liveOpen()) props.onSettle?.(block().key)
+          }),
+        )
+        return (
+          <Show
+            when={block().kind === "work"}
+            fallback={<For each={block().parts}>{(part) => <MessagePartView part={part} />}</For>}
+          >
+            <WorkGroup
+              getParts={() => block().parts}
+              live={live()}
+              open={live() ? liveOpen() : props.opened()[block().key] === true}
+              onToggle={() => (live() ? props.onToggleLive?.() : props.onToggle(block().key))}
+            />
+          </Show>
+        )
+      }}
     </Index>
   )
 }
@@ -427,10 +441,19 @@ function AssistantTurn(props: {
   live: boolean
 }) {
   const [opened, setOpened] = createSignal<Record<string, boolean>>({})
+  const [liveOpen, setLiveOpen] = createSignal(false)
   const parts = createMemo(() => collectParts(props.assistants, props.partsByMessage))
   const blocks = createMemo(() => groupActivityBlocks(parts()))
+  const renderBlocks = createMemo<ActivityBlock[]>(() => {
+    const real = blocks()
+    if (real.length || !props.live) return real
+    return [{ kind: "work", key: LIVE_BLOCK_KEY, parts: [] }]
+  })
   const split = createMemo(() => splitProcessAndAnswer(blocks()))
   const hasWork = createMemo(() => split().process.some((block) => block.kind === "work"))
+  const processHasTools = createMemo(() =>
+    split().process.some((block) => block.parts.some((part) => part.type === "tool")),
+  )
   const durationMs = createMemo(() => workDurationMs(props.assistants, parts()))
   const files = createMemo(() => changedFiles(parts()))
   const modelNameOf = useModelName()
@@ -450,25 +473,32 @@ function AssistantTurn(props: {
   const toggle = (key: string) => {
     setOpened((prev) => ({ ...prev, [key]: !prev[key] }))
   }
+  const settleLive = (key: string) => {
+    setOpened((prev) => ({ ...prev, [key]: true }))
+    setLiveOpen(false)
+  }
 
   createEffect(() => {
-    if (!props.live) setOpened({})
+    if (!props.live) {
+      setOpened({})
+      setLiveOpen(false)
+    }
   })
 
   return (
     <article class="turn" data-role="assistant">
       <div class="assistant-body">
-        <Show when={props.live && blocks().length === 0}>
-          <WorkGroup parts={[]} live />
-        </Show>
         <Show
-          when={!props.live && hasWork()}
+          when={!props.live && hasWork() && processHasTools()}
           fallback={
             <ActivityBlocks
-              getBlocks={() => blocks()}
+              getBlocks={() => renderBlocks()}
               live={props.live}
               opened={opened}
               onToggle={toggle}
+              liveOpen={liveOpen}
+              onToggleLive={() => setLiveOpen((value) => !value)}
+              onSettle={settleLive}
             />
           }
         >
@@ -579,7 +609,7 @@ export function ChatTurnView(props: {
       <Show when={props.turn.user}>
         {(user) => <UserBubble message={user()} parts={props.partsByMessage[user().id] ?? []} />}
       </Show>
-      <Show when={props.turn.assistants.length > 0}>
+      <Show when={props.turn.assistants.length > 0 || props.live}>
         <AssistantTurn
           assistants={props.turn.assistants}
           partsByMessage={props.partsByMessage}
