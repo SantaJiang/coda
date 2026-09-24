@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# 推送父仓库前，若本次推送包含 backend gitlink，则自动同步到 coda-backend。
+# 启用：git config core.hooksPath scripts/githooks
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SYNC="$ROOT/scripts/sync-backend-mirror.sh"
+REMOTE_NAME="${1:-}"
+
+if [[ ! -x "$SYNC" && -f "$SYNC" ]]; then
+  chmod +x "$SYNC"
+fi
+if [[ ! -f "$SYNC" ]]; then
+  echo "缺少 ${SYNC}" >&2
+  exit 1
+fi
+
+# stdin: <local_ref> <local_sha> <remote_ref> <remote_sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # 删除远端分支时跳过
+  if [[ "$local_sha" =~ ^0+$ ]]; then
+    continue
+  fi
+
+  if ! backend_sha="$(git -C "$ROOT" rev-parse "${local_sha}:backend" 2>/dev/null)"; then
+    continue
+  fi
+
+  # 远端已有同一 gitlink 则不必推镜像
+  if [[ ! "$remote_sha" =~ ^0+$ ]] \
+    && old_sha="$(git -C "$ROOT" rev-parse "${remote_sha}:backend" 2>/dev/null || true)" \
+    && [[ -n "$old_sha" && "$old_sha" == "${backend_sha}" ]]; then
+    continue
+  fi
+
+  echo "==> pre-push: backend gitlink ${backend_sha}（via ${local_ref} -> ${REMOTE_NAME:-remote} ${remote_ref}）"
+  bash "$SYNC" "${backend_sha}"
+done
+
+exit 0

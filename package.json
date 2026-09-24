@@ -8,6 +8,9 @@
     "dev:web": "bash ./run.sh --web",
     "test": "bun run --cwd frontend test",
     "pack": "bash ./scripts/pack.sh",
-    "clean": "bash ./scripts/clean.sh"
+    "clean": "bash ./scripts/clean.sh",
+    "sync:backend-mirror": "bash ./scripts/sync-backend-mirror.sh",
+    "install:hooks": "bash ./scripts/install-hooks.sh",
+    "prepare": "bash ./scripts/install-hooks.sh"
   }
 }

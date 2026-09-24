@@ -71,8 +71,15 @@ jobs:
 
       - name: Checkout backend submodule
         run: |
+          set -euo pipefail
           git submodule sync --recursive
-          git submodule update --init --recursive --force
+          if ! git submodule update --init --recursive --force; then
+            sha="$(git rev-parse HEAD:backend)"
+            echo "::error::backend gitlink $sha 在 SantaJiang/coda-backend 上不存在或不可达。"
+            echo "本地在推父仓库前请运行: bash ./scripts/sync-backend-mirror.sh"
+            echo "或安装 hook: bash ./scripts/install-hooks.sh （推送时自动同步）"
+            exit 128
+          fi
 
       - name: Add Git Bash to PATH
         if: runner.os == 'Windows'

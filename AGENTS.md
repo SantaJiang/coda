@@ -69,13 +69,21 @@ git -C backend apply ../patches/backend/<name>.patch
 
 以后对 `backend/` 的任何行为性修改（非第 1 条的关键字替换），都要同样落成 `patches/backend/` 下的补丁并登记到这张表里。
 
-GitHub Actions 不能去上游拉本地独有的子模块提交。`.gitmodules` 指向公开镜像 [SantaJiang/coda-backend](https://github.com/SantaJiang/coda-backend) 的 `coda` 分支。改完后端、准备让 CI 用这份代码时，把当前 `backend` HEAD 推上去：
+GitHub Actions 不能去上游拉本地独有的子模块提交。`.gitmodules` 指向公开镜像 [SantaJiang/coda-backend](https://github.com/SantaJiang/coda-backend) 的 `coda` 分支，父仓库的 gitlink SHA 必须已经出现在该镜像上，Actions 才能 checkout。
+
+**自动化（推荐）**：克隆后装一次 hook，之后推送父仓库时若 `backend` gitlink 有变，会自动把对应 SHA 推到镜像的 `coda` 分支（rebase 分叉时用 `--force-with-lease`）：
 
 ```bash
-git -C backend push coda HEAD:coda
+bash ./scripts/install-hooks.sh
 ```
 
-本地同步上游仍用 `anomalyco/opencode`（可加 remote 名 `upstream`）。同步、打补丁、关键字替换完成后再推到 `coda-backend`，父仓库的 gitlink SHA 才能在 Actions 里 checkout 到。
+也可手动同步当前 HEAD 的 gitlink：
+
+```bash
+bash ./scripts/sync-backend-mirror.sh
+```
+
+本地同步上游仍用 `anomalyco/opencode`（可加 remote 名 `upstream`）。流程：同步 → 打补丁 / 关键字替换 → 更新父仓库 gitlink → 推父仓库（hook 会推镜像）。未装 hook 时，推 `main` 前务必先跑一遍 `sync-backend-mirror.sh`，否则 Pack 会在 submodule 步骤以 exit 128 失败。
 
 ## 5. 版本号
 
