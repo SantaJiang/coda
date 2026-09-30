@@ -362,8 +362,7 @@ export function activityStatus(parts: Part[], now = Date.now()): string {
     if (part.type === "tool") lastTool = index
   })
   if (lastReasoningIndex > lastTool) return lastReasoning?.time?.end ? "Thought" : "Thinking"
-  if (lastTool >= 0) return "Planning next moves"
-  return "Thinking"
+  return "Planning next moves"
 }
 
 function liveStepLabel(part: ToolPart, now: number) {

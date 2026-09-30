@@ -133,6 +133,7 @@ describe("activity presentation", () => {
       time: { start: 4_000, end: 5_000 },
     }
 
+    expect(activityStatus([])).toBe("Planning next moves")
     expect(activityStatus([completedTool])).toBe("Planning next moves")
     expect(activityStatus([completedTool, runningReasoning])).toBe("Thinking")
     expect(activityStatus([completedTool, completedReasoning])).toBe("Thought")

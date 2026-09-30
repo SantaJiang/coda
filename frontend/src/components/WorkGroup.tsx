@@ -28,7 +28,8 @@ function sameStatus(a: string, b: string) {
 }
 
 function prefersReducedMotion() {
-  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches
 }
 
 export function WorkGroup(props: {
@@ -70,7 +71,15 @@ export function WorkGroup(props: {
   const thoughtParts = createMemo(() => parts().filter((part) => part.type === "reasoning"))
   const showHead = createMemo(() => Boolean(summary()) && !(props.live && thoughtOnly()))
   const expandable = createMemo(() => parts().length > 0 || (props.live && !reconnecting()))
-  const statusToggle = createMemo(() => props.live && !showHead())
+  const statusLeads = createMemo(
+    () =>
+      props.live &&
+      !reconnecting() &&
+      !showHead() &&
+      thoughtOnly() &&
+      expandable() &&
+      isIdleStatus(line().current),
+  )
   const open = () => (props.onToggle ? Boolean(props.open) : localOpen())
   const toggle = (event?: MouseEvent) => {
     event?.preventDefault()
@@ -86,6 +95,7 @@ export function WorkGroup(props: {
   let shown = ""
   let tick = 0
   let pending: number | undefined
+  let pendingLabel = ""
   let flipTimer: number | undefined
 
   const commit = (next: string, animate: boolean) => {
@@ -124,20 +134,35 @@ export function WorkGroup(props: {
         return liveStatus()
       },
       (next) => {
-        window.clearTimeout(pending)
-        pending = undefined
         if (!next) {
+          window.clearTimeout(pending)
+          pending = undefined
+          pendingLabel = ""
           shown = ""
           setLine({ current: "", previous: "", flipping: false, tick })
           return
         }
-        if (sameStatus(next, shown)) return
+        if (sameStatus(next, shown)) {
+          window.clearTimeout(pending)
+          pending = undefined
+          pendingLabel = ""
+          return
+        }
         if (!shown) {
+          window.clearTimeout(pending)
+          pending = undefined
+          pendingLabel = ""
           commit(next, false)
           return
         }
+        // The clock re-runs this effect; don't restart a hold that's already waiting on this label.
+        if (pendingLabel === next) return
+        window.clearTimeout(pending)
+        pendingLabel = next
         const delay = isIdleStatus(next) ? IDLE_HOLD_MS : TOOL_HOLD_MS
         pending = window.setTimeout(() => {
+          pending = undefined
+          pendingLabel = ""
           const latest = liveStatus()
           if (!latest || sameStatus(latest, shown)) return
           commit(latest, true)
@@ -189,6 +214,9 @@ export function WorkGroup(props: {
           </span>
         </button>
       </Show>
+      <Show when={statusLeads()}>
+        <StatusLine line={line()} leads expanded={open()} onToggle={toggle} />
+      </Show>
       <Show when={open()}>
         <div class="work-steps">
           <Show
@@ -215,34 +243,45 @@ export function WorkGroup(props: {
           </Show>
         </div>
       </Show>
-      <Show when={props.live && line().current}>
-        <button
-          type="button"
-          class="work-status-head"
-          onClick={statusToggle() ? toggle : undefined}
-          aria-expanded={statusToggle() ? open() : undefined}
-          disabled={!statusToggle() || !expandable()}
-        >
-          <span class="work-status" role="status" aria-live="polite" aria-atomic="true" aria-label={line().current}>
-            <For each={[line().tick]}>
-              {() => (
-                <span class="work-status-flip" classList={{ flipping: line().flipping }}>
-                  <Show when={line().previous}>
-                    <span class="work-status-line out">{line().previous}</span>
-                  </Show>
-                  <span class="work-status-line in">
-                    <span class="work-status-wave">{line().current}</span>
-                  </span>
-                </span>
-              )}
-            </For>
-          </span>
-          <Show when={statusToggle() && expandable()}>
-            <Icon name="chevron-right" class="work-summary-caret" />
-          </Show>
-        </button>
+      <Show when={!statusLeads() && props.live && line().current}>
+        <StatusLine line={line()} />
       </Show>
     </div>
+  )
+}
+
+function StatusLine(props: {
+  line: { current: string; previous: string; flipping: boolean; tick: number }
+  leads?: boolean
+  expanded?: boolean
+  onToggle?: (event?: MouseEvent) => void
+}) {
+  return (
+    <button
+      type="button"
+      class="work-status-head"
+      onClick={props.leads ? props.onToggle : undefined}
+      aria-expanded={props.leads ? props.expanded : undefined}
+      disabled={!props.leads}
+    >
+      <span class="work-status" role="status" aria-live="polite" aria-atomic="true" aria-label={props.line.current}>
+        <For each={[props.line.tick]}>
+          {() => (
+            <span class="work-status-flip" classList={{ flipping: props.line.flipping }}>
+              <Show when={props.line.previous}>
+                <span class="work-status-line out">{props.line.previous}</span>
+              </Show>
+              <span class="work-status-line in">
+                <span class="work-status-wave">{props.line.current}</span>
+              </span>
+            </span>
+          )}
+        </For>
+      </span>
+      <Show when={props.leads}>
+        <Icon name="chevron-right" class="work-summary-caret" />
+      </Show>
+    </button>
   )
 }
 

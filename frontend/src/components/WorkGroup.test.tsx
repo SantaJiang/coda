@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { createSignal, type JSX } from "solid-js"
 import { render } from "solid-js/web"
 import { StoreProviders } from "../store/ctx"
@@ -34,6 +34,7 @@ function mount(ui: () => JSX.Element, connection: Connection = "connected") {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   while (cleanups.length) cleanups.pop()?.()
 })
 
@@ -77,8 +78,13 @@ const text = (value: string): TextPart => ({
   text: value,
 })
 
+function childOrder(container: HTMLElement) {
+  const group = container.querySelector(".work-group")
+  return [...(group?.children ?? [])].map((el) => el.className)
+}
+
 describe("live thought expansion", () => {
-  it("keeps the Thinking head clickable before any reasoning text arrives and streams into the open panel", () => {
+  it("keeps Planning next moves inert until reasoning arrives, then expands the thought below that row", async () => {
     const [map, setMap] = createSignal<Record<string, Part[]>>({})
     const container = mount(() => (
       <ChatTurnView turn={{ assistants: [assistant()] }} partsByMessage={map()} live />
@@ -86,21 +92,42 @@ describe("live thought expansion", () => {
 
     const statusHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
     expect(statusHead).toBeTruthy()
-    expect(statusHead?.disabled).toBe(false)
-    expect(statusHead?.textContent).toContain("Thinking")
-    expect(statusHead?.querySelector(".work-summary-caret")).toBeTruthy()
-
-    const group = container.querySelector(".work-group")
+    expect(statusHead?.disabled).toBe(true)
+    expect(statusHead?.textContent).toContain("Planning next moves")
+    expect(statusHead?.querySelector(".work-summary-caret")).toBeFalsy()
     statusHead?.click()
-    expect(container.querySelector(".work-steps")).toBeTruthy()
+    expect(container.querySelector(".work-steps")).toBeFalsy()
 
     setMap({ msg_1: [reasoning("step one")] })
+    await new Promise((resolve) => setTimeout(resolve, 750))
+    const thoughtHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
+    expect(thoughtHead?.disabled).toBe(false)
+    expect(thoughtHead?.textContent).toContain("Thinking")
+    expect(thoughtHead?.querySelector(".work-summary-caret")).toBeTruthy()
+    const group = container.querySelector(".work-group")
+    thoughtHead?.click()
     expect(container.querySelector(".work-group")).toBe(group)
-    expect(container.querySelector(".work-steps")).toBeTruthy()
+    const order = childOrder(container)
+    expect(order.indexOf("work-status-head")).toBeGreaterThanOrEqual(0)
+    expect(order.indexOf("work-steps")).toBeGreaterThan(order.indexOf("work-status-head"))
     expect(container.querySelector(".reasoning-inline")?.textContent).toContain("step one")
 
     setMap({ msg_1: [reasoning("step one, then two")] })
     expect(container.querySelector(".reasoning-inline")?.textContent).toContain("step one, then two")
+  })
+
+  it("expands a lone finished Thought below the Thought row", () => {
+    const container = mount(() => <WorkGroup parts={[reasoning("considered the options", 3_000)]} live />)
+    const head = container.querySelector(".work-status-head") as HTMLButtonElement | null
+    expect(container.querySelector(".work-head")).toBeFalsy()
+    expect(head?.textContent).toContain("Thought")
+    expect(head?.disabled).toBe(false)
+    expect(head?.querySelector(".work-summary-caret")).toBeTruthy()
+    head?.click()
+    const order = childOrder(container)
+    expect(order.indexOf("work-status-head")).toBe(0)
+    expect(order.indexOf("work-steps")).toBe(1)
+    expect(container.querySelector(".reasoning-inline")?.textContent).toContain("considered the options")
   })
 
   it("keeps the panel open when the answer starts streaming and collapses only when the turn ends", () => {
@@ -112,6 +139,8 @@ describe("live thought expansion", () => {
 
     const statusHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
     statusHead?.click()
+    const order = childOrder(container)
+    expect(order.indexOf("work-steps")).toBeGreaterThan(order.indexOf("work-status-head"))
     expect(container.querySelector(".reasoning-inline")?.textContent).toContain("step one")
 
     setMap({ msg_1: [reasoning("step one", 3_000), text("Here is the answer.")] })
@@ -147,16 +176,21 @@ describe("live thought expansion", () => {
     expect(container.querySelector(".work-steps")).toBeFalsy()
 
     head?.click()
+    const order = childOrder(container)
+    expect(order.indexOf("work-steps")).toBeGreaterThanOrEqual(0)
+    expect(order.indexOf("work-status-head")).toBeGreaterThan(order.indexOf("work-steps"))
     expect(container.querySelector(".work-steps")).toBeTruthy()
   })
 
-  it("mounts the live head for a turn without assistant messages yet", () => {
+  it("mounts an inert Planning next moves line before any assistant message exists", () => {
     const container = mount(() => <ChatTurnView turn={{ assistants: [] }} partsByMessage={{}} live />)
     const statusHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
     expect(statusHead).toBeTruthy()
-    expect(statusHead?.disabled).toBe(false)
+    expect(statusHead?.textContent).toContain("Planning next moves")
+    expect(statusHead?.disabled).toBe(true)
+    expect(statusHead?.querySelector(".work-summary-caret")).toBeFalsy()
     statusHead?.click()
-    expect(container.querySelector(".work-group")?.classList.contains("open")).toBe(true)
+    expect(container.querySelector(".work-group")?.classList.contains("open")).toBe(false)
   })
 
   it("keeps the reconnecting placeholder inert", () => {
@@ -183,6 +217,9 @@ describe("settled thought rows", () => {
     expect(head?.textContent).toContain("Thought")
     expect(head?.querySelector(".work-summary-caret")).toBeTruthy()
     head?.click()
+    const order = childOrder(container)
+    expect(order.indexOf("work-head")).toBe(0)
+    expect(order.indexOf("work-steps")).toBe(1)
     expect(container.querySelector(".reasoning-inline")?.textContent).toContain("considered the options")
   })
 
