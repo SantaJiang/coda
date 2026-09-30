@@ -2087,6 +2087,13 @@ button.ctx-pill:hover {
   transform: translateX(18px);
 }
 
+.settings-version {
+  margin-top: 18px;
+  color: var(--text-faint);
+  font-size: 11px;
+  text-align: center;
+}
+
 .model-list {
   margin-bottom: 16px;
 }

@@ -1,4 +1,5 @@
-import { For, Show } from "solid-js"
+import { createSignal, For, onMount, Show } from "solid-js"
+import { version as bundledVersion } from "../../package.json"
 import { modifierLabel, type SendShortcut } from "../lib/settings"
 import { useChrome } from "../store/app"
 import { useTheme } from "../store/theme"
@@ -20,6 +21,16 @@ const CHOICES: Array<{ id: SendShortcut; name: () => string; hint: () => string 
 export function Settings() {
   const chrome = useChrome()
   const theme = useTheme()
+  const [version, setVersion] = createSignal(bundledVersion)
+
+  onMount(() => {
+    void (async () => {
+      try {
+        const { getVersion } = await import("@tauri-apps/api/app")
+        setVersion(await getVersion())
+      } catch {}
+    })()
+  })
 
   const onOverlay = (event: MouseEvent) => {
     if (event.target === event.currentTarget) chrome.closeSettings()
@@ -92,6 +103,8 @@ export function Settings() {
               <span class="settings-switch" aria-hidden="true" />
             </button>
           </section>
+
+          <div class="settings-version">版本 {version()}</div>
         </div>
       </div>
     </Show>
