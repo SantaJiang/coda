@@ -165,6 +165,52 @@ describe("applyClientEvent", () => {
     expect(state.error).toBeNull()
   })
 
+  it("clears a session error once a later assistant turn completes", () => {
+    const state = draft({
+      sessionErrors: { s1: true },
+      sessionErrorText: { s1: "旧错误" },
+      messages: {
+        s1: [
+          {
+            id: "a1",
+            sessionID: "s1",
+            role: "assistant",
+            time: { created: 1 },
+            error: { name: "APIError", data: { message: "provider down" } },
+          },
+        ],
+      },
+    })
+    applyClientEvent(state, {
+      event: {
+        type: "message.updated",
+        properties: {
+          sessionID: "s1",
+          info: { id: "a2", sessionID: "s1", role: "assistant", time: { created: 2, completed: 3 } },
+        },
+      },
+    })
+    expect(state.sessionErrors.s1).toBeUndefined()
+    expect(state.sessionErrorText.s1).toBeUndefined()
+  })
+
+  it("keeps the longer streamed text when a part snapshot is behind", () => {
+    const state = draft({
+      parts: {
+        m1: [{ id: "p1", sessionID: "s1", messageID: "m1", type: "text", text: "hello world" }],
+      },
+    })
+    applyClientEvent(state, {
+      event: {
+        type: "message.part.updated",
+        properties: {
+          part: { id: "p1", sessionID: "s1", messageID: "m1", type: "text", text: "hello" },
+        },
+      },
+    })
+    expect(state.parts.m1[0]).toMatchObject({ text: "hello world" })
+  })
+
   it("flags a session on a real assistant failure", () => {
     const state = draft({ selectedSessionId: "other", error: null })
     applyClientEvent(state, {

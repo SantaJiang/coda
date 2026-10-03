@@ -17,6 +17,12 @@ describe("renderMarkdown autolinks", () => {
     expect(html).toContain('<a href="https://example.com/docs"')
   })
 
+  it("keeps literal entities inside code", () => {
+    const html = renderMarkdown("用 `&amp;` 和 `&lt;`")
+    expect(html).toContain("&amp;amp;")
+    expect(html).toContain("&amp;lt;")
+  })
+
   it("keeps explicit markdown links", () => {
     const html = renderMarkdown("[文档](https://example.com)")
     expect(html).toContain('<a href="https://example.com"')

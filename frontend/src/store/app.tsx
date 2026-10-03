@@ -10,7 +10,7 @@ import {
   resolveSelectedKey,
   toBackendPatch,
 } from "../lib/models"
-import { onSharedChange, type SharedSettings } from "../lib/shared"
+import { flushShared, onSharedChange, type SharedSettings } from "../lib/shared"
 import { newestDraft } from "../lib/draft-session"
 import {
   createLocalProject,
@@ -33,6 +33,7 @@ import { StoreProviders } from "./ctx"
 import { flushPendingDraftPersist, persistDraftSessions, rekeyDraftSessions } from "./draft-session-state"
 import { reportError, type StoreHandle } from "./handle"
 import { persistSelection, createModelSlice } from "./model-slice"
+import { pushPermissionMode } from "./permission-sync"
 import type { AppPorts } from "./ports"
 import { createProjectSlice } from "./project-slice"
 import { createRuntimeSlice } from "./runtime-slice"
@@ -68,6 +69,30 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     if (project) await projects.refreshProjectSessions(project).catch(() => undefined)
     const session = projects.selectedSession()
     if (session) await projects.resyncSession(session).catch(() => undefined)
+    if (project && !project.missing) {
+      const statuses = await client.listSessionStatuses(project.path).catch(() => null)
+      if (statuses) {
+        const owned = new Set((state.sessionsByProject[project.path] ?? []).map((item) => item.id))
+        setState(
+          produce((draft) => {
+            for (const [sessionID, queue] of Object.entries(draft.queuedBySession)) {
+              const directory = queue?.[0]?.directory
+              const inProject = owned.has(sessionID) || (directory ? samePath(directory, project.path) : false)
+              if (!inProject) continue
+              const live = statuses[sessionID]
+              if (live?.type === "busy" || live?.type === "retry") draft.status[sessionID] = live
+              else draft.status[sessionID] = { type: "idle" }
+            }
+          }),
+        )
+      }
+    }
+    const pending = new Set<string>([...Object.keys(state.queuedBySession), ...Object.keys(sendAfterIdle)])
+    for (const sessionID of pending) {
+      if ((state.queuedBySession[sessionID]?.length ?? 0) > 0 || sendAfterIdle[sessionID]) {
+        void runtime.flushQueue(sessionID)
+      }
+    }
   }
   const applySseConnection = (ok: boolean) => {
     setState("connection", ok ? "connected" : "disconnected")
@@ -161,6 +186,9 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
       }
       if (patch.permissionMode && patch.permissionMode !== state.permissionMode) {
         setState("permissionMode", patch.permissionMode)
+        void pushPermissionMode(handle, patch.permissionMode).catch((error) => {
+          reportError(handle, error, "更新权限失败")
+        })
       }
       if (typeof patch.keepBackendAlive === "boolean" && patch.keepBackendAlive !== state.keepBackendAlive) {
         setState("keepBackendAlive", patch.keepBackendAlive)
@@ -176,6 +204,35 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
       }
     }
     const unsubscribeShared = onSharedChange(applySharedPatch)
+
+    let closing = false
+    let unlistenClose: (() => void) | undefined
+    let closeDisposed = false
+    void (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window")
+        const win = getCurrentWindow()
+        const unlisten = await win.onCloseRequested(async (event) => {
+          if (closing) return
+          event.preventDefault()
+          closing = true
+          await Promise.race([
+            flushShared().catch(() => undefined),
+            new Promise((resolve) => window.setTimeout(resolve, 1500)),
+          ])
+          flushPendingDraftPersist()
+          await win.destroy()
+        })
+        if (closeDisposed) unlisten()
+        else unlistenClose = unlisten
+      } catch {
+        // 浏览器预览没有窗口句柄
+      }
+    })()
+    onCleanup(() => {
+      closeDisposed = true
+      unlistenClose?.()
+    })
 
     const stop = subscribe(
       (parsed) => {

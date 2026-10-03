@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  activityDiff,
   activityFailureCount,
   activityStatus,
   activitySummary,
@@ -137,6 +138,13 @@ describe("activity presentation", () => {
     expect(activityStatus([completedTool])).toBe("Planning next moves")
     expect(activityStatus([completedTool, runningReasoning])).toBe("Thinking")
     expect(activityStatus([completedTool, completedReasoning])).toBe("Thought")
+  })
+
+  it("does not count a trailing newline as an extra written line", () => {
+    expect(activityDiff([tool("w1", "write", { filePath: "/repo/a.ts", content: "hello\n" })])).toEqual({
+      added: 1,
+      removed: 0,
+    })
   })
 
   it("keeps completed to-do checks in step history without adding a summary category", () => {

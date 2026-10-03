@@ -53,6 +53,7 @@ export type RuntimeSlice = RuntimeApi & {
 
 export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): RuntimeSlice {
   const { state, setState, client } = handle
+  const replying = new Set<string>()
 
   const selectedProject = () => selectedProjectOf(state)
   const selectedSession = () => selectedSessionOf(state)
@@ -132,16 +133,21 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     },
   ) => {
     await applySessionPermission(handle, project.path, session.id)
-    await client.promptAsync(project.path, session.id, {
-      text: payload.text,
-      model: payload.model,
-      agent: payload.agent,
-      variant: payload.variant ?? undefined,
-      files: payload.files,
-    })
     setState("status", session.id, { type: "busy" })
     setState("sessionErrors", session.id, false)
     setState("sessionErrorText", session.id, "")
+    try {
+      await client.promptAsync(project.path, session.id, {
+        text: payload.text,
+        model: payload.model,
+        agent: payload.agent,
+        variant: payload.variant ?? undefined,
+        files: payload.files,
+      })
+    } catch (error) {
+      if (state.status[session.id]?.type === "busy") setState("status", session.id, { type: "idle" })
+      throw error
+    }
   }
 
   const ensureProjectDirectory = (project: Project): Project | null => {
@@ -184,34 +190,38 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     }
   }
 
-  const flushQueue = async (sessionID: string) => {
-    await withSessionLock(refs.flushing, sessionID, async () => {
-      if (
-        !shouldFlushQueue({
-          sending: Boolean(state.sendingBySession[sessionID]),
-          status: state.status[sessionID],
-          permissions: state.permissions,
-          questions: state.questions,
-          sessionID,
-        })
-      ) {
-        return
-      }
-
-      const taken = takeDeferredSend(refs.sendAfterIdle, refs.skipQueueFlush, sessionID)
-      if (taken.kind === "skip") return
-      if (taken.kind === "deferred") {
-        const ok = await dispatchQueued(sessionID, taken.item)
-        if (!ok) setState("queuedBySession", sessionID, [taken.item, ...queuedFor(sessionID)])
-        return
-      }
-
-      const [next, ...rest] = queuedFor(sessionID)
-      if (!next) return
-      setState("queuedBySession", sessionID, rest)
-      const ok = await dispatchQueued(sessionID, next)
-      if (!ok) setState("queuedBySession", sessionID, [next, ...queuedFor(sessionID)])
+  const canFlush = (sessionID: string) =>
+    shouldFlushQueue({
+      sending: Boolean(state.sendingBySession[sessionID]),
+      status: state.status[sessionID],
+      permissions: state.permissions,
+      questions: state.questions,
+      sessionID,
     })
+
+  const drainOne = async (sessionID: string) => {
+    if (!canFlush(sessionID)) return false
+    const taken = takeDeferredSend(refs.sendAfterIdle, refs.skipQueueFlush, sessionID)
+    if (taken.kind === "skip") return false
+    if (taken.kind === "deferred") {
+      const ok = await dispatchQueued(sessionID, taken.item)
+      if (!ok) setState("queuedBySession", sessionID, [taken.item, ...queuedFor(sessionID)])
+      return ok && canFlush(sessionID) && (queuedFor(sessionID).length > 0 || Boolean(refs.sendAfterIdle[sessionID]))
+    }
+    const [next, ...rest] = queuedFor(sessionID)
+    if (!next) return false
+    setState("queuedBySession", sessionID, rest)
+    const ok = await dispatchQueued(sessionID, next)
+    if (!ok) setState("queuedBySession", sessionID, [next, ...queuedFor(sessionID)])
+    return ok && canFlush(sessionID) && (queuedFor(sessionID).length > 0 || Boolean(refs.sendAfterIdle[sessionID]))
+  }
+
+  const flushQueue = async (sessionID: string) => {
+    let again = false
+    await withSessionLock(refs.flushing, sessionID, async () => {
+      again = await drainOne(sessionID)
+    })
+    if (again) await flushQueue(sessionID)
   }
 
   return {
@@ -225,11 +235,13 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const content = (text ?? composer()).trim()
       const project = selectedProject()
       const files = attachments()
+      const originSessionId = state.selectedSessionId
       const originKey = activeDraftKey()
-      const clearSentDraft = () => {
+      const clearSentDraft = (sentSessionId?: string) => {
         setState("drafts", originKey, emptySessionDraft())
-        const current = activeDraftKey()
-        if (current !== originKey) setState("drafts", current, emptySessionDraft())
+        if (!sentSessionId) return
+        const sentKey = `session:${sentSessionId}`
+        if (sentKey !== originKey) setState("drafts", sentKey, emptySessionDraft())
       }
       if (!project) {
         setState("error", "无法确定工作目录")
@@ -288,7 +300,9 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
           }
           setState("sessionsByProject", usable.path, (list = []) => upsertById(list, session!))
           setState("planModeBySession", session.id, plan)
-          setState({ selectedSessionId: session.id, draft: false, draftPlanMode: false })
+          if (state.selectedSessionId === originSessionId) {
+            setState({ selectedSessionId: session.id, draft: false, draftPlanMode: false })
+          }
           persistDraftSessions(handle, true)
           setSending(key, false)
           key = sendingKey(session.id, project.id)
@@ -301,11 +315,12 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
           agent: currentAgent(),
           variant: state.selectedVariant,
         })
-        clearSentDraft()
+        clearSentDraft(session.id)
       } catch (error) {
         reportError(handle, error, "发送失败", usable.path)
       } finally {
         setSending(key, false)
+        if (!key.startsWith("__draft:")) void flushQueue(key)
       }
     },
     abort: async () => {
@@ -367,18 +382,22 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
         if (!sent) setState("queuedBySession", session.id, [item, ...queuedFor(session.id)])
         return
       }
+      const previous = refs.sendAfterIdle[session.id]
+      const without = list.filter((entry) => entry.id !== id)
       setState(
         "queuedBySession",
         session.id,
-        list.filter((entry) => entry.id !== id),
+        previous && previous.id !== id ? [previous, ...without.filter((entry) => entry.id !== previous.id)] : without,
       )
       refs.skipQueueFlush[session.id] = false
       refs.sendAfterIdle[session.id] = item
       try {
         await client.abortSession(project.path, session.id)
       } catch (error) {
-        delete refs.sendAfterIdle[session.id]
-        setState("queuedBySession", session.id, [item, ...queuedFor(session.id)])
+        if (refs.sendAfterIdle[session.id]?.id === item.id) {
+          delete refs.sendAfterIdle[session.id]
+          setState("queuedBySession", session.id, [item, ...queuedFor(session.id).filter((entry) => entry.id !== item.id)])
+        }
         reportError(handle, error, "停止失败")
       }
     },
@@ -415,9 +434,12 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       )
     },
     replyPermission: async (id, reply) => {
+      const lock = `perm:${id}`
+      if (replying.has(lock)) return
       const permission = state.permissions[id]
       const project = selectedProject()
       if (!permission || !project) return
+      replying.add(lock)
       try {
         await client.replyPermission(project.path, id, reply)
         setState(
@@ -427,12 +449,17 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
         )
       } catch (error) {
         reportError(handle, error, "回复权限失败")
+      } finally {
+        replying.delete(lock)
       }
     },
     replyQuestion: async (id, answers) => {
+      const lock = `question:${id}`
+      if (replying.has(lock)) return
       const question = state.questions[id]
       const project = selectedProject()
       if (!question || !project) return
+      replying.add(lock)
       try {
         await client.replyQuestion(project.path, id, answers)
         setState(
@@ -442,12 +469,17 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
         )
       } catch (error) {
         reportError(handle, error, "提交回答失败")
+      } finally {
+        replying.delete(lock)
       }
     },
     rejectQuestion: async (id) => {
+      const lock = `question:${id}`
+      if (replying.has(lock)) return
       const question = state.questions[id]
       const project = selectedProject()
       if (!question || !project) return
+      replying.add(lock)
       try {
         await client.rejectQuestion(project.path, id)
         setState(
@@ -457,6 +489,8 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
         )
       } catch (error) {
         reportError(handle, error, "跳过问题失败")
+      } finally {
+        replying.delete(lock)
       }
     },
     addFiles: async () => {

@@ -98,6 +98,14 @@ export function typeLabel(name: string, kind: "file" | "directory", mime?: strin
 
 export function toFileUrl(path: string) {
   const normalized = path.replace(/\\/g, "/")
+  if (normalized.startsWith("//")) {
+    const encoded = normalized
+      .slice(2)
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/")
+    return `file://${encoded}`
+  }
   const abs = /^[A-Za-z]:/.test(normalized)
     ? `/${normalized}`
     : normalized.startsWith("/")

@@ -8,10 +8,17 @@ const CUSTOM = "__coda_custom__"
 
 const RECOMMENDED_PATTERN = /\(recommended\)\s*$/i
 
-function recommendedOption(question?: QuestionInfo) {
+export function isRecommendedLabel(label: string) {
+  if (RECOMMENDED_PATTERN.test(label)) return true
+  const compact = label.replace(/\s/g, "")
+  if (compact.includes("不推荐")) return false
+  return compact.endsWith("推荐") || compact.includes("(推荐)") || compact.includes("（推荐）")
+}
+
+export function recommendedOption(question?: QuestionInfo) {
   const options = question?.options ?? []
   if (options.length === 0) return undefined
-  return options.find((option) => RECOMMENDED_PATTERN.test(option.label) || option.label.includes("推荐")) ?? options[0]
+  return options.find((option) => isRecommendedLabel(option.label)) ?? options[0]
 }
 
 export function QuestionDock() {
@@ -22,6 +29,7 @@ export function QuestionDock() {
   const [customTexts, setCustomTexts] = createSignal<string[]>([])
   const [step, setStep] = createSignal(0)
   const [countdown, setCountdown] = createSignal(AUTO_QUESTION_SECONDS)
+  const [submitting, setSubmitting] = createSignal(false)
 
   const request = () => pending()[0]
   const requestId = createMemo(() => request()?.id)
@@ -102,15 +110,15 @@ export function QuestionDock() {
       setStep(missing)
       return
     }
-    if (missing >= 0) return
+    if (missing >= 0 || submitting()) return
     clearTimer()
-    void runtime.replyQuestion(
-      id,
-      questions().map((_, questionIndex) => answersFor(questionIndex)),
-    )
-    setPicked([])
-    setCustomTexts([])
-    setStep(0)
+    setSubmitting(true)
+    void runtime
+      .replyQuestion(
+        id,
+        questions().map((_, questionIndex) => answersFor(questionIndex)),
+      )
+      .finally(() => setSubmitting(false))
   }
 
   let timer: ReturnType<typeof setInterval> | undefined
@@ -162,7 +170,7 @@ export function QuestionDock() {
   }
 
   createEffect(() => {
-    if (!auto() || !requestId()) {
+    if (!auto() || !requestId() || submitting()) {
       clearTimer()
       return
     }
@@ -239,22 +247,24 @@ export function QuestionDock() {
                         onClick={() => toggle(index(), CUSTOM, question().multiple)}
                       >
                         <span class="question-option-label">其他</span>
-                        <Show when={selected(CUSTOM)}>
-                          <input
-                            type="text"
-                            // 不用 value 绑定：回写 node.value 会打断 IME 组合并重置光标
-                            ref={(el) => {
-                              el.value = customTexts()[index()] ?? ""
-                            }}
-                            autocomplete="off"
-                            autofocus
-                            onClick={(event) => event.stopPropagation()}
-                            onFocus={() => ensureCustom(index(), question().multiple)}
-                            onInput={(event) => {
-                              setCustomText(index(), event.currentTarget.value)
-                              ensureCustom(index(), question().multiple)
-                            }}
-                          />
+                        <Show when={selected(CUSTOM) ? String(index()) : undefined} keyed>
+                          {(questionIndex) => (
+                            <input
+                              type="text"
+                              // 不用 value 绑定：回写 node.value 会打断 IME 组合并重置光标
+                              ref={(el) => {
+                                el.value = customTexts()[Number(questionIndex)] ?? ""
+                              }}
+                              autocomplete="off"
+                              autofocus
+                              onClick={(event) => event.stopPropagation()}
+                              onFocus={() => ensureCustom(Number(questionIndex), question().multiple)}
+                              onInput={(event) => {
+                                setCustomText(Number(questionIndex), event.currentTarget.value)
+                                ensureCustom(Number(questionIndex), question().multiple)
+                              }}
+                            />
+                          )}
                         </Show>
                       </div>
                     </Show>
@@ -268,14 +278,22 @@ export function QuestionDock() {
             <button
               type="button"
               class="ghost"
+              disabled={submitting()}
               onClick={() => {
+                if (submitting()) return
                 clearTimer()
-                void runtime.rejectQuestion(item().id)
+                setSubmitting(true)
+                void runtime.rejectQuestion(item().id).finally(() => setSubmitting(false))
               }}
             >
               跳过
             </button>
-            <button type="button" class="primary" disabled={!ready()} onClick={() => ready() && submit(item().id)}>
+            <button
+              type="button"
+              class="primary"
+              disabled={!ready() || submitting()}
+              onClick={() => ready() && submit(item().id)}
+            >
               提交
             </button>
           </div>

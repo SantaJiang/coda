@@ -55,4 +55,36 @@ describe("extractApiKey", () => {
   it("prefers options.apiKey over Authorization", () => {
     expect(extractApiKey({ apiKey: "sk-1", headers: { Authorization: "Bearer other" } })).toBe("sk-1")
   })
+
+  it("reads x-api-key when Authorization is absent", () => {
+    expect(extractApiKey({ headers: { "x-api-key": "sk-header" } })).toBe("sk-header")
+  })
+})
+
+describe("parseImportedProviders grouping", () => {
+  it("keeps models that share an id but use different endpoints apart", () => {
+    const imported = parseImportedProviders(
+      JSON.stringify([
+        {
+          providerID: "proxy",
+          providerName: "Proxy",
+          modelID: "a",
+          name: "A",
+          baseURL: "https://a.example/v1",
+          apiKey: "k1",
+        },
+        {
+          providerID: "proxy",
+          providerName: "Proxy",
+          modelID: "b",
+          name: "B",
+          baseURL: "https://b.example/v1",
+          apiKey: "k2",
+        },
+      ]),
+    )
+    expect(imported).toHaveLength(2)
+    expect(imported.map((item) => item.form.baseURL).sort()).toEqual(["https://a.example/v1", "https://b.example/v1"])
+    expect(new Set(imported.map((item) => item.form.providerID)).size).toBe(2)
+  })
 })

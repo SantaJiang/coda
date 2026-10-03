@@ -57,17 +57,18 @@ pub fn stop_if_needed(app: &AppHandle) {
         let _ = OWNED.lock().map(|mut slot| slot.take());
         return;
     }
-    if cfg!(debug_assertions) {
-        stop_any_on_port(&port());
-        return;
-    }
+    // 这个窗口没有拉起 sidecar 时，不要停掉其他窗口或开发服务占用的端口。
+    let mut owned = false;
     if let Ok(mut slot) = OWNED.lock() {
         if let Some(mut child) = slot.take() {
+            owned = true;
             let _ = child.kill();
             let _ = child.wait();
         }
     }
-    stop_sidecar_on_port(&port());
+    if owned && !cfg!(debug_assertions) {
+        stop_sidecar_on_port(&port());
+    }
 }
 
 fn spawn(app: &AppHandle, port: &str) -> Result<(), String> {
@@ -164,23 +165,14 @@ fn healthy(port: &str) -> bool {
         return false;
     };
     let text = String::from_utf8_lossy(&buf[..n]);
-    text.starts_with("HTTP/1.1 200") || text.starts_with("HTTP/1.0 200") || text.contains("\"healthy\"")
+    let ok = text.starts_with("HTTP/1.1 200") || text.starts_with("HTTP/1.0 200");
+    ok && (text.contains("\"healthy\":true") || text.contains("\"healthy\": true"))
 }
 
 fn stop_sidecar_on_port(port: &str) {
     let self_pid = std::process::id();
     for pid in listening_pids(port) {
         if pid == self_pid || !is_sidecar_process(pid) {
-            continue;
-        }
-        kill_pid(pid);
-    }
-}
-
-fn stop_any_on_port(port: &str) {
-    let self_pid = std::process::id();
-    for pid in listening_pids(port) {
-        if pid == self_pid {
             continue;
         }
         kill_pid(pid);

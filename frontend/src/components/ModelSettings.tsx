@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal } from "solid-js"
+import { For, Show, createEffect, createSignal, onCleanup } from "solid-js"
 import {
   MODEL_CONFIG_FILENAME,
   parseModelConfigFile,
@@ -34,8 +34,19 @@ export function ModelSettings() {
   const [fileBusy, setFileBusy] = createSignal(false)
   const [fileStatus, setFileStatus] = createSignal<string | null>(null)
   const [pendingImport, setPendingImport] = createSignal<ConfiguredModel[] | null>(null)
+  let fetchGen = 0
+  let providerNameInput: HTMLInputElement | undefined
+  let baseURLInput: HTMLInputElement | undefined
+  let apiKeyInput: HTMLInputElement | undefined
+  let composingField = false
+
+  const invalidateFetch = () => {
+    fetchGen += 1
+    setLoadingModels(false)
+  }
 
   const resetForm = () => {
+    invalidateFetch()
     setForm(emptyModelForm())
     setPresetId(CUSTOM_PRESET_ID)
     setFormError(null)
@@ -61,6 +72,7 @@ export function ModelSettings() {
   }
 
   const applyPreset = (id: string) => {
+    invalidateFetch()
     setPresetId(id)
     setRemoteModels([])
     setChecked([])
@@ -86,6 +98,7 @@ export function ModelSettings() {
   }
 
   const startEdit = (id: string) => {
+    invalidateFetch()
     const model = models.configuredModels().find((item) => item.id === id)
     if (!model) return
     const siblings = models.configuredModels().filter((item) => item.providerID === model.providerID)
@@ -110,6 +123,7 @@ export function ModelSettings() {
   }
 
   const applyImported = (imported: ImportedProvider) => {
+    invalidateFetch()
     const baseURL = normalizeProviderBaseURL(imported.form.baseURL, imported.form.providerID)
     setPresetId(importedPresetId(imported))
     setForm({ ...imported.form, baseURL })
@@ -127,6 +141,7 @@ export function ModelSettings() {
   }
 
   const fetchModels = async () => {
+    const gen = ++fetchGen
     const current = form()
     const baseURL = normalizeProviderBaseURL(current.baseURL, current.providerID || presetId())
     if (baseURL !== current.baseURL) setForm({ ...current, baseURL })
@@ -139,6 +154,7 @@ export function ModelSettings() {
     setFormError(null)
     try {
       const list = await listRemoteModels(baseURL, current.apiKey)
+      if (gen !== fetchGen) return
       const named = new Map(remoteModels().map((item) => [item.id, item.name]))
       const extra = checked().filter((id) => !list.some((item) => item.id === id))
       setRemoteModels([
@@ -150,9 +166,10 @@ export function ModelSettings() {
         ...extra.map((id) => ({ id, name: named.get(id) || id })),
       ])
     } catch (err) {
+      if (gen !== fetchGen) return
       setFormError(err instanceof Error ? err.message : "获取模型列表失败")
     } finally {
-      setLoadingModels(false)
+      if (gen === fetchGen) setLoadingModels(false)
     }
   }
 
@@ -278,14 +295,29 @@ export function ModelSettings() {
     if (event.target === event.currentTarget) models.closeModelSettings()
   }
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape") return
-    if (pendingImport()) {
-      if (!fileBusy()) setPendingImport(null)
-      return
+  createEffect(() => {
+    if (!models.modelSettingsOpen()) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (pendingImport()) {
+        if (!fileBusy()) setPendingImport(null)
+        return
+      }
+      models.closeModelSettings()
     }
-    models.closeModelSettings()
-  }
+    document.addEventListener("keydown", onKey, true)
+    onCleanup(() => document.removeEventListener("keydown", onKey, true))
+  })
+
+  createEffect(() => {
+    const current = form()
+    if (composingField) return
+    if (providerNameInput && providerNameInput.value !== current.providerName) providerNameInput.value = current.providerName
+    if (baseURLInput && baseURLInput.value !== current.baseURL) baseURLInput.value = current.baseURL
+    if (apiKeyInput && apiKeyInput.value !== current.apiKey) apiKeyInput.value = current.apiKey
+  })
 
   const keyPlaceholder = () => presetById(presetId())?.keyPlaceholder ?? "sk-..."
   const activePreset = () => presetById(presetId())
@@ -294,7 +326,7 @@ export function ModelSettings() {
   return (
     <Show when={models.modelSettingsOpen()}>
       <>
-      <div class="dialog-overlay" onMouseDown={onOverlay} onKeyDown={onKeyDown}>
+      <div class="dialog-overlay" onMouseDown={onOverlay}>
         <div
           class="dialog model-settings-dialog"
           role="dialog"
@@ -383,8 +415,19 @@ export function ModelSettings() {
               <label class="field">
                 <span>接口名称</span>
                 <input
-                  value={form().providerName}
+                  ref={(element) => {
+                    providerNameInput = element
+                    element.value = form().providerName
+                  }}
                   placeholder="例如 我的代理"
+                  onCompositionStart={() => {
+                    composingField = true
+                  }}
+                  onCompositionEnd={(event) => {
+                    composingField = false
+                    const value = event.currentTarget.value
+                    setForm((current) => ({ ...current, providerName: value, name: value }))
+                  }}
                   onInput={(event) => {
                     const value = event.currentTarget.value
                     setForm((current) => ({ ...current, providerName: value, name: value }))
@@ -398,8 +441,18 @@ export function ModelSettings() {
             <label class="field">
               <span>接口地址</span>
               <input
-                value={form().baseURL}
+                ref={(element) => {
+                  baseURLInput = element
+                  element.value = form().baseURL
+                }}
                 placeholder={addressPlaceholder()}
+                onCompositionStart={() => {
+                  composingField = true
+                }}
+                onCompositionEnd={(event) => {
+                  composingField = false
+                  update("baseURL", event.currentTarget.value)
+                }}
                 onInput={(event) => update("baseURL", event.currentTarget.value)}
               />
             </label>
@@ -407,9 +460,19 @@ export function ModelSettings() {
               <span>API Key</span>
               <input
                 type="password"
-                value={form().apiKey}
+                ref={(element) => {
+                  apiKeyInput = element
+                  element.value = form().apiKey
+                }}
                 placeholder={keyPlaceholder()}
                 autocomplete="off"
+                onCompositionStart={() => {
+                  composingField = true
+                }}
+                onCompositionEnd={(event) => {
+                  composingField = false
+                  update("apiKey", event.currentTarget.value)
+                }}
                 onInput={(event) => update("apiKey", event.currentTarget.value)}
               />
             </label>

@@ -15,7 +15,7 @@ const renderer = {
     return `<div class="md-code-block">${label}<pre class="md-code"><code class="hljs">${html}</code></pre></div>`
   },
   codespan({ text }: { text: string }) {
-    const raw = text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+    const raw = text
     const kind = inlineKind(raw)
     const attr = kind ? ` data-kind="${kind}"` : ""
     return `<code class="md-inline"${attr}>${escapeHtml(raw)}</code>`

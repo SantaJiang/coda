@@ -33,4 +33,24 @@ describe("rekeyDraftSessions", () => {
     expect(ids.filter((id) => id === "b" || id === "c")).toHaveLength(1)
     expect(ids.every((id) => (draft.draftSessionsByProject["/new"] ?? []).find((item) => item.id === id)?.directory === "/new")).toBe(true)
   })
+
+  it("keeps the selected empty draft when paths merge", () => {
+    const draft = structuredClone(initialState)
+    draft.selectedSessionId = "c"
+    draft.drafts = {
+      "session:a": { composer: "hello", attachments: [] },
+      "session:b": { composer: "", attachments: [] },
+      "session:c": { composer: "", attachments: [] },
+    }
+    draft.draftSessionsByProject = {
+      "/old": [draftSession("a", "/old", "hello"), draftSession("b", "/old", "新会话")],
+      "/new": [draftSession("c", "/new", "新会话")],
+    }
+
+    rekeyDraftSessions(draft, "/old", "/new")
+
+    const ids = (draft.draftSessionsByProject["/new"] ?? []).map((item) => item.id)
+    expect(ids).toContain("c")
+    expect(ids).not.toContain("b")
+  })
 })

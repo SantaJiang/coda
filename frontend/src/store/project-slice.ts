@@ -20,7 +20,7 @@ import {
 } from "../lib/persist"
 import { mergeMessages, mergeParts, resolveRacingSessionStatus, resolveSessionStatus } from "../lib/session-sync"
 import { deriveStatusFromMessages, hasFailingAssistant } from "../lib/session-status"
-import type { BackendProject, Message, Part, PermissionRequest, Project, QuestionRequest, Session, Todo } from "../lib/types"
+import type { BackendProject, Message, Part, Project, Session } from "../lib/types"
 import type { ProjectApi } from "./contracts"
 import {
   persistDraftSessions,
@@ -28,7 +28,7 @@ import {
   removeDraftSessions,
   startDraftSession,
 } from "./draft-session-state"
-import { purgeSession, syncSessionRequests } from "./gc"
+import { purgeSession } from "./gc"
 import {
   inferPlanMode,
   markProjectMissing,
@@ -48,6 +48,16 @@ export type ProjectSlice = ProjectApi & {
 
 const newDraftPatch = { selectedSessionId: null, draft: true, draftPlanMode: false }
 let detailGen = 0
+const sessionListGen = new Map<string, number>()
+
+type Listed<T> = { ok: true; value: T } | { ok: false }
+
+function listed<T>(promise: Promise<T>): Promise<Listed<T>> {
+  return promise.then(
+    (value) => ({ ok: true as const, value }),
+    () => ({ ok: false as const }),
+  )
+}
 
 function statusKey(status: ReturnType<typeof deriveStatusFromMessages> | undefined) {
   if (!status) return ""
@@ -125,16 +135,34 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       if (cached.length) setState("sessionsByProject", project.path, cached)
       return
     }
+    const gen = (sessionListGen.get(project.path) ?? 0) + 1
+    sessionListGen.set(project.path, gen)
+    const known = new Set((state.sessionsByProject[project.path] ?? []).map((session) => session.id))
     try {
       const sessions = await client.listSessions(
         project.path,
         isLocalProject(project) ? undefined : { scope: "project" },
       )
+      if (sessionListGen.get(project.path) !== gen) return
+      const localAfter = state.sessionsByProject[project.path] ?? []
+      const localById = new Map(localAfter.map((session) => [session.id, session]))
+      const removedDuring = new Set([...known].filter((id) => !localById.has(id)))
       const roots = filterProjectSessions(sessions ?? [], project.path)
-        .filter((session) => !session.parentID && !session.time.archived)
+        .filter((session) => !session.parentID && !session.time.archived && !removedDuring.has(session.id))
         .map((session) => ({ ...session, directory: project.path }))
-      setState("sessionsByProject", project.path, roots)
-      rememberSessions(project, roots)
+      const merged = roots.map((remote) => {
+        const local = localById.get(remote.id)
+        if (!local) return remote
+        const localUpdated = local.time?.updated ?? 0
+        const remoteUpdated = remote.time?.updated ?? 0
+        if (!known.has(remote.id) || localUpdated > remoteUpdated) return { ...remote, ...local, directory: project.path }
+        return remote
+      })
+      const rootIds = new Set(roots.map((session) => session.id))
+      const arrived = localAfter.filter((session) => !known.has(session.id) && !rootIds.has(session.id))
+      const next = [...arrived, ...merged]
+      setState("sessionsByProject", project.path, next)
+      rememberSessions(project, next)
     } catch (error) {
       const message = error instanceof Error ? error.message : "加载会话失败"
       const missing = missingDirectoryMessage(message)
@@ -164,41 +192,68 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
   async function loadSessionDetail(session: Session, opts: { merge?: boolean } = {}) {
     const gen = ++detailGen
     const directory = directoryFor(state, session)
-    const snapshotBefore = sessionSnapshotKey(state.status[session.id], state.messages[session.id] ?? [], state.parts)
+    const beforeMessages = state.messages[session.id] ?? []
+    const beforeMessageIds = new Set(beforeMessages.map((item) => item.id))
+    const beforePartIds = new Map<string, Set<string>>()
+    for (const messageID of beforeMessageIds) {
+      beforePartIds.set(messageID, new Set((state.parts[messageID] ?? []).map((part) => part.id)))
+    }
+    const beforePermissionIds = new Set(
+      Object.entries(state.permissions)
+        .filter(([, item]) => item?.sessionID === session.id)
+        .map(([id]) => id),
+    )
+    const beforeQuestionIds = new Set(
+      Object.entries(state.questions)
+        .filter(([, item]) => item?.sessionID === session.id)
+        .map(([id]) => id),
+    )
+    const snapshotBefore = sessionSnapshotKey(state.status[session.id], beforeMessages, state.parts)
     const [messages, todos, permissions, questions, statuses] = await Promise.all([
       client.listMessages(directory, session.id),
-      client.listTodos(directory, session.id).catch(() => [] as Todo[]),
-      client.listPermissions(directory).catch(() => [] as PermissionRequest[]),
-      client.listQuestions(directory).catch(() => [] as QuestionRequest[]),
-      client.listSessionStatuses(directory).catch(() => null),
+      listed(client.listTodos(directory, session.id)),
+      listed(client.listPermissions(directory)),
+      listed(client.listQuestions(directory)),
+      listed(client.listSessionStatuses(directory)),
     ])
     if (gen !== detailGen) return
 
     setState(
       produce((draft) => {
-        const infos = messages.map((item) => item.info)
         const localMessages = draft.messages[session.id] ?? []
+        const removedMessages = new Set(
+          [...beforeMessageIds].filter((id) => !localMessages.some((item) => item.id === id)),
+        )
+        const infos = messages
+          .map((item) => item.info)
+          .filter((info) => !removedMessages.has(info.id))
         const stateUnchanged =
           sessionSnapshotKey(draft.status[session.id], localMessages, draft.parts) === snapshotBefore
         const shouldMerge = Boolean(opts.merge) || !stateUnchanged
         const nextMessages = shouldMerge ? mergeMessages(localMessages, infos) : infos
         draft.messages[session.id] = nextMessages
-        if (shouldMerge) {
-          for (const item of messages) {
-            draft.parts[item.info.id] = mergeParts(draft.parts[item.info.id] ?? [], item.parts ?? [])
+        for (const item of messages) {
+          if (removedMessages.has(item.info.id)) {
+            delete draft.parts[item.info.id]
+            continue
           }
-        } else {
-          for (const item of messages) {
-            draft.parts[item.info.id] = item.parts ?? []
-          }
+          const knownParts = beforePartIds.get(item.info.id)
+          const currentParts = draft.parts[item.info.id] ?? []
+          const incomingParts = (item.parts ?? []).filter((part) => {
+            if (!knownParts?.has(part.id)) return true
+            return currentParts.some((entry) => entry.id === part.id)
+          })
+          draft.parts[item.info.id] = shouldMerge
+            ? mergeParts(currentParts, incomingParts)
+            : incomingParts
         }
-        draft.todos[session.id] = todos ?? []
+        if (todos.ok) draft.todos[session.id] = todos.value ?? []
         const fromMessages = deriveStatusFromMessages(nextMessages)
         const lastRole = nextMessages[nextMessages.length - 1]?.role
         const derived = stateUnchanged
           ? resolveSessionStatus(
               session.id,
-              statuses,
+              statuses.ok ? (statuses.value ?? null) : null,
               draft.status[session.id],
               fromMessages,
               Boolean(opts.merge),
@@ -206,13 +261,39 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
             )
           : resolveRacingSessionStatus(draft.status[session.id], fromMessages, lastRole)
         if (derived) draft.status[session.id] = derived
-        draft.sessionErrors[session.id] = hasFailingAssistant(nextMessages)
+        const failing = hasFailingAssistant(nextMessages)
+        draft.sessionErrors[session.id] = failing
+        if (
+          !failing &&
+          nextMessages.some((item) => item.role === "assistant" && Boolean(item.time.completed) && !item.error)
+        ) {
+          delete draft.sessionErrorText[session.id]
+        }
         if (draft.planModeBySession[session.id] === undefined) {
           draft.planModeBySession[session.id] = inferPlanMode(session, nextMessages)
         }
-        syncSessionRequests(draft, session.id, permissions ?? [], questions ?? [], {
-          dropMissing: !opts.merge,
-        })
+        if (permissions.ok) {
+          const removed = new Set([...beforePermissionIds].filter((id) => !draft.permissions[id]))
+          const incoming = (permissions.value ?? []).filter(
+            (item) => item.sessionID === session.id && !removed.has(item.id),
+          )
+          const incomingIds = new Set(incoming.map((item) => item.id))
+          for (const id of beforePermissionIds) {
+            if (draft.permissions[id] && !incomingIds.has(id)) delete draft.permissions[id]
+          }
+          for (const item of incoming) draft.permissions[item.id] = item
+        }
+        if (questions.ok) {
+          const removed = new Set([...beforeQuestionIds].filter((id) => !draft.questions[id]))
+          const incoming = (questions.value ?? []).filter(
+            (item) => item.sessionID === session.id && !removed.has(item.id),
+          )
+          const incomingIds = new Set(incoming.map((item) => item.id))
+          for (const id of beforeQuestionIds) {
+            if (draft.questions[id] && !incomingIds.has(id)) delete draft.questions[id]
+          }
+          for (const item of incoming) draft.questions[item.id] = item
+        }
       }),
     )
   }

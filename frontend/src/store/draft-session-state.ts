@@ -91,10 +91,18 @@ export function addDraftSession(handle: StoreHandle, project: Project, session: 
 }
 
 export function reuseOrCreateEmptyDraft(handle: StoreHandle, project: Project, copyPhantomPlan = false): Session {
-  const { state } = handle
+  const { state, setState } = handle
   const list = state.draftSessionsByProject[project.path] ?? []
   const empty = findEmptyDraft(list, state.drafts)
   if (empty) {
+    if (copyPhantomPlan && state.draftPlanMode) {
+      setState(
+        produce((draft) => {
+          draft.planModeBySession[empty.id] = true
+          draft.draftPlanMode = false
+        }),
+      )
+    }
     openDraftSession(handle, project, empty)
     return empty
   }
@@ -177,5 +185,12 @@ export function rekeyDraftSessions(draft: AppState, fromPath: string, toPath: st
   delete draft.draftSessionsByProject[fromPath]
   const empty = findEmptyDraft(merged, draft.drafts)
   if (!empty) return
-  for (const extraId of extraEmptyDraftIds(merged, draft.drafts, empty.id)) purgeSession(draft, extraId)
+  const selectedId = draft.selectedSessionId
+  const keepId =
+    selectedId &&
+    merged.some((session) => session.id === selectedId) &&
+    isEmptyDraft(draft.drafts[`session:${selectedId}`])
+      ? selectedId
+      : empty.id
+  for (const extraId of extraEmptyDraftIds(merged, draft.drafts, keepId)) purgeSession(draft, extraId)
 }

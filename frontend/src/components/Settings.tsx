@@ -1,4 +1,4 @@
-import { createSignal, For, onMount, Show } from "solid-js"
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { version as bundledVersion } from "../../package.json"
 import { modifierLabel, type SendShortcut } from "../lib/settings"
 import { useChrome } from "../store/app"
@@ -36,13 +36,21 @@ export function Settings() {
     if (event.target === event.currentTarget) chrome.closeSettings()
   }
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") chrome.closeSettings()
-  }
+  createEffect(() => {
+    if (!chrome.settingsOpen()) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing) return
+      event.preventDefault()
+      event.stopPropagation()
+      chrome.closeSettings()
+    }
+    document.addEventListener("keydown", onKey, true)
+    onCleanup(() => document.removeEventListener("keydown", onKey, true))
+  })
 
   return (
     <Show when={chrome.settingsOpen()}>
-      <div class="dialog-overlay" onMouseDown={onOverlay} onKeyDown={onKeyDown}>
+      <div class="dialog-overlay" onMouseDown={onOverlay}>
         <div class="dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
           <header class="dialog-head">
             <h2 id="settings-title">设置</h2>

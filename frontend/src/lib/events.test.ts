@@ -39,4 +39,31 @@ describe("subscribeEvents", () => {
 
     stop()
   })
+
+  it("emits a final event that arrives without a trailing blank line", async () => {
+    const events: string[] = []
+    const encoder = new TextEncoder()
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          body: {
+            getReader: () => ({
+              read: vi
+                .fn()
+                .mockResolvedValueOnce({
+                  value: encoder.encode('data: {"type":"session.idle","properties":{"sessionID":"s1"}}\n'),
+                  done: false,
+                })
+                .mockResolvedValueOnce({ value: undefined, done: true }),
+            }),
+          },
+        }),
+      ),
+    )
+    const stop = subscribeEvents((parsed) => events.push(parsed.event.type))
+    await vi.waitFor(() => expect(events).toEqual(["session.idle"]))
+    stop()
+  })
 })

@@ -8,7 +8,9 @@ export function basename(path: string) {
 }
 
 function normalizeSlashes(path: string) {
-  return path.replace(/\\/g, "/").replace(/\/+$/, "")
+  const slash = path.replace(/\\/g, "/")
+  if (slash === "/") return "/"
+  return slash.replace(/\/+$/, "")
 }
 
 function isWindowsPath(path: string) {
@@ -27,11 +29,14 @@ export function samePath(left: string, right: string) {
 }
 
 export function isWithinPath(child: string, parent: string) {
+  if (!child || !parent) return false
   if (samePath(child, parent)) return true
   const a = normalizeSlashes(child)
   const b = normalizeSlashes(parent)
-  if (isWindowsPath(a) || isWindowsPath(b)) return canonWindows(a).startsWith(`${canonWindows(b)}/`)
-  return a.startsWith(`${b}/`)
+  if (!a || !b) return false
+  const prefix = b.endsWith("/") ? b : `${b}/`
+  if (isWindowsPath(a) || isWindowsPath(b)) return canonWindows(a).startsWith(canonWindows(prefix))
+  return a.startsWith(prefix)
 }
 
 export function parentSegments(path: string, depth: number) {

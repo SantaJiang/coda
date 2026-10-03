@@ -81,7 +81,8 @@ unsafe fn layout(ns_window_ptr: *mut std::ffi::c_void) {
     titlebar_rect.origin.y = ns_window.frame().size.height - CHROME_H;
     titlebar.setFrame(titlebar_rect);
 
-    let spacing = NSView::frame(&miniaturize).origin.x - close_rect.origin.x;
+    let measured = NSView::frame(&miniaturize).origin.x - close_rect.origin.x;
+    let spacing = if measured > 1.0 { measured } else { 20.0 };
     let origin_y = (CHROME_H - close_rect.size.height - INSET_Y).max(0.0);
 
     let mut buttons = vec![close, miniaturize];

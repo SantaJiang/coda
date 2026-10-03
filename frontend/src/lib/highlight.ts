@@ -114,17 +114,8 @@ export function inlineKind(text: string) {
   return ""
 }
 
-function unescapeHtml(value: string) {
-  return value
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&")
-}
-
 export function highlightCode(code: string, language?: string) {
-  const source = unescapeHtml(code).replace(/\n$/, "")
+  const source = code.replace(/\n$/, "")
   const lang = language?.trim().split(/[\s:]+/)[0]?.toLowerCase()
   if (!source) return ""
   if (lang === "plaintext" || lang === "text" || lang === "plain") return escapeHtml(source)

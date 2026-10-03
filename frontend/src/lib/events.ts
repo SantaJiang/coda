@@ -30,6 +30,27 @@ export function unwrapEvent(raw: GlobalEvent): ParsedEvent | null {
   return null
 }
 
+function emitFrames(buffer: string, final: boolean, onEvent: (parsed: ParsedEvent) => void) {
+  const chunks = buffer.split("\n\n")
+  const rest = final ? "" : (chunks.pop() ?? "")
+  for (const chunk of chunks) {
+    const dataLine = chunk
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .join("\n")
+    if (!dataLine) continue
+    try {
+      const raw = JSON.parse(dataLine) as GlobalEvent
+      const parsed = unwrapEvent(raw)
+      if (parsed?.event.type && parsed.event.type !== "server.heartbeat") onEvent(parsed)
+    } catch {
+      // ignore malformed frames
+    }
+  }
+  return rest
+}
+
 export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus?: (connected: boolean) => void) {
   const abort = new AbortController()
   let timer: number | undefined
@@ -65,28 +86,15 @@ export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus
 
         while (!abort.signal.aborted) {
           const { value, done } = await reader.read()
-          if (done) break
+          if (done) {
+            buffer += decoder.decode()
+            emitFrames(buffer, true, onEvent)
+            buffer = ""
+            break
+          }
           bumpStale()
           buffer += decoder.decode(value, { stream: true })
-          const chunks = buffer.split("\n\n")
-          buffer = chunks.pop() ?? ""
-          for (const chunk of chunks) {
-            const dataLine = chunk
-              .split("\n")
-              .filter((line) => line.startsWith("data:"))
-              .map((line) => line.slice(5).trim())
-              .join("\n")
-            if (!dataLine) continue
-            try {
-              const raw = JSON.parse(dataLine) as GlobalEvent
-              const parsed = unwrapEvent(raw)
-              if (parsed?.event.type && parsed.event.type !== "server.heartbeat") {
-                onEvent(parsed)
-              }
-            } catch {
-              // ignore malformed frames
-            }
-          }
+          buffer = emitFrames(buffer, false, onEvent)
         }
       } catch {
         if (abort.signal.aborted) return

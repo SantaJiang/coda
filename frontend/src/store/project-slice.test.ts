@@ -252,4 +252,15 @@ describe("startDraft", () => {
     const empty = list.find((item) => item.id === state.selectedSessionId)
     expect(empty?.title).toBe("新会话")
   })
+
+  it("keeps plan mode when reusing an empty draft", () => {
+    const { state, setState, projects } = setup()
+    projects.startDraft()
+    const id = state.selectedSessionId!
+    setState({ selectedSessionId: null, draftPlanMode: true })
+    projects.startDraft()
+    expect(state.selectedSessionId).toBe(id)
+    expect(state.planModeBySession[id]).toBe(true)
+    expect(state.draftPlanMode).toBe(false)
+  })
 })

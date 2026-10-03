@@ -1,5 +1,6 @@
 import { autoReplyForMode } from "../lib/permissions"
-import { formatSessionErrorMessage, isAbortError } from "../lib/session-status"
+import { formatSessionErrorMessage, hasFailingAssistant, isAbortError } from "../lib/session-status"
+import { mergeParts } from "../lib/session-sync"
 import { isLocalProject, missingDirectoryMessage, parseMissingDirectory } from "../lib/persist"
 import { samePath } from "../lib/path"
 import { upsertById } from "../lib/upsert"
@@ -113,8 +114,12 @@ const handlers: Record<string, EventHandler> = {
     const sessionID = (props.sessionID as string) ?? info?.sessionID
     if (info && sessionID) {
       draft.messages[sessionID] = upsertById(draft.messages[sessionID] ?? [], info)
-      if (info.role === "assistant" && info.error && !isAbortError(info.error)) {
-        draft.sessionErrors[sessionID] = true
+      const messages = draft.messages[sessionID] ?? []
+      if (hasFailingAssistant(messages)) draft.sessionErrors[sessionID] = true
+      else delete draft.sessionErrors[sessionID]
+      const latest = [...messages].reverse().find((item) => item.role === "assistant")
+      if (latest?.role === "assistant" && !latest.error && latest.time.completed) {
+        delete draft.sessionErrorText[sessionID]
       }
     }
   },
@@ -128,7 +133,7 @@ const handlers: Record<string, EventHandler> = {
   },
   "message.part.updated": (draft, { props }) => {
     const part = props.part as Part | undefined
-    if (part) draft.parts[part.messageID] = upsertById(draft.parts[part.messageID] ?? [], part)
+    if (part) draft.parts[part.messageID] = mergeParts(draft.parts[part.messageID] ?? [], [part])
   },
   "message.part.removed": (draft, { props }) => {
     const messageID = props.messageID as string

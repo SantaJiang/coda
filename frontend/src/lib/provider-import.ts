@@ -52,8 +52,9 @@ function headerValue(headers: unknown, name: string) {
 
 export function extractApiKey(options?: ProviderOptions) {
   if (typeof options?.apiKey === "string" && options.apiKey.trim()) return options.apiKey.trim()
-  const auth = headerValue(options?.headers, "authorization")
-  return auth.replace(/^Bearer\s+/i, "").trim()
+  const auth = headerValue(options?.headers, "authorization").replace(/^Bearer\s+/i, "").trim()
+  if (auth) return auth
+  return headerValue(options?.headers, "x-api-key").trim() || headerValue(options?.headers, "api-key").trim()
 }
 
 function modelEntries(models: unknown): ImportedModel[] {
@@ -89,7 +90,7 @@ function importedFromProvider(id: string, provider: ProviderLike): ImportedProvi
   if (!baseURL) return null
   const models = modelEntries(provider.models)
   const providerName = String(provider.name || id).trim() || id
-  const preset = presetById(id) || presetByBaseURL(baseURL)
+  const preset = presetById(id)
   return {
     form: {
       name: preset?.name || providerName,
@@ -114,7 +115,8 @@ function importedFromConfigured(models: unknown[]): ImportedProvider[] {
     const providerName = typeof item.providerName === "string" && item.providerName.trim() ? item.providerName : providerID
     const name = typeof item.name === "string" && item.name.trim() ? item.name : modelID
     const apiKey = typeof item.apiKey === "string" ? item.apiKey : ""
-    const current = groups.get(providerID) ?? {
+    const groupKey = `${providerID}\0${baseURL}`
+    const current = groups.get(groupKey) ?? {
       form: {
         ...emptyModelForm(),
         name: providerName,
@@ -127,8 +129,37 @@ function importedFromConfigured(models: unknown[]): ImportedProvider[] {
       models: [],
     }
     if (!current.form.apiKey && apiKey) current.form.apiKey = apiKey
+    else if (apiKey && current.form.apiKey && apiKey !== current.form.apiKey) {
+      const splitKey = `${groupKey}\0${apiKey}`
+      const split = groups.get(splitKey) ?? {
+        form: {
+          ...emptyModelForm(),
+          name: providerName,
+          providerID,
+          providerName,
+          modelID,
+          baseURL,
+          apiKey,
+        },
+        models: [],
+      }
+      split.models.push({ id: modelID, name })
+      groups.set(splitKey, split)
+      continue
+    }
     current.models.push({ id: modelID, name })
-    groups.set(providerID, current)
+    groups.set(groupKey, current)
+  }
+  const used = new Set<string>()
+  for (const group of groups.values()) {
+    let id = group.form.providerID
+    if (used.has(id)) {
+      let suffix = 2
+      while (used.has(`${group.form.providerID}-${suffix}`)) suffix += 1
+      id = `${group.form.providerID}-${suffix}`
+      group.form.providerID = id
+    }
+    used.add(id)
   }
   return [...groups.values()]
 }

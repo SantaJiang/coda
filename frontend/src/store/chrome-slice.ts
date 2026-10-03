@@ -4,8 +4,8 @@ import { isLocalDraft } from "../lib/draft-session"
 import { popoverPatch } from "./state"
 import type { ChromeApi } from "./contracts"
 import { persistDraftSessions } from "./draft-session-state"
-import { activePlanMode, reportError, selectedProjectOf, selectedSessionOf, type StoreHandle } from "./handle"
-import { applySessionPermission, autoReplyPending } from "./permission-sync"
+import { activePlanMode, reportError, selectedSessionOf, type StoreHandle } from "./handle"
+import { pushPermissionMode } from "./permission-sync"
 
 export function createChromeSlice(handle: StoreHandle): ChromeApi {
   const { state, setState } = handle
@@ -41,15 +41,10 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
     setPermissionMode: async (mode: PermissionMode) => {
       setState({ permissionMode: mode, permissionMenuOpen: false })
       savePermissionMode(mode)
-      const session = selectedSessionOf(state)
-      const project = selectedProjectOf(state)
-      if (session && project && !isLocalDraft(session)) {
-        try {
-          await applySessionPermission(handle, project.path, session.id, mode)
-          await autoReplyPending(handle, mode, session.id)
-        } catch (error) {
-          reportError(handle, error, "更新权限失败")
-        }
+      try {
+        await pushPermissionMode(handle, mode)
+      } catch (error) {
+        reportError(handle, error, "更新权限失败")
       }
     },
     closePlanPanel: () => setState("planPanelDismissed", true),

@@ -36,5 +36,8 @@ describe("isWithinPath", () => {
   it("normalizes Windows separators and drive case", () => {
     expect(isWithinPath("C:\\work\\app\\src", "c:/work/app")).toBe(true)
     expect(isWithinPath("C:\\work\\app2", "c:/work/app")).toBe(false)
+    expect(isWithinPath("/tmp/other", "/")).toBe(true)
+    expect(isWithinPath("/tmp/other", "")).toBe(false)
+    expect(isWithinPath("C:\\work\\app", "C:\\")).toBe(true)
   })
 })

@@ -23,7 +23,20 @@ export function mergeMessages(local: Message[], incoming: Message[]): Message[] 
   return merged
 }
 
+function proseText(part: Part) {
+  if (part.type === "text" || part.type === "reasoning") return part.text ?? ""
+  return ""
+}
+
 function preferPart(local: Part, incoming: Part): Part {
+  const bothProse =
+    (local.type === "text" || local.type === "reasoning") &&
+    (incoming.type === "text" || incoming.type === "reasoning")
+  if (bothProse && local.type !== incoming.type) {
+    const localText = proseText(local)
+    const incomingText = proseText(incoming)
+    return { ...incoming, text: localText.length > incomingText.length ? localText : incomingText }
+  }
   if (incoming.type === "reasoning" && local.type === "reasoning") {
     const localText = local.text ?? ""
     const incomingText = incoming.text ?? ""

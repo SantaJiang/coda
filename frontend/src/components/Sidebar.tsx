@@ -302,13 +302,11 @@ export function Sidebar() {
                             fallback={
                               <input
                                 ref={(element) => {
-                                  if (element) {
-                                    element.focus()
-                                    element.select()
-                                  }
+                                  element.value = editingValue()
+                                  element.focus()
+                                  element.select()
                                 }}
                                 class="tree-rename"
-                                value={editingValue()}
                                 onInput={(event) => setEditingValue(event.currentTarget.value)}
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter") {

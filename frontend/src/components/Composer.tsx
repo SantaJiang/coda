@@ -68,7 +68,7 @@ export function Composer() {
   }
 
   const stopIfBusy = () => {
-    if (!runtime.busy() || chrome.overlayOpen()) return false
+    if (!runtime.busy() || runtime.blocked() || chrome.overlayOpen()) return false
     void runtime.abort()
     return true
   }
@@ -101,7 +101,7 @@ export function Composer() {
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape" && !event.isComposing) {
-      if (runtime.busy() && !chrome.overlayOpen()) event.preventDefault()
+      if (runtime.busy() && !runtime.blocked() && !chrome.overlayOpen()) event.preventDefault()
       return
     }
     if (isNewlineHotkey(event, chrome.sendShortcut())) {

@@ -213,7 +213,7 @@ function diffFromTool(part: ToolPart): ActivityDiff & { patch?: string } {
   const name = part.tool.toLowerCase()
   if (name === "write" && part.state.status === "completed") {
     const content = String(part.state.input?.content ?? "")
-    const lines = content ? content.split("\n").length : 0
+    const lines = content ? content.replace(/\n$/, "").split("\n").length : 0
     if (lines) return { added: lines, removed: 0 }
   }
   return { added: 0, removed: 0, patch }

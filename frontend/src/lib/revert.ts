@@ -10,11 +10,20 @@ export function cutAtRevert(messages: Message[], revert?: SessionRevertState | n
   return messages.slice(0, index)
 }
 
+function safeDecode(value: string) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 function filenameOf(part: FilePart) {
   if (part.filename) return part.filename
   const url = part.url ?? ""
+  if (url.startsWith("data:")) return "附件"
   const plain = url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/[?#].*$/, "")
-  return plain ? decodeURIComponent(basename(plain)) : "附件"
+  return plain ? safeDecode(basename(plain)) : "附件"
 }
 
 export function revertDraftFromParts(parts: Part[]): { text: string; attachments: ComposerAttachment[] } {

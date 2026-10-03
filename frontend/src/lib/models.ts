@@ -360,9 +360,14 @@ export function toBackendPatch(models: ConfiguredModel[], selectedKey: string | 
     }
     provider[model.providerID] = current
   }
-  const selected = selectedKey && models.some((item) => modelKey(item.providerID, item.modelID) === selectedKey)
-    ? selectedKey
-    : modelKey(models[0].providerID, models[0].modelID)
+  const configuredHit = Boolean(
+    selectedKey && models.some((item) => modelKey(item.providerID, item.modelID) === selectedKey),
+  )
+  const selected = configuredHit
+    ? selectedKey!
+    : selectedKey?.startsWith(`${OPENCODE_PROVIDER_ID}/`)
+      ? selectedKey
+      : modelKey(models[0].providerID, models[0].modelID)
   return {
     model: selected,
     provider,

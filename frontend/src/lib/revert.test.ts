@@ -39,6 +39,20 @@ describe("revertDraftFromParts", () => {
     expect(revertDraftFromParts(parts).attachments).toEqual([])
   })
 
+  it("does not throw when an attachment url contains a bare percent", () => {
+    const parts: Part[] = [
+      {
+        id: "p1",
+        sessionID: "ses_1",
+        messageID: "msg_1",
+        type: "file",
+        mime: "text/plain",
+        url: "file:///tmp/100%.txt",
+      },
+    ]
+    expect(revertDraftFromParts(parts).attachments[0]?.filename).toBe("100%.txt")
+  })
+
   it("restores file parts as composer attachments", () => {
     const parts: Part[] = [
       { id: "p1", sessionID: "ses_1", messageID: "msg_1", type: "text", text: "看看这些文件" },

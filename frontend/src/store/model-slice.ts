@@ -53,10 +53,13 @@ export function createModelSlice(handle: StoreHandle): ModelApi {
     await client.patchGlobalConfig(patch)
   }
 
+  let discoveredGen = 0
   const refreshDiscovered = async () => {
+    const gen = ++discoveredGen
     try {
       const project = selectedProjectOf(state)
       const list = await client.listProviders(project?.missing ? undefined : project?.path)
+      if (gen !== discoveredGen) return
       const discovered = discoveredFromProviderList(list)
       setState("discoveredModels", discovered)
       setState("modelVariants", variantsByKey(list))
@@ -68,6 +71,7 @@ export function createModelSlice(handle: StoreHandle): ModelApi {
       )
       persistSelection(handle, nextKey)
     } catch {
+      if (gen !== discoveredGen || state.discoveredModels.length > 0) return
       setState("discoveredModels", [])
     }
   }

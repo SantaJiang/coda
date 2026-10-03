@@ -48,15 +48,24 @@ function SessionTimeline() {
     ),
   )
 
+  const nearBottom = () => {
+    if (!scroller) return true
+    return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+  }
   const onScroll = () => {
-    if (!scroller) return
-    stick = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+    stick = nearBottom()
   }
   const pauseAutoScroll = () => {
     stick = false
   }
   const onWheel = (event: WheelEvent) => {
-    if (event.deltaY < 0) pauseAutoScroll()
+    if (event.deltaY >= 0 || !scroller) return
+    const top = scroller.scrollTop
+    pauseAutoScroll()
+    requestAnimationFrame(() => {
+      if (!scroller) return
+      if (Math.abs(scroller.scrollTop - top) < 1 && nearBottom()) stick = true
+    })
   }
   const onPointerDown = (event: PointerEvent) => {
     const target = event.target
@@ -66,6 +75,11 @@ function SessionTimeline() {
       target.closest(".work-status-head:not(:disabled)")
     ) {
       pauseAutoScroll()
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (nearBottom()) stick = true
+        })
+      })
     }
   }
 

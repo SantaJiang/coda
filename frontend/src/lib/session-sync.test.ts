@@ -49,6 +49,20 @@ describe("mergeMessages", () => {
 })
 
 describe("mergeParts", () => {
+  it("keeps streamed text when a later snapshot changes the part type", () => {
+    const local: Part[] = [text("p1", "hello world")]
+    const incoming: Part[] = [
+      {
+        id: "p1",
+        sessionID: "s1",
+        messageID: "m1",
+        type: "reasoning",
+        text: "hello",
+      },
+    ]
+    expect(mergeParts(local, incoming)[0]).toMatchObject({ type: "reasoning", text: "hello world" })
+  })
+
   it("keeps the longer streamed text when the snapshot is behind", () => {
     const local: Part[] = [text("p1", "hello world")]
     const incoming: Part[] = [text("p1", "hello")]

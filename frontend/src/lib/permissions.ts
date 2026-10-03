@@ -120,7 +120,12 @@ export function autoReplyForMode(
   permission: string,
 ): "once" | "always" | "reject" | null {
   if (mode === "allow" || mode === "auto") return "always"
-  if (mode === "readonly") return READONLY_ALLOW.has(permission) ? "always" : "reject"
+  if (mode === "readonly") {
+    if (READONLY_ALLOW.has(permission)) return "always"
+    // 规则集里 webfetch 是 ask，自动回复不能把它直接拒绝掉。
+    if (permission === "webfetch") return null
+    return "reject"
+  }
   return null
 }
 

@@ -135,16 +135,35 @@ export function mergeForWrite(file: SharedSettings | null, current: SharedSettin
   return merged
 }
 
-async function writeSettingsFile() {
-  if (!memory) return
+let writeQueue: Promise<void> = Promise.resolve()
+
+function writeSettingsFile() {
+  const run = writeQueue.then(() => performWrite())
+  writeQueue = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
+}
+
+async function performWrite() {
+  if (!memory || dirty.size === 0) return
+  const snapshot = memory
   const keys = [...dirty]
-  if (keys.length === 0) return
-  const merged = mergeForWrite(await readSettingsFile(), memory, keys)
+  const file = await readSettingsFile()
+  if (!memory || memory !== snapshot) return performWrite()
+  const merged = mergeForWrite(file, memory, keys)
   try {
     const ok = await invokeSettings<boolean>("settings_write", { content: JSON.stringify(merged, null, 2) })
     if (ok === false) return
-    memory = merged
-    for (const key of keys) dirty.delete(key)
+    if (memory === snapshot) {
+      memory = merged
+      for (const key of keys) dirty.delete(key)
+      return
+    }
+    for (const key of keys) {
+      if (memory[key] === snapshot[key]) dirty.delete(key)
+    }
   } catch {
     // ignore when the Tauri bridge is unavailable (browser mode)
   }
