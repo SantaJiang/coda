@@ -10,4 +10,7 @@
     theme = "dark";
   }
   document.documentElement.setAttribute("data-theme", theme);
+  // Matches --bg in global.css. Keeps the first HTML paint off WebView2's white default.
+  var bg = theme === "light" ? "#ffffff" : "#1e1e20";
+  document.documentElement.style.setProperty("--boot-bg", bg);
 })();

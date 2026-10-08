@@ -1,5 +1,8 @@
 use tauri::RunEvent;
 
+#[cfg(any(windows, test))]
+use std::time::Duration;
+
 mod backend;
 mod paths;
 
@@ -113,7 +116,17 @@ pub fn run() {
             paths::migrate_legacy();
             #[cfg(target_os = "macos")]
             mac_traffic_lights::install_main(app);
-            backend::ensure_running(&app.handle());
+            // 窗口在这个 hook 之前就已经创建。Windows 上它默认可见，但 WebView2
+            // 要等事件循环继续跑才能画出页面。以前在这里同步等 sidecar，主线程被
+            // 堵住，用户会先看到一个没有内容的空窗口。后端改到后台启动；窗口保持
+            // 隐藏，等前端画完再显示（见 tauri.windows.conf.json 的 visible: false）。
+            #[cfg(windows)]
+            {
+                paint_hidden_window(app);
+                schedule_reveal_fallback(app);
+            }
+            let handle = app.handle().clone();
+            std::thread::spawn(move || backend::ensure_running(&handle));
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -123,4 +136,79 @@ pub fn run() {
                 backend::stop_if_needed(app);
             }
         });
+}
+
+/// 跟 `global.css` 里的 `--bg` 保持一致，避免 WebView2 在首帧用默认白底。
+#[cfg(any(windows, test))]
+fn startup_theme(raw: &str) -> &'static str {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return "dark";
+    };
+    match value.get("theme").and_then(|theme| theme.as_str()) {
+        Some("light") => "light",
+        _ => "dark",
+    }
+}
+
+/// 浅色 `#ffffff`，深色 `#1e1e20`。
+#[cfg(any(windows, test))]
+fn theme_background(theme: &str) -> (u8, u8, u8, u8) {
+    if theme == "light" {
+        (0xff, 0xff, 0xff, 255)
+    } else {
+        (0x1e, 0x1e, 0x20, 255)
+    }
+}
+
+// `test` 让这段只在 Windows 上运行的逻辑也能在 macOS 上编译，方便本地做类型检查。
+#[cfg(any(windows, test))]
+#[cfg_attr(not(windows), allow(dead_code))]
+fn paint_hidden_window(app: &tauri::App) {
+    use tauri::Manager;
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let raw = std::fs::read_to_string(paths::settings_path()).ok();
+    let theme = raw.as_deref().map(startup_theme).unwrap_or("dark");
+    let (red, green, blue, alpha) = theme_background(theme);
+    let _ = window.set_background_color(Some(tauri::window::Color(red, green, blue, alpha)));
+}
+
+/// 前端画完会自己 `show()`。如果脚本没跑起来，超时后再把窗口露出来，避免进程活着但看不见。
+#[cfg(any(windows, test))]
+#[cfg_attr(not(windows), allow(dead_code))]
+fn schedule_reveal_fallback(app: &tauri::App) {
+    use tauri::Manager;
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(8));
+        if window.is_visible().unwrap_or(true) {
+            return;
+        }
+        let _ = window.show();
+        let _ = window.set_shadow(true);
+        let _ = window.set_focus();
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{startup_theme, theme_background};
+
+    #[test]
+    fn reads_light_theme_and_ignores_anything_else() {
+        assert_eq!(startup_theme(r#"{"theme":"light"}"#), "light");
+        assert_eq!(startup_theme(r#"{"theme":"dark"}"#), "dark");
+        assert_eq!(startup_theme(r#"{"theme":"sepia"}"#), "dark");
+        assert_eq!(startup_theme("not json"), "dark");
+        assert_eq!(startup_theme("{}"), "dark");
+    }
+
+    #[test]
+    fn background_matches_the_shell_colors() {
+        assert_eq!(theme_background("light"), (0xff, 0xff, 0xff, 255));
+        assert_eq!(theme_background("dark"), (0x1e, 0x1e, 0x20, 255));
+    }
 }

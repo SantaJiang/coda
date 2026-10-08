@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { applyWindowChromeAttr, usesCustomWindowControls } from "./platform"
+import { applyWindowChromeAttr, isWindowsPlatform, revealMainWindow, usesCustomWindowControls } from "./platform"
 
 const originalPlatform = Object.getOwnPropertyDescriptor(navigator, "platform")
 const originalUa = Object.getOwnPropertyDescriptor(navigator, "userAgent")
@@ -27,6 +27,24 @@ describe("window chrome platform", () => {
     expect(usesCustomWindowControls()).toBe(false)
     applyWindowChromeAttr()
     expect(document.documentElement.dataset.chrome).toBe("overlay")
+  })
+
+  it("detects Windows without treating other desktops as Windows", () => {
+    stubNavigator("Win32", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+    expect(isWindowsPlatform()).toBe(true)
+    stubNavigator("MacIntel", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
+    expect(isWindowsPlatform()).toBe(false)
+    stubNavigator("Linux x86_64", "Mozilla/5.0 (X11; Linux x86_64)")
+    expect(isWindowsPlatform()).toBe(false)
+  })
+
+  it("leaves non-Windows windows alone when revealing the shell", async () => {
+    stubNavigator("MacIntel", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
+    markTauri()
+    await revealMainWindow()
+    stubNavigator("Win32", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__")
+    await revealMainWindow()
   })
 
   it("shows custom controls only inside Tauri on non-mac", () => {
