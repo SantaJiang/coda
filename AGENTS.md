@@ -83,7 +83,7 @@ bash ./scripts/install-hooks.sh
 bash ./scripts/sync-backend-mirror.sh
 ```
 
-本地同步上游仍用 `anomalyco/opencode`（可加 remote 名 `upstream`）。流程：同步 → 打补丁 / 关键字替换 → 更新父仓库 gitlink → 推父仓库（hook 会推镜像）。未装 hook 时，推 `main` 前务必先跑一遍 `sync-backend-mirror.sh`，否则 Pack 会在 submodule 步骤以 exit 128 失败。
+本地同步上游仍用 `anomalyco/opencode`（可加 remote 名 `upstream`），桌面端 sidecar 跟 **`upstream/v1`**。`upstream/dev` 已经换成 `/api/*` 协议，和当前客户端的 `/global/health`、`/session`、`prompt_async` 不兼容，不要直接同步 dev。流程：同步 → 打补丁 / 关键字替换 → 更新父仓库 gitlink → 推父仓库（hook 会推镜像）。未装 hook 时，推 `main` 前务必先跑一遍 `sync-backend-mirror.sh`，否则 Pack 会在 submodule 步骤以 exit 128 失败。
 
 ## 5. 版本号
 
