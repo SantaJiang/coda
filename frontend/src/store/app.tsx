@@ -111,6 +111,10 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
       const backendProjects = await client.listProjects().catch(() => [])
       if (backendProjects.length) await projects.restoreProjects(backendProjects)
       await models.refreshDiscovered()
+      // 打开时会话列表可能抢在 sidecar 监听之前失败。健康检查通过后再拉一次。
+      for (const project of state.projects) {
+        void projects.hydrateProjectPath(project)
+      }
     })().finally(() => {
       bootstrapping = null
     })
@@ -221,7 +225,11 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
             new Promise((resolve) => window.setTimeout(resolve, 1500)),
           ])
           flushPendingDraftPersist()
-          await win.destroy()
+          // 必须等这个回调返回，destroy 才能在运行时里执行。
+          // 在回调里 await destroy 会把关闭请求卡住，标题栏的关闭按钮就再没反应。
+          window.setTimeout(() => {
+            void win.destroy()
+          }, 0)
         })
         if (closeDisposed) unlisten()
         else unlistenClose = unlisten

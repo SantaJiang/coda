@@ -207,6 +207,45 @@ describe("project session detail synchronization", () => {
   })
 })
 
+describe("refreshProjectSessions", () => {
+  const directory = "/tmp/project"
+  const project = { id: "p1", name: "project", path: directory, expanded: true }
+
+  it("does not pin a startup connection failure on the session page", async () => {
+    const [state, setState] = createStore<AppState>({
+      ...structuredClone(initialState),
+      projects: [project],
+      selectedProjectId: "p1",
+    })
+    const projects = createProjectSlice({
+      state,
+      setState,
+      client: stubClient({ listSessions: vi.fn().mockRejectedValue(new TypeError("Load failed")) }),
+    })
+
+    await projects.refreshProjectSessions(project)
+
+    expect(state.error).toBeNull()
+  })
+
+  it("still shows a real session-list failure", async () => {
+    const [state, setState] = createStore<AppState>({
+      ...structuredClone(initialState),
+      projects: [project],
+      selectedProjectId: "p1",
+    })
+    const projects = createProjectSlice({
+      state,
+      setState,
+      client: stubClient({ listSessions: vi.fn().mockRejectedValue(new Error("directory is not a project")) }),
+    })
+
+    await projects.refreshProjectSessions(project)
+
+    expect(state.error).toBe("directory is not a project")
+  })
+})
+
 describe("startDraft", () => {
   const directory = "/tmp/project"
   const project = { id: "p1", name: "project", path: directory, expanded: true }

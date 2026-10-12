@@ -21,6 +21,17 @@ export class ApiError extends Error {
   }
 }
 
+// WKWebView 在连不上 sidecar 时抛 TypeError: Load failed，Chromium 则是 Failed to fetch。
+// 这是启动竞态，不是用户能处理的接口错误。
+const UNREACHABLE_MESSAGES = ["load failed", "failed to fetch", "networkerror", "network request failed", "network connection was lost"]
+
+export function isUnreachableError(error: unknown) {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : ""
+  const text = message.trim().toLowerCase()
+  if (!text) return false
+  return UNREACHABLE_MESSAGES.some((item) => text.includes(item))
+}
+
 const HEALTHCHECK_TIMEOUT_MS = 5_000
 
 function directoryHeaders(directory?: string): Record<string, string> {

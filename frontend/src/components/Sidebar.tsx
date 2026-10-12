@@ -165,7 +165,7 @@ export function Sidebar() {
   return (
     <aside class="sidebar">
       <ChromeDrag class="sidebar-chrome">
-        {isMacPlatform() ? <div class="sidebar-lights" data-tauri-drag-region="" /> : null}
+        {isMacPlatform() ? <div class="sidebar-lights" /> : null}
       </ChromeDrag>
       <button
         class="new-session"

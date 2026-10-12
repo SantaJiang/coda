@@ -1,4 +1,5 @@
 import { produce } from "solid-js/store"
+import { isUnreachableError } from "../lib/api"
 import { isLocalDraft, mergeSessionLists } from "../lib/draft-session"
 import {
   createProject,
@@ -164,6 +165,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       setState("sessionsByProject", project.path, next)
       rememberSessions(project, next)
     } catch (error) {
+      if (isUnreachableError(error)) return
       const message = error instanceof Error ? error.message : "加载会话失败"
       const missing = missingDirectoryMessage(message)
       if (missing) {
