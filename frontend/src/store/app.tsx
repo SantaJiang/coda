@@ -216,8 +216,10 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window")
         const win = getCurrentWindow()
-        const unlisten = await win.onCloseRequested(async (event) => {
+        let unlisten: (() => void) | undefined
+        unlisten = await win.onCloseRequested(async (event) => {
           if (closing) return
+          // 只要这个监听还在，运行时就会先拦住原生关闭，再把事件交给这里。
           event.preventDefault()
           closing = true
           await Promise.race([
@@ -225,13 +227,23 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
             new Promise((resolve) => window.setTimeout(resolve, 1500)),
           ])
           flushPendingDraftPersist()
-          // 必须等这个回调返回，destroy 才能在运行时里执行。
-          // 在回调里 await destroy 会把关闭请求卡住，标题栏的关闭按钮就再没反应。
-          window.setTimeout(() => {
-            void win.destroy()
-          }, 0)
+          // 监听还在时，后续 close 也会被拦住。窗口权限里没有 destroy。
+          // 先卸掉监听，再用已授权的 close 把窗口关掉。
+          const stop = unlisten
+          unlisten = undefined
+          unlistenClose = undefined
+          try {
+            await stop?.()
+          } catch {
+            // 卸监听失败时仍尝试关闭
+          }
+          try {
+            await win.close()
+          } catch {
+            closing = false
+          }
         })
-        if (closeDisposed) unlisten()
+        if (closeDisposed) void unlisten?.()
         else unlistenClose = unlisten
       } catch {
         // 浏览器预览没有窗口句柄
