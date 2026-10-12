@@ -110,3 +110,9 @@ describe("session status", () => {
     expect(hasFailingAssistant(messages.slice(0, 1))).toBe(true)
   })
 })
+
+it("does not reuse an earlier turn's status when a newer user message is waiting", () => {
+  const messages = [assistant("a1", { error: { data: { message: "earlier failure" } }, time: { created: 2, completed: 3 } }), user("u2")]
+  expect(hasFailingAssistant(messages)).toBe(false)
+  expect(deriveStatusFromMessages(messages)).toBeNull()
+})

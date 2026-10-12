@@ -116,3 +116,16 @@ describe("runtime.flushQueue for background sessions", () => {
     expect(state.queuedBySession.s1?.map((item) => item.id)).toEqual(["q1"])
   })
 })
+
+it("reuses the failed queued request identity on a later retry", async () => {
+  const { runtime, state, client } = setup({
+    promptAsync: vi.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValue(undefined),
+    listMessages: vi.fn().mockResolvedValue([]),
+  })
+  await runtime.flushQueue("s1")
+  const firstID = state.messages.s1[0].id
+  expect(state.queuedBySession.s1).toHaveLength(1)
+  await runtime.flushQueue("s1")
+  expect(state.messages.s1).toHaveLength(1)
+  expect(client.promptAsync).toHaveBeenLastCalledWith("/tmp/app", "s1", expect.objectContaining({ messageID: firstID }))
+})

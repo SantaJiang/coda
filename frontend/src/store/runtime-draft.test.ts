@@ -96,7 +96,7 @@ describe("runtime draft conversion", () => {
     expect(state.planModeBySession.draft_1).toBeUndefined()
   })
 
-  it("keeps composer on the backend session if prompt fails after create", async () => {
+  it("keeps the failed message and retry payload on the backend session after create", async () => {
     const created: Session = {
       id: "s1",
       directory: "/tmp/app",
@@ -147,9 +147,11 @@ describe("runtime draft conversion", () => {
     await runtime.send()
 
     expect(state.selectedSessionId).toBe("s1")
-    expect(state.drafts["session:s1"]?.composer).toBe("帮我修 bug")
+    expect(state.drafts["session:s1"]?.composer).toBe("")
+    expect(state.messages.s1[0]).toMatchObject({ role: "user", delivery: "failed", deliveryError: "boom" })
+    expect(Object.values(state.outgoing)[0]?.text).toBe("帮我修 bug")
     expect(state.draftSessionsByProject["/tmp/app"]).toEqual([])
-    expect(state.error).toContain("boom")
+    expect(state.error).toBeNull()
   })
 
   it("materializes a phantom composer into a tree draft", () => {

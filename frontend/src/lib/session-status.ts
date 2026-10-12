@@ -11,6 +11,7 @@ export function isSessionBusy(status?: SessionStatus, sending = false) {
 export function deriveStatusFromMessages(messages: Message[]): SessionStatus | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
+    if (message.role === "user") return null
     if (message.role !== "assistant") continue
     const done = Boolean(message.time.completed) || Boolean(message.error)
     return done ? { type: "idle" } : { type: "busy" }
@@ -37,6 +38,7 @@ export function isAbortError(error?: AssistantError | string | null) {
 export function hasFailingAssistant(messages: Message[]): boolean {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
+    if (message.role === "user") return false
     if (message.role !== "assistant") continue
     return Boolean(message.error) && !isAbortError(message.error)
   }

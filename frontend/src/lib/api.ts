@@ -196,15 +196,18 @@ export async function promptAsync(
     agent?: string
     variant?: string
     files?: ComposerAttachment[]
+    messageID?: string
+    partIDs?: string[]
   },
 ) {
-  const parts: Array<{ type: "text"; text: string } | { type: "file"; mime: string; filename?: string; url: string }> =
+  const parts: Array<{ id?: string; type: "text"; text: string } | { id?: string; type: "file"; mime: string; filename?: string; url: string }> =
     []
   if (options.text.trim()) {
-    parts.push({ type: "text", text: options.text })
+    parts.push({ id: options.partIDs?.[parts.length], type: "text", text: options.text })
   }
   for (const file of options.files ?? []) {
     parts.push({
+      id: options.partIDs?.[parts.length],
       type: "file",
       mime: file.mime,
       filename: file.filename,
@@ -215,6 +218,7 @@ export async function promptAsync(
   return request<void>("POST", `/session/${sessionID}/prompt_async`, {
     directory,
     body: {
+      ...(options.messageID ? { messageID: options.messageID } : {}),
       agent: options.agent ?? DEFAULT_AGENT,
       model: {
         providerID: options.model.providerID,

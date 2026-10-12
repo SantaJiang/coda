@@ -1,257 +1,171 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
-import { createSignal, type JSX } from "solid-js"
+import { afterEach, describe, expect, it } from "vitest"
+import { createMemo, createRoot, createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import { StoreProviders } from "../store/ctx"
 import type { ChromeApi, ModelApi, ProjectApi, RuntimeApi } from "../store/contracts"
-import type { AssistantMessage, Part, ReasoningPart, TextPart, ToolPart } from "../lib/types"
+import { conversationTurns, emptyTimelineView } from "../lib/conversation"
+import type { AssistantMessage, Part, SessionStatus, UserMessage } from "../lib/types"
 import { ChatTurnView } from "./MessagePart"
-import { WorkGroup } from "./WorkGroup"
-
-type Connection = "connected" | "disconnected"
 
 const cleanups: Array<() => void> = []
+const user: UserMessage = { id: "u1", sessionID: "s1", role: "user", time: { created: 1 } }
+const assistant = (done = false): AssistantMessage => ({ id: "a1", sessionID: "s1", parentID: "u1", role: "assistant", time: { created: 2, ...(done ? { completed: 8 } : {}) }, ...(done ? { finish: "stop" } : {}) })
+const part = (id: string, type: "text" | "reasoning", text: string): Part => ({ id, type, text, sessionID: "s1", messageID: "a1" })
+const tool: Part = { id: "t1", type: "tool", tool: "read", callID: "t1", sessionID: "s1", messageID: "a1", state: { status: "completed", input: { filePath: "app.ts" }, output: "contents" } }
 
-function mount(ui: () => JSX.Element, connection: Connection = "connected") {
-  const projects = { connection: () => connection } as unknown as ProjectApi
-  const models = { nameFor: () => "mock-model" } as unknown as ModelApi
-  const runtime = { pendingQuestions: () => [], busy: () => false } as unknown as RuntimeApi
-  const chrome = {} as ChromeApi
+afterEach(() => { window.getSelection()?.removeAllRanges(); while (cleanups.length) cleanups.pop()?.() })
+function setup(initial: Part[] = [], completed = false) {
+  return createRoot((disposeRoot) => {
+  const [parts, setParts] = createSignal(initial)
+  const [done, setDone] = createSignal(completed)
+  const [following, setFollowing] = createSignal(true)
+  const [status, setStatus] = createSignal<SessionStatus>(completed ? { type: "idle" } : { type: "busy" })
+  const [view, setView] = createSignal(emptyTimelineView())
+  const map = createMemo(() => ({ a1: parts(), u1: [part("user-text", "text", "问题")] }))
+  const turn = createMemo(() => conversationTurns([user, assistant(done())], map(), { status: status() })[0])
   const container = document.createElement("div")
   document.body.appendChild(container)
-  const dispose = render(
-    () => (
-      <StoreProviders projects={projects} models={models} runtime={runtime} chrome={chrome}>
-        {ui()}
-      </StoreProviders>
-    ),
-    container,
-  )
-  cleanups.push(() => {
-    dispose()
-    container.remove()
+  const runtime = { busy: () => false, timelineView: view, updateTimelineView: (patch: Partial<ReturnType<typeof view>>) => setView({ ...view(), ...patch }) } as unknown as RuntimeApi
+  const dispose = render(() => <StoreProviders projects={{} as ProjectApi} models={{ nameFor: () => "model" } as ModelApi} runtime={runtime} chrome={{} as ChromeApi}>
+    <ChatTurnView turn={turn()} partsByMessage={map()} following={following()} />
+  </StoreProviders>, container)
+  cleanups.push(() => { dispose(); disposeRoot(); container.remove() })
+  return { container, setParts, setDone, setStatus, setFollowing }
   })
-  return container
 }
 
-afterEach(() => {
-  vi.useRealTimers()
-  while (cleanups.length) cleanups.pop()?.()
-})
-
-const assistant = (patch: Partial<AssistantMessage> = {}): AssistantMessage => ({
-  id: "msg_1",
-  sessionID: "ses_1",
-  role: "assistant",
-  time: { created: 1_000 },
-  ...patch,
-})
-
-const reasoning = (text: string, end?: number): ReasoningPart => ({
-  id: "prt_r1",
-  sessionID: "ses_1",
-  messageID: "msg_1",
-  type: "reasoning",
-  text,
-  time: end ? { start: 1_000, end } : { start: 1_000 },
-})
-
-const tool = (): ToolPart => ({
-  id: "prt_t1",
-  sessionID: "ses_1",
-  messageID: "msg_1",
-  type: "tool",
-  callID: "call_1",
-  tool: "read",
-  state: {
-    status: "completed",
-    input: { path: "src/app.ts" },
-    output: "file contents",
-    time: { start: 1_000, end: 2_000 },
-  },
-})
-
-const text = (value: string): TextPart => ({
-  id: "prt_x1",
-  sessionID: "ses_1",
-  messageID: "msg_1",
-  type: "text",
-  text: value,
-})
-
-function childOrder(container: HTMLElement) {
-  const group = container.querySelector(".work-group")
-  return [...(group?.children ?? [])].map((el) => el.className)
-}
-
-describe("live thought expansion", () => {
-  it("keeps Planning next moves inert until reasoning arrives, then expands the thought below that row", async () => {
-    const [map, setMap] = createSignal<Record<string, Part[]>>({})
-    const container = mount(() => (
-      <ChatTurnView turn={{ assistants: [assistant()] }} partsByMessage={map()} live />
-    ))
-
-    const statusHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
-    expect(statusHead).toBeTruthy()
-    expect(statusHead?.disabled).toBe(true)
-    expect(statusHead?.textContent).toContain("Planning next moves")
-    expect(statusHead?.querySelector(".work-summary-caret")).toBeFalsy()
-    statusHead?.click()
-    expect(container.querySelector(".work-steps")).toBeFalsy()
-
-    setMap({ msg_1: [reasoning("step one")] })
-    await new Promise((resolve) => setTimeout(resolve, 750))
-    const thoughtHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
-    expect(thoughtHead?.disabled).toBe(false)
-    expect(thoughtHead?.textContent).toContain("Thinking")
-    expect(thoughtHead?.querySelector(".work-summary-caret")).toBeTruthy()
+describe("streaming turn presentation", () => {
+  it("has one status before content and independent thought details", () => {
+    const { container, setParts } = setup()
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("等待响应")
+    setParts([part("r1", "reasoning", "思考原文")])
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
+    expect(container.querySelector(".reasoning-inline")).toBeNull()
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    expect(container.querySelector(".reasoning-inline")?.textContent).toContain("思考原文")
+  })
+  it("preserves prose nodes and detail expansion as the answer grows", () => {
+    const { container, setParts } = setup([part("p1", "text", "先检查"), tool])
+    const prose = container.querySelector('[data-entry-key="a1:p1"]')
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    ;(container.querySelector(".work-step-head") as HTMLButtonElement).click()
+    setParts([part("p1", "text", "先检查"), tool, part("p2", "text", "结论")])
+    expect(container.querySelector('[data-entry-key="a1:p1"]')).toBe(prose)
+    expect(container.querySelector(".tool-details")?.textContent).toContain("contents")
+    expect([...container.querySelectorAll("[data-entry-key]")].map((element) => element.getAttribute("data-entry-key"))).toEqual(["a1:p1", "a1:t1", "a1:p2"])
+  })
+  it("groups only after the run ends and restores step expansion", () => {
+    const { container, setDone, setStatus } = setup([part("p1", "text", "先检查"), tool, part("p2", "text", "最终结论")])
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    ;(container.querySelector(".work-step-head") as HTMLButtonElement).click()
+    setDone(true)
+    expect(container.querySelector(".final-answer")).toBeNull()
+    setStatus({ type: "idle" })
+    expect(container.querySelector(".final-answer")?.textContent).toContain("最终结论")
+    expect(container.querySelector('[data-entry-key="a1:p1"]')).toBeNull()
+    ;(container.querySelector(".worked-for > .work-head") as HTMLButtonElement).click()
+    expect(container.querySelector('[data-entry-key="a1:p1"]')?.textContent).toContain("先检查")
+    expect(container.querySelector(".tool-details")?.textContent).toContain("contents")
+  })
+  it("defers grouping while the user reads earlier content", () => {
+    const { container, setDone, setStatus, setFollowing } = setup([tool, part("p1", "text", "最终结论")])
+    setFollowing(false)
+    setDone(true)
+    setStatus({ type: "idle" })
+    expect(container.querySelector(".final-answer")).toBeNull()
+    expect(container.querySelector('[data-block-key="work:a1:t1"]')).toBeTruthy()
+    expect(container.querySelector('.worked-for > .work-head')?.getAttribute("aria-expanded")).toBe("true")
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(0)
+    setFollowing(true)
+    expect(container.querySelector(".final-answer")?.textContent).toContain("最终结论")
+  })
+  it("does not show an empty summary for text-only history", () => {
+    const { container } = setup([part("p1", "text", "纯文字回答")], true)
+    expect(container.querySelector(".turn-status")).toBeNull()
+    expect(container.querySelector(".final-answer")?.textContent).toContain("纯文字回答")
+  })
+  it("keeps encrypted reasoning inert and tool errors visible", () => {
+    const { container, setParts } = setup([part("r1", "reasoning", "")])
+    expect((container.querySelector(".work-group > .work-head") as HTMLButtonElement).disabled).toBe(true)
+    setParts([{ ...tool, state: { status: "error", input: {}, error: "read failed" } } as Part])
+    expect(container.querySelector(".work-failure")?.textContent).toContain("1 项失败")
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    expect(container.querySelector(".step-error-preview")?.textContent).toContain("read failed")
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("正在思考")
+  })
+  it("separates activity groups with prose and expands only the selected group", () => {
+    const nextTool: Part = { ...tool, id: "t2", callID: "t2", tool: "bash", state: { status: "completed", input: { command: "bun run build" }, output: "built" } }
+    const { container } = setup([
+      part("r0", "reasoning", "先确认需求"), part("p1", "text", "先检查文件"),
+      tool, part("r1", "reasoning", "检查结果"), part("p2", "text", "然后构建"), nextTool,
+      part("p3", "text", "最终结论"),
+    ])
+    expect(container.querySelectorAll(".conversation-work-block")).toHaveLength(3)
+    expect(container.querySelectorAll(".work-step")).toHaveLength(0)
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
+    const heads = container.querySelectorAll<HTMLButtonElement>(".work-group > .work-head")
+    expect(heads[1].textContent).toContain("Explored 1 file")
+    expect(heads[2].textContent).toContain("Ran 1 command")
+    heads[1].click()
+    expect(container.querySelectorAll(".work-step")).toHaveLength(2)
+    expect(container.querySelectorAll(".work-group.open")).toHaveLength(1)
+    expect([...container.querySelectorAll(".work-step-head")].map((head) => head.textContent)).toEqual([expect.stringContaining("Read app.ts"), expect.stringContaining("Thought")])
+    expect(container.querySelector(".tool-details")).toBeNull()
+    expect(container.querySelector(".step-state")).toBeNull()
+  })
+  it("keeps the current group stable as new operations arrive, then moves status to the prose tail", () => {
+    const { container, setParts } = setup([part("p1", "text", "先检查"), tool])
     const group = container.querySelector(".work-group")
-    thoughtHead?.click()
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    setParts([part("p1", "text", "先检查"), tool, { ...tool, id: "t2", callID: "t2", state: { status: "running", input: { filePath: "other.ts" } } } as Part])
     expect(container.querySelector(".work-group")).toBe(group)
-    const order = childOrder(container)
-    expect(order.indexOf("work-status-head")).toBeGreaterThanOrEqual(0)
-    expect(order.indexOf("work-steps")).toBeGreaterThan(order.indexOf("work-status-head"))
-    expect(container.querySelector(".reasoning-inline")?.textContent).toContain("step one")
-
-    setMap({ msg_1: [reasoning("step one, then two")] })
-    expect(container.querySelector(".reasoning-inline")?.textContent).toContain("step one, then two")
+    expect(container.querySelector(".work-group.open")).toBe(group)
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
+    expect(container.querySelector('.work-group [role="status"]')).toBeTruthy()
+    setParts([part("p1", "text", "先检查"), tool, part("p2", "text", "继续处理")])
+    expect(container.querySelector(".work-group")).toBe(group)
+    expect(container.querySelector('.work-group [role="status"]')).toBeNull()
+    expect(container.querySelector('.turn-status [role="status"]')?.textContent).toContain("正在输出回复")
   })
-
-  it("expands a lone finished Thought below the Thought row", () => {
-    const container = mount(() => <WorkGroup parts={[reasoning("considered the options", 3_000)]} live />)
-    const head = container.querySelector(".work-status-head") as HTMLButtonElement | null
-    expect(container.querySelector(".work-head")).toBeFalsy()
-    expect(head?.textContent).toContain("Thought")
-    expect(head?.disabled).toBe(false)
-    expect(head?.querySelector(".work-summary-caret")).toBeTruthy()
-    head?.click()
-    const order = childOrder(container)
-    expect(order.indexOf("work-status-head")).toBe(0)
-    expect(order.indexOf("work-steps")).toBe(1)
-    expect(container.querySelector(".reasoning-inline")?.textContent).toContain("considered the options")
+  it("does not replace inspected step contents when completion is deferred, and allows manual folding", () => {
+    const { container, setDone, setStatus, setFollowing } = setup([part("p1", "text", "先检查"), tool, part("p2", "text", "最终结论")])
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    ;(container.querySelector(".work-step-head") as HTMLButtonElement).click()
+    const details = container.querySelector(".tool-details")
+    setFollowing(false)
+    setDone(true)
+    setStatus({ type: "idle" })
+    expect(container.querySelector(".tool-details")).toBe(details)
+    expect(container.querySelector('.worked-for > .work-head')?.getAttribute("aria-expanded")).toBe("true")
+    ;(container.querySelector('.worked-for > .work-head') as HTMLButtonElement).click()
+    expect(container.querySelector(".tool-details")).toBeNull()
+    expect(container.querySelector(".final-answer")?.textContent).toContain("最终结论")
+    ;(container.querySelector('.worked-for > .work-head') as HTMLButtonElement).click()
+    expect(container.querySelector(".tool-details")?.textContent).toContain("contents")
   })
-
-  it("keeps the panel open when the answer starts streaming and collapses only when the turn ends", () => {
-    const [map, setMap] = createSignal<Record<string, Part[]>>({ msg_1: [reasoning("step one")] })
-    const [live, setLive] = createSignal(true)
-    const container = mount(() => (
-      <ChatTurnView turn={{ assistants: [assistant()] }} partsByMessage={map()} live={live()} />
-    ))
-
-    const statusHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
-    statusHead?.click()
-    const order = childOrder(container)
-    expect(order.indexOf("work-steps")).toBeGreaterThan(order.indexOf("work-status-head"))
-    expect(container.querySelector(".reasoning-inline")?.textContent).toContain("step one")
-
-    setMap({ msg_1: [reasoning("step one", 3_000), text("Here is the answer.")] })
-    expect(container.querySelector(".work-steps")).toBeTruthy()
-    expect(container.querySelector(".reasoning-inline")?.textContent).toContain("step one")
-    expect(container.querySelector(".work-status-head")).toBeFalsy()
-    expect(container.querySelector(".work-head")?.textContent).toContain("Thought")
-
-    setLive(false)
-    expect(container.querySelector(".work-steps")).toBeFalsy()
-    expect(container.querySelector(".worked-for")).toBeFalsy()
-    expect(container.querySelector(".work-head")?.textContent).toContain("Thought")
-
-    const head = container.querySelector(".work-head") as HTMLButtonElement | null
-    head?.click()
-    expect(container.querySelector(".reasoning-inline")?.textContent).toContain("step one")
+  it("keeps completed thought duration separate from the next live activity", () => {
+    const thought: Part = { ...part("r1", "reasoning", "考虑完成"), time: { start: 1000, end: 3000 } } as Part
+    const { container } = setup([thought])
+    expect(container.querySelector('.work-group > .work-head')?.textContent).toContain("Thought 2s")
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("正在继续处理")
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
   })
-
-  it("keeps the live status line a pure indicator when the summary head is present", () => {
-    const container = mount(() => <WorkGroup parts={[tool()]} live />)
-
-    const head = container.querySelector(".work-head") as HTMLButtonElement | null
-    expect(head?.textContent).toContain("Explored")
-    expect(head?.querySelector(".work-summary-caret")).toBeTruthy()
-
-    const statusHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
-    expect(statusHead).toBeTruthy()
-    expect(statusHead?.textContent).toContain("Planning next moves")
-    expect(statusHead?.disabled).toBe(true)
-    expect(statusHead?.querySelector(".work-summary-caret")).toBeFalsy()
-
-    statusHead?.click()
-    expect(container.querySelector(".work-steps")).toBeFalsy()
-
-    head?.click()
-    const order = childOrder(container)
-    expect(order.indexOf("work-steps")).toBeGreaterThanOrEqual(0)
-    expect(order.indexOf("work-status-head")).toBeGreaterThan(order.indexOf("work-steps"))
-    expect(container.querySelector(".work-steps")).toBeTruthy()
-  })
-
-  it("mounts an inert Planning next moves line before any assistant message exists", () => {
-    const container = mount(() => <ChatTurnView turn={{ assistants: [] }} partsByMessage={{}} live />)
-    const statusHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
-    expect(statusHead).toBeTruthy()
-    expect(statusHead?.textContent).toContain("Planning next moves")
-    expect(statusHead?.disabled).toBe(true)
-    expect(statusHead?.querySelector(".work-summary-caret")).toBeFalsy()
-    statusHead?.click()
-    expect(container.querySelector(".work-group")?.classList.contains("open")).toBe(false)
-  })
-
-  it("keeps the reconnecting placeholder inert", () => {
-    const container = mount(() => <WorkGroup parts={[]} live />, "disconnected")
-    const statusHead = container.querySelector(".work-status-head") as HTMLButtonElement | null
-    expect(statusHead).toBeTruthy()
-    expect(statusHead?.disabled).toBe(true)
-    expect(statusHead?.querySelector(".work-summary-caret")).toBeFalsy()
-  })
-})
-
-describe("settled thought rows", () => {
-  it("shows a single Thought head directly for a thought-only turn and expands it", () => {
-    const container = mount(() => (
-      <ChatTurnView
-        turn={{ assistants: [assistant({ time: { created: 1_000, completed: 9_000 } })] }}
-        partsByMessage={{ msg_1: [reasoning("considered the options", 3_000), text("Answer.")] }}
-        live={false}
-      />
-    ))
-
-    expect(container.querySelector(".worked-for")).toBeFalsy()
-    const head = container.querySelector(".work-head") as HTMLButtonElement | null
-    expect(head?.textContent).toContain("Thought")
-    expect(head?.querySelector(".work-summary-caret")).toBeTruthy()
-    head?.click()
-    const order = childOrder(container)
-    expect(order.indexOf("work-head")).toBe(0)
-    expect(order.indexOf("work-steps")).toBe(1)
-    expect(container.querySelector(".reasoning-inline")?.textContent).toContain("considered the options")
-  })
-
-  it("gives each step row inside a mixed work group a caret and expands the thought step", () => {
-    const container = mount(() => (
-      <ChatTurnView
-        turn={{ assistants: [assistant({ time: { created: 1_000, completed: 9_000 } })] }}
-        partsByMessage={{
-          msg_1: [reasoning("considered the options", 3_000), tool(), text("Answer.")],
-        }}
-        live={false}
-      />
-    ))
-
-    expect(container.querySelector(".worked-for")).toBeTruthy()
-    const wrapper = container.querySelector(".worked-for > .work-head") as HTMLButtonElement | null
-    wrapper?.click()
-
-    const group = container.querySelector(".worked-for .work-group .work-head") as HTMLButtonElement | null
-    expect(group?.textContent).toContain("Explored")
-    group?.click()
-
-    const steps = container.querySelectorAll(".work-step")
-    expect(steps.length).toBe(2)
-    for (const step of steps) {
-      expect(step.querySelector(".work-step-caret")).toBeTruthy()
-    }
-
-    const thoughtHead = steps[0]?.querySelector(".work-step-head") as HTMLButtonElement | null
-    expect(thoughtHead?.textContent).toContain("Thought")
-    thoughtHead?.click()
-    expect(steps[0]?.classList.contains("open")).toBe(true)
-    expect(container.querySelector(".reasoning-inline")?.textContent).toContain("considered the options")
+  it("preserves inspected reasoning and text selection when tools join its group", () => {
+    const thought = part("r1", "reasoning", "原来的思考内容")
+    const { container, setParts } = setup([thought])
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    const body = container.querySelector(".reasoning-inline")!
+    const node = body.querySelector("p")!.firstChild!
+    const range = document.createRange()
+    range.setStart(node, 0); range.setEnd(node, 3)
+    window.getSelection()!.addRange(range)
+    setParts([thought, tool])
+    expect(container.querySelector(".reasoning-inline")).toBe(body)
+    expect(window.getSelection()!.toString()).toBe("原来的")
+    expect(container.querySelectorAll(".work-group.open")).toHaveLength(1)
+    window.getSelection()!.removeAllRanges()
+    ;(container.querySelector('[data-entry-key="a1:r1"] .work-step-head') as HTMLButtonElement).click()
+    expect(container.querySelector(".reasoning-inline")).toBeNull()
   })
 })

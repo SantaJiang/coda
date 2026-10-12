@@ -148,13 +148,13 @@ describe("applyDerivedStatus", () => {
     expect(resolveSessionStatus("s1", null, undefined, { type: "busy" }, false)).toEqual({ type: "busy" })
   })
 
-  it("does not let a stale live busy map revive a settled session", () => {
+  it("trusts authoritative busy even after an assistant step completed", () => {
     expect(
       resolveSessionStatus("s1", { s1: { type: "busy" } }, { type: "idle" }, { type: "idle" }, true, "assistant"),
-    ).toEqual({ type: "idle" })
+    ).toEqual({ type: "busy" })
     expect(
       resolveSessionStatus("s1", { s1: { type: "busy" } }, { type: "busy" }, { type: "idle" }, true, "assistant"),
-    ).toEqual({ type: "idle" })
+    ).toEqual({ type: "busy" })
   })
 
   it("still trusts live busy when a new user turn is waiting", () => {
@@ -163,8 +163,8 @@ describe("applyDerivedStatus", () => {
     ).toEqual({ type: "busy" })
   })
 
-  it("unsticks a raced busy session when merged messages have settled", () => {
-    expect(resolveRacingSessionStatus({ type: "busy" }, { type: "idle" }, "assistant")).toEqual({ type: "idle" })
+  it("preserves live busy when only an assistant step has completed", () => {
+    expect(resolveRacingSessionStatus({ type: "busy" }, { type: "idle" }, "assistant")).toEqual({ type: "busy" })
   })
 
   it("keeps SSE busy/retry when a new user turn arrived during the snapshot", () => {

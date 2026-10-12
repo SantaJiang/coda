@@ -18,6 +18,10 @@ import {
 import { cutAtRevert, revertDraftFromParts } from "../lib/revert"
 import { isSessionBusy, sessionDotKind } from "../lib/session-status"
 import { uid } from "../lib/uid"
+import { emptyTimelineView } from "../lib/conversation"
+import { isUnreachableError } from "../lib/api"
+import { reconcileSession } from "./session-reconcile"
+import { moveOutgoingSession, outgoingDelivery, stageOutgoing } from "./outgoing"
 import { upsertById } from "../lib/upsert"
 import type { Project } from "../lib/types"
 import type { RuntimeApi } from "./contracts"
@@ -39,7 +43,7 @@ import { directoryFor, projectByPath, sendingKey } from "./lookup"
 import { selectedModelOf } from "./model-slice"
 import { applySessionPermission } from "./permission-sync"
 import { shouldFlushQueue, takeDeferredSend, withSessionLock } from "./queue"
-import { emptySessionDraft, type QueuedMessage, type SessionDraft } from "./state"
+import { emptySessionDraft, type QueuedMessage, type OutgoingPrompt, type SessionDraft } from "./state"
 
 export type QueueRefs = {
   skipQueueFlush: Record<string, boolean>
@@ -49,6 +53,7 @@ export type QueueRefs = {
 
 export type RuntimeSlice = RuntimeApi & {
   flushQueue: (sessionID: string) => Promise<void>
+  settleSession: (sessionID: string) => Promise<void>
 }
 
 export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): RuntimeSlice {
@@ -106,7 +111,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     const session = selectedSession()
     const sending = Boolean(state.sendingBySession[sendingKey(session?.id, state.selectedProjectId)])
     if (!session) return sending
-    return isSessionBusy(state.status[session.id], Boolean(state.sendingBySession[session.id]) || sending)
+    return isSessionBusy(state.status[session.id], Boolean(state.sendingBySession[session.id]) || Boolean(state.settlingBySession[session.id]) || Boolean(state.stoppingBySession[session.id]) || sending)
   }
 
   const blocked = () => {
@@ -122,30 +127,26 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     (sessionID ? state.queuedBySession[sessionID] : undefined) ?? []
 
   const promptSession = async (
-    session: { id: string },
-    project: Project,
-    payload: {
-      text: string
-      files: ComposerAttachment[]
-      model: { providerID: string; modelID: string }
-      agent: string
-      variant?: string | null
-    },
+    session: { id: string }, project: Project,
+    payload: { text: string; files: ComposerAttachment[]; model: { providerID: string; modelID: string }; agent: string; variant?: string | null },
+    previous?: OutgoingPrompt,
   ) => {
-    await applySessionPermission(handle, project.path, session.id)
-    setState("status", session.id, { type: "busy" })
-    setState("sessionErrors", session.id, false)
-    setState("sessionErrorText", session.id, "")
+    const item = previous ?? stageOutgoing(handle, { ...payload, project, sessionID: session.id })
     try {
+      await applySessionPermission(handle, project.path, session.id)
+      setState("status", session.id, { type: "busy" })
+      setState("sessionErrors", session.id, false)
+      setState("sessionErrorText", session.id, "")
       await client.promptAsync(project.path, session.id, {
-        text: payload.text,
-        model: payload.model,
-        agent: payload.agent,
-        variant: payload.variant ?? undefined,
-        files: payload.files,
+        ...payload, variant: payload.variant ?? undefined,
+        messageID: item.messageID, partIDs: item.partIDs,
       })
+      outgoingDelivery(handle, item)
     } catch (error) {
+      // An SSE acknowledgement can arrive even if the HTTP response was lost.
+      if (!state.outgoing[item.messageID]) return
       if (state.status[session.id]?.type === "busy") setState("status", session.id, { type: "idle" })
+      outgoingDelivery(handle, item, isUnreachableError(error) ? "uncertain" : "failed", error instanceof Error ? error.message : "发送失败")
       throw error
     }
   }
@@ -166,6 +167,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     projectOwningSession(state, sessionID) ??
     selectedProject()
 
+  const queueMessageIDs = new Map<string, string>()
   const dispatchQueued = async (sessionID: string, item: QueuedMessage) => {
     if (!item.text.trim() && item.attachments.length === 0) return true
     const project = queuedProject(sessionID, item)
@@ -174,13 +176,23 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     if (!usable) return false
     setSending(sessionID, true)
     try {
-      await promptSession({ id: sessionID }, usable, {
+      const previousID = queueMessageIDs.get(item.id)
+      const previous = previousID ? state.outgoing[previousID] : undefined
+      if (previousID && !previous && (state.messages[sessionID] ?? []).some((message) => message.id === previousID)) return true
+      const payload = {
         text: item.text,
         files: item.attachments,
         model: item.model,
         agent: item.agent,
         variant: item.variant,
-      })
+      }
+      if (previous) {
+        const existing = await client.listMessages(usable.path, sessionID)
+        if (existing?.some((message) => message.info.id === previous.messageID)) { outgoingDelivery(handle, previous); return true }
+      }
+      const staged = stageOutgoing(handle, { ...payload, project: usable, sessionID }, previous)
+      queueMessageIDs.set(item.id, staged.messageID)
+      await promptSession({ id: sessionID }, usable, payload, staged)
       return true
     } catch (error) {
       reportError(handle, error, "发送排队消息失败", project.path)
@@ -191,7 +203,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
   }
 
   const canFlush = (sessionID: string) =>
-    shouldFlushQueue({
+    !state.settlingBySession[sessionID] && !state.stoppingBySession[sessionID] && state.connection !== "disconnected" && shouldFlushQueue({
       sending: Boolean(state.sendingBySession[sessionID]),
       status: state.status[sessionID],
       permissions: state.permissions,
@@ -224,114 +236,159 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     if (again) await flushQueue(sessionID)
   }
 
+  const settling = new Map<string, Promise<void>>()
+  const settleSession = (sessionID: string): Promise<void> => {
+    const existing = settling.get(sessionID)
+    if (existing) return existing
+    const project = projectOwningSession(state, sessionID) ?? (queuedFor(sessionID)[0] ? queuedProject(sessionID, queuedFor(sessionID)[0]) : undefined)
+    if (!project) return Promise.resolve()
+    setState("settlingBySession", sessionID, true)
+    setState("syncErrors", sessionID, "")
+    const task = reconcileSession(handle, sessionID, project.path)
+      .then(() => flushQueue(sessionID))
+      .catch((error) => { setState("syncErrors", sessionID, error instanceof Error ? error.message : "同步回复失败") })
+      .finally(() => settling.delete(sessionID))
+    settling.set(sessionID, task)
+    return task
+  }
+  const sendMessage = async (text?: string, retryID?: string) => {
+    const previous = retryID ? state.outgoing[retryID] : undefined
+    if (retryID && (!previous || previous.sessionID !== state.selectedSessionId || busy())) return
+    const content = (previous?.text ?? text ?? composer()).trim()
+    const project = selectedProject()
+    const files = previous?.files ?? attachments()
+    const originKey = activeDraftKey()
+    const clearSentDraft = (sentSessionId?: string) => {
+      setState("drafts", originKey, emptySessionDraft())
+      if (!sentSessionId) return
+      const sentKey = `session:${sentSessionId}`
+      if (sentKey !== originKey) setState("drafts", sentKey, emptySessionDraft())
+    }
+    if (!project) {
+      setState("error", "无法确定工作目录")
+      return
+    }
+    if (!content && files.length === 0) return
+    if (blocked()) return
+
+    const model = previous?.model ?? selectedModelOf(state)
+    if (!model) {
+      setState("error", "请先配置一个模型")
+      setState({ modelMenuOpen: false, modelSettingsOpen: true, modelSettingsError: null })
+      return
+    }
+
+    const usable = ensureProjectDirectory(project)
+    if (!usable) return
+
+    if (busy()) {
+      const session = selectedSession()
+      if (!session || isLocalDraft(session)) return
+      setState("queuedBySession", session.id, [
+        ...queuedFor(session.id),
+        {
+          id: uid("q"),
+          text: content,
+          attachments: files,
+          agent: currentAgent(),
+          model: { providerID: model.providerID, modelID: model.modelID },
+          variant: state.selectedVariant,
+          directory: usable.path,
+        },
+      ])
+      clearSentDraft()
+      return
+    }
+
+    let source = selectedSession()
+    if (!source) source = reuseOrCreateEmptyDraft(handle, usable, true)
+    const sourceID = source.id
+    const payload = { text: content, files, model, agent: previous?.agent ?? currentAgent(), variant: previous?.variant ?? state.selectedVariant }
+    const item = stageOutgoing(handle, { ...payload, project: usable, sessionID: sourceID }, previous)
+    if (!previous) clearSentDraft(sourceID)
+    let key = sendingKey(sourceID, project.id)
+    setSending(key, true)
+    setState("error", null)
+    try {
+      let session = source
+      const local = isLocalDraft(session) ? session : null
+      if (!session || local) {
+        const plan = local ? (state.planModeBySession[local.id] ?? false) : state.draftPlanMode
+        session = await client.createSession(
+          usable.path,
+          model,
+          currentAgent(),
+          rulesetForProject(usable, state.permissionMode),
+        )
+        if (local) {
+          moveOutgoingSession(handle, local.id, session.id)
+          item.sessionID = session.id
+          const bundle = state.drafts[`session:${local.id}`] ?? emptySessionDraft()
+          adoptDraftIntoBackendSession(handle, local.id)
+          setState("drafts", `session:${session.id}`, bundle)
+        }
+        setState("sessionsByProject", usable.path, (list = []) => upsertById(list, session!))
+        setState("planModeBySession", session.id, plan)
+        if (state.selectedSessionId === sourceID) {
+          setState({ selectedSessionId: session.id, draft: false, draftPlanMode: false })
+        }
+        persistDraftSessions(handle, true)
+        setSending(key, false)
+        key = sendingKey(session.id, project.id)
+        setSending(key, true)
+      }
+      if (previous && !local) {
+        const existing = await client.listMessages(usable.path, session.id)
+        if (existing?.some((message) => message.info.id === item.messageID)) {
+          outgoingDelivery(handle, item)
+          await settleSession(session.id)
+          return
+        }
+      }
+      await promptSession(session, usable, payload, item)
+    } catch (error) {
+      if (state.outgoing[item.messageID]) outgoingDelivery(handle, item, isUnreachableError(error) ? "uncertain" : "failed", error instanceof Error ? error.message : "发送失败")
+    } finally {
+      setSending(key, false)
+      if (!key.startsWith("__draft:")) void flushQueue(key)
+    }
+  }
+
   return {
     busy,
+    status: () => state.status[state.selectedSessionId ?? ""],
+    stopping: () => Boolean(state.stoppingBySession[state.selectedSessionId ?? ""]),
+    settling: () => Boolean(state.settlingBySession[state.selectedSessionId ?? ""]),
+    stoppedTurnID: () => state.stoppedTurnBySession[state.selectedSessionId ?? ""],
+    stoppedTurns: () => state.stoppedTurns,
+    syncError: () => state.syncErrors[state.selectedSessionId ?? ""] ?? "",
+    timelineView: () => state.timelineViews[state.selectedSessionId ?? ""] ?? emptyTimelineView(),
+    updateTimelineView: (patch, sessionID) => {
+      const id = sessionID ?? state.selectedSessionId
+      if (id) setState("timelineViews", id, { ...(state.timelineViews[id] ?? emptyTimelineView()), ...patch })
+    },
+    settleSession,
     blocked,
     composer,
     attachments,
     setComposer: (value) => writeDraft({ composer: value }),
     flushQueue,
-    send: async (text) => {
-      const content = (text ?? composer()).trim()
-      const project = selectedProject()
-      const files = attachments()
-      const originSessionId = state.selectedSessionId
-      const originKey = activeDraftKey()
-      const clearSentDraft = (sentSessionId?: string) => {
-        setState("drafts", originKey, emptySessionDraft())
-        if (!sentSessionId) return
-        const sentKey = `session:${sentSessionId}`
-        if (sentKey !== originKey) setState("drafts", sentKey, emptySessionDraft())
-      }
-      if (!project) {
-        setState("error", "无法确定工作目录")
-        return
-      }
-      if (!content && files.length === 0) return
-      if (blocked()) return
-
-      const model = selectedModelOf(state)
-      if (!model) {
-        setState("error", "请先配置一个模型")
-        setState({ modelMenuOpen: false, modelSettingsOpen: true, modelSettingsError: null })
-        return
-      }
-
-      const usable = ensureProjectDirectory(project)
-      if (!usable) return
-
-      if (busy()) {
-        const session = selectedSession()
-        if (!session || isLocalDraft(session)) return
-        setState("queuedBySession", session.id, [
-          ...queuedFor(session.id),
-          {
-            id: uid("q"),
-            text: content,
-            attachments: files,
-            agent: currentAgent(),
-            model: { providerID: model.providerID, modelID: model.modelID },
-            variant: state.selectedVariant,
-            directory: usable.path,
-          },
-        ])
-        clearSentDraft()
-        return
-      }
-
-      let key = sendingKey(selectedSession()?.id, project.id)
-      setSending(key, true)
-      setState("error", null)
-      try {
-        let session = selectedSession()
-        const local = isLocalDraft(session) ? session : null
-        if (!session || local) {
-          const plan = local ? (state.planModeBySession[local.id] ?? false) : state.draftPlanMode
-          session = await client.createSession(
-            usable.path,
-            model,
-            currentAgent(),
-            rulesetForProject(usable, state.permissionMode),
-          )
-          if (local) {
-            const bundle = state.drafts[`session:${local.id}`] ?? emptySessionDraft()
-            adoptDraftIntoBackendSession(handle, local.id)
-            setState("drafts", `session:${session.id}`, bundle)
-          }
-          setState("sessionsByProject", usable.path, (list = []) => upsertById(list, session!))
-          setState("planModeBySession", session.id, plan)
-          if (state.selectedSessionId === originSessionId) {
-            setState({ selectedSessionId: session.id, draft: false, draftPlanMode: false })
-          }
-          persistDraftSessions(handle, true)
-          setSending(key, false)
-          key = sendingKey(session.id, project.id)
-          setSending(key, true)
-        }
-        await promptSession(session, usable, {
-          text: content,
-          files,
-          model,
-          agent: currentAgent(),
-          variant: state.selectedVariant,
-        })
-        clearSentDraft(session.id)
-      } catch (error) {
-        reportError(handle, error, "发送失败", usable.path)
-      } finally {
-        setSending(key, false)
-        if (!key.startsWith("__draft:")) void flushQueue(key)
-      }
-    },
+    send: sendMessage,
+    retrySend: (messageID) => sendMessage(undefined, messageID),
+    resync: () => state.selectedSessionId ? settleSession(state.selectedSessionId) : Promise.resolve(),
     abort: async () => {
       const session = selectedSession()
       const project = selectedProject()
       if (!session || !project || isLocalDraft(session)) return
+      if (state.stoppingBySession[session.id]) return
+      setState("stoppingBySession", session.id, true)
       refs.skipQueueFlush[session.id] = true
       delete refs.sendAfterIdle[session.id]
       try {
         await client.abortSession(project.path, session.id)
+        await settleSession(session.id)
       } catch (error) {
+        setState("stoppingBySession", session.id, false)
         refs.skipQueueFlush[session.id] = false
         reportError(handle, error, "停止失败")
       }
@@ -362,13 +419,8 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const list = queuedFor(session.id)
       const item = list.find((entry) => entry.id === id)
       if (!item) return
-      const idle = shouldFlushQueue({
-        sending: Boolean(state.sendingBySession[session.id]),
-        status: state.status[session.id],
-        permissions: state.permissions,
-        questions: state.questions,
-        sessionID: session.id,
-      })
+      if (state.settlingBySession[session.id] || state.stoppingBySession[session.id]) return
+      const idle = canFlush(session.id)
       if (idle) {
         const sent = await withSessionLock(refs.flushing, session.id, async () => {
           setState(
@@ -391,9 +443,12 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       )
       refs.skipQueueFlush[session.id] = false
       refs.sendAfterIdle[session.id] = item
+      setState("stoppingBySession", session.id, true)
       try {
         await client.abortSession(project.path, session.id)
+        await settleSession(session.id)
       } catch (error) {
+        setState("stoppingBySession", session.id, false)
         if (refs.sendAfterIdle[session.id]?.id === item.id) {
           delete refs.sendAfterIdle[session.id]
           setState("queuedBySession", session.id, [item, ...queuedFor(session.id).filter((entry) => entry.id !== item.id)])

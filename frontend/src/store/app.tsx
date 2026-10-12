@@ -69,31 +69,16 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     if (project) await projects.refreshProjectSessions(project).catch(() => undefined)
     const session = projects.selectedSession()
     if (session) await projects.resyncSession(session).catch(() => undefined)
-    if (project && !project.missing) {
-      const statuses = await client.listSessionStatuses(project.path).catch(() => null)
-      if (statuses) {
-        const owned = new Set((state.sessionsByProject[project.path] ?? []).map((item) => item.id))
-        setState(
-          produce((draft) => {
-            for (const [sessionID, queue] of Object.entries(draft.queuedBySession)) {
-              const directory = queue?.[0]?.directory
-              const inProject = owned.has(sessionID) || (directory ? samePath(directory, project.path) : false)
-              if (!inProject) continue
-              const live = statuses[sessionID]
-              if (live?.type === "busy" || live?.type === "retry") draft.status[sessionID] = live
-              else draft.status[sessionID] = { type: "idle" }
-            }
-          }),
-        )
-      }
-    }
-    const pending = new Set<string>([...Object.keys(state.queuedBySession), ...Object.keys(sendAfterIdle)])
-    for (const sessionID of pending) {
-      if ((state.queuedBySession[sessionID]?.length ?? 0) > 0 || sendAfterIdle[sessionID]) {
-        void runtime.flushQueue(sessionID)
-      }
-    }
+    const pending = new Set<string>([
+      ...Object.keys(state.queuedBySession), ...Object.keys(sendAfterIdle),
+      ...Object.keys(state.settlingBySession), ...Object.keys(state.stoppingBySession),
+      ...Object.entries(state.status).filter(([, status]) => status.type !== "idle").map(([id]) => id),
+      ...Object.values(state.outgoing).map((item) => item.sessionID),
+    ])
+    if (session) pending.add(session.id)
+    await Promise.allSettled([...pending].map((id) => runtime.settleSession(id)))
   }
+
   const applySseConnection = (ok: boolean) => {
     setState("connection", ok ? "connected" : "disconnected")
     if (ok && lastSseConnected === false) void resyncAfterReconnect()
@@ -276,7 +261,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
           })
         }
         for (const sessionID of new Set(idleSessions)) {
-          void runtime.flushQueue(sessionID)
+          void runtime.settleSession(sessionID)
         }
       },
       (connected) => {

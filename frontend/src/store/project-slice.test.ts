@@ -120,7 +120,7 @@ describe("project session detail synchronization", () => {
     })
   })
 
-  it("unsticks busy when messages settle during a raced snapshot", async () => {
+  it("keeps the run busy when a model step completes during a raced snapshot", async () => {
     const directory = "/tmp/project"
     const session: Session = {
       id: "s1",
@@ -167,10 +167,10 @@ describe("project session detail synchronization", () => {
     ])
     await loading
 
-    expect(state.status.s1).toEqual({ type: "idle" })
+    expect(state.status.s1).toEqual({ type: "busy" })
   })
 
-  it("does not restore busy from a stale status map when the snapshot already settled", async () => {
+  it("respects authoritative busy while messages only indicate step completion", async () => {
     const directory = "/tmp/project"
     const session: Session = {
       id: "s1",
@@ -203,7 +203,7 @@ describe("project session detail synchronization", () => {
     const projects = createProjectSlice({ state, setState, client })
     await projects.selectSession(session)
 
-    expect(state.status.s1).toEqual({ type: "idle" })
+    expect(state.status.s1).toEqual({ type: "busy" })
   })
 })
 

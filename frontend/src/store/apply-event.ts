@@ -1,6 +1,6 @@
 import { autoReplyForMode } from "../lib/permissions"
 import { formatSessionErrorMessage, hasFailingAssistant, isAbortError } from "../lib/session-status"
-import { mergeParts } from "../lib/session-sync"
+import { mergeParts, preferMessage } from "../lib/session-sync"
 import { isLocalProject, missingDirectoryMessage, parseMissingDirectory } from "../lib/persist"
 import { samePath } from "../lib/path"
 import { upsertById } from "../lib/upsert"
@@ -64,14 +64,16 @@ function asQuestion(props: Record<string, unknown>): QuestionRequest | undefined
 
 function attachSessionError(draft: AppState, sessionID: string, error: AssistantError, message: string) {
   const msgs = draft.messages[sessionID] ?? []
+  const user = [...msgs].reverse().find((item) => item.role === "user")
   for (let index = msgs.length - 1; index >= 0; index -= 1) {
     const item = msgs[index]
+    if (item.role === "user") break
     if (item.role !== "assistant") continue
     const assistant = item as AssistantMessage
     // 只归因到仍在进行中的那条助手消息（无 error 且未完成）。
     // 若崩溃发生在新助手消息创建之前，上一轮已完成的助手消息不应被误标，
     // 此时回退到会话级错误卡片由时间线底部展示。
-    if (!assistant.error && !assistant.time.completed) {
+    if (!assistant.error && !assistant.time.completed && (!user || assistant.parentID === user.id || (!assistant.parentID && assistant.time.created >= user.time.created))) {
       assistant.error = error
       assistant.time = { ...assistant.time, completed: Date.now() }
       return
@@ -113,12 +115,17 @@ const handlers: Record<string, EventHandler> = {
     const info = props.info as Message | undefined
     const sessionID = (props.sessionID as string) ?? info?.sessionID
     if (info && sessionID) {
-      draft.messages[sessionID] = upsertById(draft.messages[sessionID] ?? [], info)
+      if (draft.removedMessages[info.id]) return
+      const previous = (draft.messages[sessionID] ?? []).find((item) => item.id === info.id)
+      draft.messages[sessionID] = upsertById(draft.messages[sessionID] ?? [], previous ? preferMessage(previous, info) : info)
+        .sort((a, b) => a.time.created - b.time.created || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      if (info.role === "user") delete draft.outgoing[info.id]
       const messages = draft.messages[sessionID] ?? []
       if (hasFailingAssistant(messages)) draft.sessionErrors[sessionID] = true
       else delete draft.sessionErrors[sessionID]
       const latest = [...messages].reverse().find((item) => item.role === "assistant")
-      if (latest?.role === "assistant" && !latest.error && latest.time.completed) {
+      const user = [...messages].reverse().find((item) => item.role === "user")
+      if (latest?.role === "assistant" && !latest.error && latest.time.completed && (!user || latest.parentID === user.id || (!latest.parentID && latest.time.created >= user.time.created))) {
         delete draft.sessionErrorText[sessionID]
       }
     }
@@ -127,18 +134,23 @@ const handlers: Record<string, EventHandler> = {
     const sessionID = props.sessionID as string
     const messageID = props.messageID as string
     if (sessionID && messageID) {
+      draft.removedMessages[messageID] = sessionID
+      delete draft.outgoing[messageID]
       draft.messages[sessionID] = (draft.messages[sessionID] ?? []).filter((item) => item.id !== messageID)
       delete draft.parts[messageID]
     }
   },
   "message.part.updated": (draft, { props }) => {
     const part = props.part as Part | undefined
+    if (part && (draft.removedMessages[part.messageID] || draft.removedParts[`${part.messageID}:${part.id}`])) return
     if (part) draft.parts[part.messageID] = mergeParts(draft.parts[part.messageID] ?? [], [part])
   },
   "message.part.removed": (draft, { props }) => {
     const messageID = props.messageID as string
     const partID = props.partID as string
     if (messageID && partID) {
+      const sessionID = (props.sessionID as string) || (draft.parts[messageID] ?? []).find((part) => part.id === partID)?.sessionID || ""
+      draft.removedParts[`${messageID}:${partID}`] = { messageID, sessionID }
       draft.parts[messageID] = (draft.parts[messageID] ?? []).filter((item) => item.id !== partID)
     }
   },
@@ -148,6 +160,7 @@ const handlers: Record<string, EventHandler> = {
     const field = (props.field as string) ?? "text"
     const delta = props.delta as string
     if (!messageID || !partID || typeof delta !== "string") return
+    if (draft.removedMessages[messageID] || draft.removedParts[`${messageID}:${partID}`]) return
     const list = draft.parts[messageID] ?? []
     const index = list.findIndex((item) => item.id === partID)
     if (index >= 0) {
@@ -166,15 +179,23 @@ const handlers: Record<string, EventHandler> = {
     }
     draft.parts[messageID] = list.slice()
   },
-  "session.status": (draft, { props }) => {
+  "session.status": (draft, { props, effects }) => {
     const sessionID = props.sessionID as string
     const status = props.status as SessionStatus
-    if (sessionID && status) draft.status[sessionID] = status
+    if (sessionID && status) {
+      draft.status[sessionID] = status
+      if (status.type === "idle") {
+        draft.settlingBySession[sessionID] = true
+        // Some backends only publish session.status, without the legacy idle event.
+        effects.idleSessions.push(sessionID)
+      }
+    }
   },
   "session.idle": (draft, { props, effects }) => {
     const sessionID = props.sessionID as string
     if (!sessionID) return
     draft.status[sessionID] = { type: "idle" }
+    draft.settlingBySession[sessionID] = true
     effects.idleSessions.push(sessionID)
     if (draft.selectedSessionId !== sessionID) draft.attention[sessionID] = true
   },
@@ -245,10 +266,19 @@ const handlers: Record<string, EventHandler> = {
 
 export function applyClientEvent(draft: AppState, parsed: ParsedEvent): EventEffects {
   const effects: EventEffects = { autoReplies: [], idleSessions: [] }
+  if (parsed.event.id) {
+    if (draft.seenEventIDs.includes(parsed.event.id)) return effects
+    draft.seenEventIDs.push(parsed.event.id)
+    if (draft.seenEventIDs.length > 2048) draft.seenEventIDs.splice(0, draft.seenEventIDs.length - 2048)
+  }
   const handler = handlers[parsed.event.type]
   if (!handler) return effects
+  const props = (parsed.event.properties ?? parsed.event.data ?? {}) as Record<string, unknown>
+  const nested = (props.part ?? props.info ?? props.permission ?? props.question ?? props.request) as { sessionID?: string } | undefined
+  const sessionID = (props.sessionID as string | undefined) ?? nested?.sessionID
+  if (sessionID) draft.eventRevision[sessionID] = (draft.eventRevision[sessionID] ?? 0) + 1
   handler(draft, {
-    props: (parsed.event.properties ?? parsed.event.data ?? {}) as Record<string, unknown>,
+    props,
     directory: parsed.directory,
     effects,
   })

@@ -24,7 +24,8 @@ export function Composer() {
     if (projects.selectedProject()?.missing) return "先重新定位项目文件夹"
     if (!models.selectedModel()) return "先配置一个模型"
     if (runtime.blocked()) return "请先处理权限或提问"
-    if (runtime.busy()) return "Agent 正在工作，Esc 可停止…"
+    if (runtime.stopping()) return "正在停止…"
+    if (runtime.busy()) return "正在回复，继续发送会加入队列…"
     if (isLocalProject(projects.selectedProject())) return "不问具体项目也可以，发给 Agent 一条消息"
     return "发给 Agent 一条消息"
   }
@@ -35,6 +36,7 @@ export function Composer() {
     !!projects.selectedProject() &&
     !projects.selectedProject()?.missing &&
     !runtime.blocked() &&
+    !runtime.stopping() &&
     (hasDraft() || runtime.busy())
 
   const resize = () => {
@@ -68,7 +70,7 @@ export function Composer() {
   }
 
   const stopIfBusy = () => {
-    if (!runtime.busy() || runtime.blocked() || chrome.overlayOpen()) return false
+    if (!runtime.busy() || runtime.stopping() || chrome.overlayOpen()) return false
     void runtime.abort()
     return true
   }

@@ -247,3 +247,31 @@ describe("applyClientEvent", () => {
     expect(state.projects[0]?.missing).toBe(true)
   })
 })
+
+describe("stream event ordering", () => {
+  it("deduplicates identified delta events without dropping legitimate repeated text", () => {
+    const state = draft()
+    const event = { id: "evt1", type: "message.part.delta", properties: { messageID: "a1", partID: "p1", sessionID: "s1", delta: "ha" } }
+    applyClientEvent(state, { event })
+    applyClientEvent(state, { event })
+    applyClientEvent(state, { event: { ...event, id: "evt2" } })
+    expect(state.parts.a1[0]).toMatchObject({ text: "haha" })
+  })
+  it("retypes an early delta as reasoning without losing its content", () => {
+    const state = draft()
+    applyClientEvent(state, { event: { type: "message.part.delta", properties: { messageID: "a1", partID: "p1", sessionID: "s1", delta: "完整思考" } } })
+    applyClientEvent(state, { event: { type: "message.part.updated", properties: { part: { id: "p1", type: "reasoning", text: "完整", messageID: "a1", sessionID: "s1", time: { start: 1, end: 2 } } } } })
+    expect(state.parts.a1[0]).toMatchObject({ type: "reasoning", text: "完整思考", time: { end: 2 } })
+  })
+  it("updates a tool in place instead of moving it in front of earlier prose", () => {
+    const state = draft({ parts: { a1: [{ id: "p1", type: "text", text: "先检查", messageID: "a1", sessionID: "s1" }, { id: "p2", type: "tool", tool: "read", callID: "c1", state: { status: "running" }, messageID: "a1", sessionID: "s1" }] } })
+    applyClientEvent(state, { event: { type: "message.part.updated", properties: { part: { id: "p2", type: "tool", tool: "read", callID: "c1", state: { status: "completed", output: "ok" }, messageID: "a1", sessionID: "s1" } } } })
+    expect(state.parts.a1.map((part) => part.id)).toEqual(["p1", "p2"])
+  })
+  it("treats status-idle as a reconciliation boundary", () => {
+    const state = draft()
+    const effects = applyClientEvent(state, { event: { type: "session.status", properties: { sessionID: "s1", status: { type: "idle" } } } })
+    expect(state.settlingBySession.s1).toBe(true)
+    expect(effects.idleSessions).toEqual(["s1"])
+  })
+})

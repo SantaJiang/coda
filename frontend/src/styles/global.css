@@ -2985,3 +2985,24 @@ button.ctx-pill:hover {
   background: var(--scrollbar);
   border-radius: 99px;
 }
+
+/* Conversation streaming: one status per turn, stable activity rows. */
+.timeline-region { position: relative; flex: 1 1 0; min-height: 0; display: flex; }
+.timeline-region > .timeline { width: 100%; overflow-anchor: none; }
+.turn-status { color: var(--text-muted); font-size: 12px; margin-bottom: 10px; }
+.turn-status.live { color: var(--text); }
+.turn-status.failed, .step-error-preview { color: var(--danger, #e56c6c); }
+.turn-status .work-head { display: flex; align-items: center; gap: 8px; color: var(--text-muted); }
+.turn-status .work-summary-caret, .conversation-entry .work-step-caret { opacity: 1; }
+.turn-status.live > span::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: var(--accent); }
+.conversation-entry .work-step-label { width: 100%; gap: 8px; }
+.work-summary-caret.expanded { transform: rotate(90deg); }
+.conversation-entry { margin: 8px 0; }
+.conversation-entry .work-group { margin: 0; }
+.step-state { margin-left: auto; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.detail-label { color: var(--text-muted); font-size: 11px; margin: 8px 0 4px; }
+.step-error-preview { font-size: 12px; margin: 4px 0 4px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.delivery-state { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 12px; }
+.connection-notice { color: var(--text-muted); font-size: 12px; padding-bottom: 12px; }
+.jump-latest { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); border: 1px solid var(--border); border-radius: 18px; padding: 7px 14px; background: var(--bg-elevated); color: var(--text); cursor: pointer; box-shadow: 0 2px 8px #0003; z-index: 2; }
+.tool-details .work-step-body { max-height: 360px; overflow: auto; }

@@ -17,7 +17,7 @@ export function SessionPage() {
   const chrome = useChrome()
   const showAside = () => runtime.hasPlan() && !chrome.planPanelDismissed()
   const selected = () => projects.selectedSession()
-  const isDraftView = () => !selected() || isLocalDraft(selected())
+  const isDraftView = () => (!selected() || isLocalDraft(selected())) && runtime.messages().length === 0
   const chromeTitle = () => {
     const session = selected()
     if (!session || isLocalDraft(session)) return draftSidebarTitle(runtime.composer())

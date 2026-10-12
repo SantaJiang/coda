@@ -11,9 +11,11 @@ import type {
   Project,
   QuestionRequest,
   Session,
+  SessionStatus,
   Todo,
 } from "../lib/types"
 import type { ConnectionState, QueuedMessage } from "./state"
+import type { TimelineViewState } from "../lib/conversation"
 
 export type ProjectApi = {
   projects: () => Project[]
@@ -65,6 +67,16 @@ export type ModelApi = {
 
 export type RuntimeApi = {
   busy: () => boolean
+  status: () => SessionStatus | undefined
+  stopping: () => boolean
+  settling: () => boolean
+  stoppedTurnID: () => string | undefined
+  stoppedTurns: () => Record<string, boolean>
+  syncError: () => string
+  timelineView: () => TimelineViewState
+  updateTimelineView: (patch: Partial<TimelineViewState>, sessionID?: string) => void
+  retrySend: (messageID: string) => Promise<void>
+  resync: () => Promise<void>
   blocked: () => boolean
   composer: () => string
   attachments: () => ComposerAttachment[]

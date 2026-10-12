@@ -1,336 +1,114 @@
-import { For, Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
-import {
-  activityDiff,
-  activityFailureCount,
-  activityStatus,
-  activitySummary,
-  stepBody,
-  stepLabel,
-  stepPresentation,
-} from "../lib/activity"
-import type { Part, ReasoningPart } from "../lib/types"
-import { useProjects, useRuntime } from "../store/app"
+import { For, Show, createEffect, createMemo } from "solid-js"
+import { activityDiff, activityFailureCount, activitySummary, reasoningDurationMs, formatDuration, stepPresentation } from "../lib/activity"
+import { toolActivity } from "../lib/conversation"
+import type { ConversationEntry } from "../lib/conversation"
+import type { Part } from "../lib/types"
 import { MarkdownView } from "./MarkdownView"
 import { Icon } from "./Icon"
 
-const IDLE_HOLD_MS = 680
-const TOOL_HOLD_MS = 90
-const FLIP_MS = 320
-
-function isIdleStatus(label: string) {
-  return label === "Thinking" || label === "Thought"
-}
-
-function sameStatus(a: string, b: string) {
-  if (!a || !b) return false
-  if (a === b) return true
-  return (a === "Thinking" && b === "Thought") || (a === "Thought" && b === "Thinking")
-}
-
-function prefersReducedMotion() {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches
-}
-
 export function WorkGroup(props: {
-  parts?: Part[]
-  getParts?: () => Part[]
-  live: boolean
-  open?: boolean
-  onToggle?: () => void
+  entries: ConversationEntry[]
+  open: boolean
+  onToggle: () => void
+  inactive: boolean
+  active: boolean
+  status: string
+  stepOpen: Record<string, boolean>
+  onToggleStep: (key: string) => void
+  onRevealThoughts: (keys: string[]) => void
 }) {
-  const [localOpen, setLocalOpen] = createSignal(false)
-  const [openSteps, setOpenSteps] = createSignal<Record<string, boolean>>({})
-  const [line, setLine] = createSignal({ current: "", previous: "", flipping: false, tick: 0 })
-  const [clock, setClock] = createSignal(0)
-  const runtime = useRuntime()
-  const projects = useProjects()
-  const parts = createMemo(() => (props.getParts ? props.getParts() : (props.parts ?? [])))
-  const asking = createMemo(() => runtime.pendingQuestions().length > 0)
-  const reconnecting = createMemo(() => projects.connection() === "disconnected")
-  const liveStatus = () => {
-    if (!props.live) return ""
-    if (reconnecting()) return "Reconnecting…"
-    if (asking()) return "Asking questions"
-    return activityStatus(parts(), Date.now())
-  }
+  const parts = createMemo(() => props.entries.flatMap((entry) => entry.kind === "part" ? [entry.part] : []))
   const summary = createMemo(() => activitySummary(parts()))
-  const summaryParts = createMemo(() => {
-    const [action = "", ...detail] = summary().split(" ")
-    return { action, detail: detail.join(" ") }
-  })
-  const diff = createMemo(() => activityDiff(parts()))
+  const thoughtOnly = createMemo(() => parts().every((part) => part.type === "reasoning"))
+  const expandable = createMemo(() => parts().some((part) => part.type === "tool" || (part.type === "reasoning" && Boolean(part.text.trim()))))
+  const statusLeads = () => props.active && thoughtOnly() && parts().some((part) => part.type === "reasoning" && !Number.isFinite(part.time?.end))
   const failures = createMemo(() => activityFailureCount(parts()))
-  const thoughtOnly = createMemo(() => {
-    const list = parts()
-    return list.length > 0 && list.every((part) => part.type === "reasoning")
-  })
-  const stepParts = createMemo(() =>
-    parts().filter((part) => part.type === "tool" || part.type === "reasoning"),
-  )
-  const thoughtParts = createMemo(() => parts().filter((part) => part.type === "reasoning"))
-  const showHead = createMemo(() => Boolean(summary()) && !(props.live && thoughtOnly()))
-  const expandable = createMemo(() => parts().length > 0 || (props.live && !reconnecting()))
-  const statusLeads = createMemo(
-    () =>
-      props.live &&
-      !reconnecting() &&
-      !showHead() &&
-      thoughtOnly() &&
-      expandable() &&
-      isIdleStatus(line().current),
-  )
-  const open = () => (props.onToggle ? Boolean(props.open) : localOpen())
-  const toggle = (event?: MouseEvent) => {
-    event?.preventDefault()
-    event?.stopPropagation()
-    if (!expandable()) return
-    if (props.onToggle) props.onToggle()
-    else setLocalOpen((value) => !value)
-  }
-  const toggleStep = (id: string) => {
-    setOpenSteps((value) => ({ ...value, [id]: !value[id] }))
-  }
-
-  let shown = ""
-  let tick = 0
-  let pending: number | undefined
-  let pendingLabel = ""
-  let flipTimer: number | undefined
-
-  const commit = (next: string, animate: boolean) => {
-    if (sameStatus(next, shown)) return
-    const previous = shown
-    shown = next
-    window.clearTimeout(flipTimer)
-    const shouldFlip = Boolean(animate && previous && !prefersReducedMotion())
-    if (shouldFlip) tick += 1
-    setLine({
-      current: next,
-      previous: shouldFlip ? previous : "",
-      flipping: shouldFlip,
-      tick,
-    })
-    if (!shouldFlip) return
-    flipTimer = window.setTimeout(() => {
-      if (shown !== next) return
-      setLine({ current: next, previous: "", flipping: false, tick })
-    }, FLIP_MS)
-  }
-
+  const diff = createMemo(() => activityDiff(parts()))
+  const map = createMemo(() => new Map(props.entries.map((entry) => [entry.key, entry])))
   createEffect(() => {
-    if (!props.live) {
-      setClock(0)
-      return
-    }
-    const id = window.setInterval(() => setClock((value) => value + 1), 500)
-    onCleanup(() => window.clearInterval(id))
+    // Keep inspected reasoning open when the same activity group later gains tools.
+    if (props.open && thoughtOnly()) props.onRevealThoughts(props.entries.map((entry) => entry.key))
   })
-
-  createEffect(
-    on(
-      () => {
-        clock()
-        return liveStatus()
-      },
-      (next) => {
-        if (!next) {
-          window.clearTimeout(pending)
-          pending = undefined
-          pendingLabel = ""
-          shown = ""
-          setLine({ current: "", previous: "", flipping: false, tick })
-          return
-        }
-        if (sameStatus(next, shown)) {
-          window.clearTimeout(pending)
-          pending = undefined
-          pendingLabel = ""
-          return
-        }
-        if (!shown) {
-          window.clearTimeout(pending)
-          pending = undefined
-          pendingLabel = ""
-          commit(next, false)
-          return
-        }
-        // The clock re-runs this effect; don't restart a hold that's already waiting on this label.
-        if (pendingLabel === next) return
-        window.clearTimeout(pending)
-        pendingLabel = next
-        const delay = isIdleStatus(next) ? IDLE_HOLD_MS : TOOL_HOLD_MS
-        pending = window.setTimeout(() => {
-          pending = undefined
-          pendingLabel = ""
-          const latest = liveStatus()
-          if (!latest || sameStatus(latest, shown)) return
-          commit(latest, true)
-        }, delay)
-      },
-    ),
-  )
-
-  onCleanup(() => {
-    window.clearTimeout(pending)
-    window.clearTimeout(flipTimer)
-  })
-
-  return (
-    <div class="work-group" classList={{ open: open(), live: props.live, failed: failures() > 0 }}>
-      <Show when={showHead()}>
-        <button
-          type="button"
-          class="work-head"
-          onClick={toggle}
-          aria-expanded={open()}
-          disabled={!parts().length}
-        >
-          <span class="work-summary">
-            <span class="work-summary-text work-summary-parts">
-              <span class="work-summary-action">{summaryParts().action}</span>
-              <Show when={summaryParts().detail}>
-                {" "}<span class="work-summary-detail">{summaryParts().detail}</span>
-              </Show>
-            </span>
-            <Show when={diff()}>
-              {(value) => (
-                <span class="work-diff">
-                  <Show when={value().added > 0}>
-                    <span class="work-diff-add">+{value().added}</span>
-                  </Show>
-                  <Show when={value().removed > 0}>
-                    <span class="work-diff-del">-{value().removed}</span>
-                  </Show>
-                </span>
-              )}
-            </Show>
-            <Show when={failures() > 0}>
-              <span class="work-failure">{failures()} failed</span>
-            </Show>
-            <Show when={parts().length}>
-              <Icon name="chevron-right" class="work-summary-caret" />
-            </Show>
-          </span>
-        </button>
-      </Show>
-      <Show when={statusLeads()}>
-        <StatusLine line={line()} leads expanded={open()} onToggle={toggle} />
-      </Show>
-      <Show when={open()}>
-        <div class="work-steps">
-          <Show
-            when={thoughtOnly()}
-            fallback={
-              <Index each={stepParts()}>
-                {(part) => (
-                  <WorkStep
-                    part={part()}
-                    open={openSteps()[part().id] === true}
-                    onToggle={() => toggleStep(part().id)}
-                  />
-                )}
-              </Index>
-            }
-          >
-            <Index each={thoughtParts()}>
-              {(part) => (
-                <div class="work-step-body reasoning-inline">
-                  <MarkdownView text={(part() as ReasoningPart).text} />
-                </div>
-              )}
-            </Index>
-          </Show>
-        </div>
-      </Show>
-      <Show when={!statusLeads() && props.live && line().current}>
-        <StatusLine line={line()} />
-      </Show>
-    </div>
-  )
-}
-
-function StatusLine(props: {
-  line: { current: string; previous: string; flipping: boolean; tick: number }
-  leads?: boolean
-  expanded?: boolean
-  onToggle?: (event?: MouseEvent) => void
-}) {
-  return (
-    <button
-      type="button"
-      class="work-status-head"
-      onClick={props.leads ? props.onToggle : undefined}
-      aria-expanded={props.leads ? props.expanded : undefined}
-      disabled={!props.leads}
-    >
-      <span class="work-status" role="status" aria-live="polite" aria-atomic="true" aria-label={props.line.current}>
-        <For each={[props.line.tick]}>
-          {() => (
-            <span class="work-status-flip" classList={{ flipping: props.line.flipping }}>
-              <Show when={props.line.previous}>
-                <span class="work-status-line out">{props.line.previous}</span>
-              </Show>
-              <span class="work-status-line in">
-                <span class="work-status-wave">{props.line.current}</span>
-              </span>
-            </span>
-          )}
-        </For>
-      </span>
-      <Show when={props.leads}>
-        <Icon name="chevron-right" class="work-summary-caret" />
-      </Show>
-    </button>
-  )
-}
-
-function WorkStep(props: { part: Part; open: boolean; onToggle: () => void }) {
-  const label = createMemo(() => stepLabel(props.part))
-  const presentation = createMemo(() => stepPresentation(props.part))
-  const body = createMemo(() => stepBody(props.part).trim())
-  const running = () => {
-    if (props.part.type !== "tool") return false
-    const status = (props.part as { state?: { status?: string } }).state?.status
-    return status === "pending" || status === "running"
-  }
-  const failed = () => props.part.type === "tool" && props.part.state.status === "error"
-
-  return (
-    <div class="work-step" classList={{ open: props.open, running: running(), failed: failed() }}>
-      <button
-        type="button"
-        class="work-step-head"
-        onClick={() => body() && props.onToggle()}
-        disabled={!body()}
-        aria-expanded={body() ? props.open : undefined}
-        aria-label={label()}
-      >
-        <span class="work-step-label" aria-hidden="true">
-          <span class="work-step-text">
-            <span class="work-step-action">{presentation().action}</span>
-            <Show when={presentation().detail}>
-              {" "}<span class="work-step-detail">{presentation().detail}</span>
-            </Show>
-            <Show when={presentation().context}>
-              {" "}<span class="work-step-context">{presentation().context}</span>
-            </Show>
-          </span>
-          <Show when={body()}>
-            <Icon name="chevron-right" class="work-step-caret" />
-          </Show>
+  return <div class="work-group" classList={{ open: props.open, live: props.active, failed: failures() > 0 }}>
+    <button type="button" class={statusLeads() ? "work-head work-status-head" : "work-head"}
+      disabled={!expandable()} aria-expanded={expandable() ? props.open : undefined} onClick={props.onToggle}>
+      <span class="work-summary">
+        <span class={statusLeads() ? "work-status-wave" : "work-summary-text"}
+          role={statusLeads() ? "status" : undefined} aria-live={statusLeads() ? "polite" : undefined}>
+          {statusLeads() ? props.status : summary()}
         </span>
-      </button>
-      <Show when={props.open && body()}>
-        <Show
-          when={props.part.type === "reasoning"}
-          fallback={<pre class="work-step-body">{body()}</pre>}
-        >
-          <div class="work-step-body reasoning-inline">
-            <MarkdownView text={(props.part as ReasoningPart).text} />
+        <Show when={diff()}>{(value) => <span class="work-diff"><Show when={value().added}><span class="work-diff-add">+{value().added}</span></Show><Show when={value().removed}><span class="work-diff-del">-{value().removed}</span></Show></span>}</Show>
+        <Show when={failures()}><span class="work-failure">{failures()} 项失败</span></Show>
+        <Show when={expandable()}><Icon name="chevron-right" class="work-summary-caret" /></Show>
+      </span>
+    </button>
+    <Show when={props.open && expandable()}>
+      <div class="work-steps">
+        <For each={props.entries.map((entry) => entry.key)}>{(key) => {
+          const part = () => (map().get(key)! as { part: Part }).part
+          return <div data-entry-key={key}>
+            <WorkStep part={part()} headless={thoughtOnly()} open={props.stepOpen[key] === true || thoughtOnly()} onToggle={() => props.onToggleStep(key)} inactive={props.inactive} />
           </div>
-        </Show>
+        }}</For>
+      </div>
+    </Show>
+    <Show when={props.active && !statusLeads()}>
+      <div class="work-status-head"><span class="work-status-wave" role="status" aria-live="polite" aria-atomic="true">{props.status}</span></div>
+    </Show>
+  </div>
+}
+
+function WorkStep(props: { part: Part; open: boolean; onToggle: () => void; inactive: boolean; headless?: boolean }) {
+  const presentation = createMemo(() => {
+    if (props.part.type === "reasoning") {
+      const duration = reasoningDurationMs([props.part])
+      return { action: "Thought", detail: duration === null ? "" : duration < 1000 ? "briefly" : formatDuration(duration), context: "" }
+    }
+    return stepPresentation(props.part)
+  })
+  const tool = () => props.part.type === "tool" ? props.part : undefined
+  const thinking = () => props.part.type === "reasoning" ? props.part.text : ""
+  const parameters = () => tool()?.tool === "question" ? "" : tool()?.state.input ? JSON.stringify(tool()!.state.input, null, 2) : ""
+  const output = () => {
+    const state = tool()?.state
+    if (!state) return ""
+    if (state.status === "completed") return state.output ?? ""
+    if (state.status === "error") return state.error ?? ""
+    return ""
+  }
+  const expandable = () => Boolean(thinking().trim() || parameters() || output())
+  const running = () => !props.inactive && (tool()?.state.status === "pending" || tool()?.state.status === "running")
+  const failed = () => tool()?.state.status === "error"
+  const stateLabel = () => {
+    const part = tool()
+    if (!part) return ""
+    if (part.state.status === "error") return "失败"
+    if (part.state.status === "completed") return ""
+    if (props.inactive) return "未完成"
+    return ""
+  }
+  return <div class="work-step" classList={{ open: props.open, running: running(), failed: failed() }}>
+    <button type="button" class="work-step-head" onClick={props.onToggle} disabled={!expandable()}
+      style={{ display: props.headless ? "none" : undefined }}
+      aria-expanded={expandable() ? props.open : undefined}>
+      <span class="work-step-label">
+        <span class="work-step-text"><span class="work-step-action">{presentation().action}</span>
+          <Show when={presentation().detail}> <span class="work-step-detail">{presentation().detail}</span></Show>
+          <Show when={presentation().context}> <span class="work-step-context">{presentation().context}</span></Show>
+        </span>
+        <Show when={stateLabel()}><span class="step-state">{stateLabel()}</span></Show>
+        <Show when={expandable()}><Icon name="chevron-right" class="work-step-caret" /></Show>
+      </span>
+    </button>
+    <Show when={failed() && !props.open}><div class="step-error-preview">{output()}</div></Show>
+    <Show when={props.open && expandable()}>
+      <Show when={props.part.type === "reasoning"} fallback={<div class="tool-details">
+        <Show when={parameters()}><div class="detail-label">参数</div><pre class="work-step-body">{parameters()}</pre></Show>
+        <Show when={output()}><div class="detail-label">{failed() ? "错误" : "输出"}</div><pre class="work-step-body">{output()}</pre></Show>
+        <Show when={running() && !output()}><div class="detail-label">{toolActivity(tool()!)}，等待输出</div></Show>
+      </div>}>
+        <div class="work-step-body reasoning-inline"><MarkdownView text={thinking()} /></div>
       </Show>
-    </div>
-  )
+    </Show>
+  </div>
 }

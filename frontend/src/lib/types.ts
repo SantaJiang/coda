@@ -55,6 +55,9 @@ export type UserMessage = {
   id: string
   sessionID: string
   role: "user"
+  /** Local delivery state; cleared when the backend acknowledges this ID. */
+  delivery?: "sending" | "failed" | "uncertain"
+  deliveryError?: string
   time: { created: number }
   agent?: string
   model?: {
@@ -85,6 +88,7 @@ export type AssistantMessage = {
   mode?: string
   summary?: boolean
   cost?: number
+  finish?: string
 }
 
 export type Message = UserMessage | AssistantMessage

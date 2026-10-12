@@ -1,11 +1,11 @@
 import type { Message, Part, ReasoningPart, SessionStatus, TextPart } from "./types"
 
-function preferMessage(local: Message, incoming: Message): Message {
+export function preferMessage(local: Message, incoming: Message): Message {
   if (local.role !== "assistant" || incoming.role !== "assistant") return incoming
   const localDone = Boolean(local.time.completed) || Boolean(local.error)
   const incomingDone = Boolean(incoming.time.completed) || Boolean(incoming.error)
   if (localDone && !incomingDone) return local
-  return incoming
+  return { ...incoming, finish: incoming.finish ?? local.finish }
 }
 
 export function mergeMessages(local: Message[], incoming: Message[]): Message[] {
@@ -18,9 +18,9 @@ export function mergeMessages(local: Message[], incoming: Message[]): Message[] 
   const seen = new Set(incoming.map((item) => item.id))
   const newestIncoming = incoming.reduce((max, item) => Math.max(max, item.time.created), 0)
   for (const item of local) {
-    if (!seen.has(item.id) && item.time.created >= newestIncoming) merged.push(item)
+    if (!seen.has(item.id) && (item.time.created >= newestIncoming || (item.role === "user" && item.delivery))) merged.push(item)
   }
-  return merged
+  return merged.sort((a, b) => a.time.created - b.time.created || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 }
 
 function proseText(part: Part) {
@@ -52,7 +52,7 @@ function preferPart(local: Part, incoming: Part): Part {
   if (incoming.type === "text" && local.type === "text") {
     const localText = (local as TextPart).text ?? ""
     const incomingText = (incoming as TextPart).text ?? ""
-    if (localText.length > incomingText.length) return local
+    if (localText.length > incomingText.length) return { ...incoming, text: localText }
   }
   if (incoming.type === "tool" && local.type === "tool") {
     const localDone = local.state.status === "completed" || local.state.status === "error"
@@ -63,15 +63,12 @@ function preferPart(local: Part, incoming: Part): Part {
 }
 
 export function mergeParts(local: Part[], incoming: Part[]): Part[] {
-  const localById = new Map(local.map((item) => [item.id, item]))
-  const merged = incoming.map((item) => {
-    const prev = localById.get(item.id)
-    return prev ? preferPart(prev, item) : item
-  })
-  const seen = new Set(incoming.map((item) => item.id))
-  for (const item of local) {
-    if (!seen.has(item.id)) merged.push(item)
-  }
+  const incomingById = new Map(incoming.map((item) => [item.id, item]))
+  const merged = local.map((item) => incomingById.has(item.id) ? preferPart(item, incomingById.get(item.id)!) : item)
+  const seen = new Set(local.map((item) => item.id))
+  for (const item of incoming) if (!seen.has(item.id)) merged.push(item)
+  // Production IDs encode creation order. An update must never move a tool ahead of earlier prose.
+  if (merged.every((part) => /^prt_[0-9a-f]{12}/.test(part.id))) merged.sort((a, b) => a.id.localeCompare(b.id))
   return merged
 }
 
@@ -93,13 +90,13 @@ export function resolveSessionStatus(
   merge = false,
   lastRole?: Message["role"],
 ) {
-  const settled = derived?.type === "idle" && lastRole !== "user"
   if (live) {
     const fromLive = live[sessionID] ?? { type: "idle" as const }
-    if (settled && fromLive.type !== "idle") return { type: "idle" as const }
     return fromLive
   }
-  if (settled) return derived ?? { type: "idle" as const }
+  // Message completion only closes an individual model step, never an active run.
+  if (current?.type === "busy" || current?.type === "retry") return current
+  if (derived?.type === "idle" && lastRole !== "user") return derived
   return applyDerivedStatus(current, derived, merge)
 }
 
@@ -108,6 +105,6 @@ export function resolveRacingSessionStatus(
   derived: SessionStatus | null,
   lastRole?: Message["role"],
 ): SessionStatus | undefined {
-  if (derived?.type === "idle" && lastRole !== "user") return derived
+  void lastRole
   return current ?? derived ?? undefined
 }

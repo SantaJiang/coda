@@ -191,7 +191,7 @@ export function QuestionDock() {
                 <button
                   type="button"
                   class="icon-btn"
-                  disabled={index() === 0}
+                  disabled={index() === 0 || submitting()}
                   onClick={() => setStep((value) => Math.max(0, value - 1))}
                   aria-label="上一个问题"
                 >
@@ -203,7 +203,7 @@ export function QuestionDock() {
                 <button
                   type="button"
                   class="icon-btn"
-                  disabled={last()}
+                  disabled={last() || submitting()}
                   onClick={() => setStep((value) => Math.min(total() - 1, value + 1))}
                   aria-label="下一个问题"
                 >
@@ -230,6 +230,7 @@ export function QuestionDock() {
                         <button
                           type="button"
                           class="question-option"
+                          disabled={submitting()}
                           classList={{ picked: selected(option.label) }}
                           onClick={() => toggle(index(), option.label, question().multiple)}
                         >
@@ -244,13 +245,14 @@ export function QuestionDock() {
                       <div
                         class="question-option question-custom"
                         classList={{ picked: selected(CUSTOM) }}
-                        onClick={() => toggle(index(), CUSTOM, question().multiple)}
+                        onClick={() => !submitting() && toggle(index(), CUSTOM, question().multiple)}
                       >
                         <span class="question-option-label">其他</span>
                         <Show when={selected(CUSTOM) ? String(index()) : undefined} keyed>
                           {(questionIndex) => (
                             <input
                               type="text"
+                              disabled={submitting()}
                               // 不用 value 绑定：回写 node.value 会打断 IME 组合并重置光标
                               ref={(el) => {
                                 el.value = customTexts()[Number(questionIndex)] ?? ""

@@ -211,6 +211,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         .map(([id]) => id),
     )
     const snapshotBefore = sessionSnapshotKey(state.status[session.id], beforeMessages, state.parts)
+    const revisionBefore = state.eventRevision[session.id] ?? 0
     const [messages, todos, permissions, questions, statuses] = await Promise.all([
       client.listMessages(directory, session.id),
       listed(client.listTodos(directory, session.id)),
@@ -228,20 +229,22 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         )
         const infos = messages
           .map((item) => item.info)
-          .filter((info) => !removedMessages.has(info.id))
+          .filter((info) => !removedMessages.has(info.id) && !draft.removedMessages[info.id])
         const stateUnchanged =
+          (draft.eventRevision[session.id] ?? 0) === revisionBefore &&
           sessionSnapshotKey(draft.status[session.id], localMessages, draft.parts) === snapshotBefore
         const shouldMerge = Boolean(opts.merge) || !stateUnchanged
         const nextMessages = shouldMerge ? mergeMessages(localMessages, infos) : infos
         draft.messages[session.id] = nextMessages
         for (const item of messages) {
-          if (removedMessages.has(item.info.id)) {
+          if (removedMessages.has(item.info.id) || draft.removedMessages[item.info.id]) {
             delete draft.parts[item.info.id]
             continue
           }
           const knownParts = beforePartIds.get(item.info.id)
           const currentParts = draft.parts[item.info.id] ?? []
           const incomingParts = (item.parts ?? []).filter((part) => {
+            if (draft.removedParts[`${part.messageID}:${part.id}`]) return false
             if (!knownParts?.has(part.id)) return true
             return currentParts.some((entry) => entry.id === part.id)
           })
@@ -265,9 +268,11 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         if (derived) draft.status[session.id] = derived
         const failing = hasFailingAssistant(nextMessages)
         draft.sessionErrors[session.id] = failing
+        const latestAssistant = [...nextMessages].reverse().find((item) => item.role === "assistant")
+        const latestUser = [...nextMessages].reverse().find((item) => item.role === "user")
         if (
-          !failing &&
-          nextMessages.some((item) => item.role === "assistant" && Boolean(item.time.completed) && !item.error)
+          !failing && latestAssistant?.role === "assistant" && latestAssistant.time.completed &&
+          (!latestUser || latestAssistant.parentID === latestUser.id || (!latestAssistant.parentID && latestAssistant.time.created >= latestUser.time.created))
         ) {
           delete draft.sessionErrorText[session.id]
         }

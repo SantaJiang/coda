@@ -1,143 +1,113 @@
-import { Index, Match, Show, Switch, createEffect, createMemo, createSignal, on } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js"
 import { useProjects, useRuntime } from "../store/app"
-import {
-  ChatTurnView,
-  CompactionMark,
-  groupTurns,
-  nextLiveItemKey,
-  timelineItemKey,
-  type TimelineItem,
-} from "./MessagePart"
-import { WorkGroup } from "./WorkGroup"
-
-function asCompaction(item: TimelineItem) {
-  return item.kind === "compaction" ? item : undefined
-}
-
-function asTurn(item: TimelineItem) {
-  return item.kind === "turn" ? item : undefined
-}
+import { conversationTurns } from "../lib/conversation"
+import { ChatTurnView } from "./MessagePart"
 
 export function MessageTimeline() {
   const projects = useProjects()
-  return (
-    <Show keyed when={projects.selectedSessionId()}>
-      {(_sessionID) => <SessionTimeline />}
-    </Show>
-  )
+  return <Show keyed when={projects.selectedSessionId()}>{(sessionID) => <SessionTimeline sessionID={sessionID} />}</Show>
 }
 
-function SessionTimeline() {
+function SessionTimeline(props: { sessionID: string }) {
   const runtime = useRuntime()
   const projects = useProjects()
-  let scroller: HTMLDivElement | undefined
-  let stick = true
-
-  const messages = createMemo(() => runtime.messages())
-
-  const items = createMemo(() => groupTurns(messages(), runtime.partsByMessage()))
-  const [liveKey, setLiveKey] = createSignal("")
-  const reconnecting = createMemo(() => projects.connection() === "disconnected")
-  const showLiveTail = createMemo(() => reconnecting() && !runtime.busy())
-  const isLive = (item: TimelineItem, index: number) => liveKey() === timelineItemKey(item, index)
-
-  createEffect(
-    on(
-      () => [runtime.busy(), items()] as const,
-      ([busy, list]) => setLiveKey((latched) => nextLiveItemKey(latched, busy, list)),
-    ),
-  )
-
-  const nearBottom = () => {
-    if (!scroller) return true
-    return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+  let scroller!: HTMLDivElement
+  let inner!: HTMLDivElement
+  const saved = runtime.timelineView()
+  const [following, setFollowing] = createSignal(saved.following)
+  const [clock, setClock] = createSignal(Date.now())
+  let frame: number | undefined
+  let disposed = false
+  let userScroll = false
+  let anchor: { key: string; offset: number; turnID?: string } | undefined
+  const turns = createMemo(() => conversationTurns(runtime.messages(), runtime.partsByMessage(), {
+    status: runtime.status(), sending: runtime.busy() && !runtime.status(), stopping: runtime.stopping(),
+    settling: runtime.settling(), stoppedTurnID: runtime.stoppedTurnID(),
+    stoppedTurns: runtime.stoppedTurns(),
+    permissionCount: runtime.pendingPermissions().length, questionCount: runtime.pendingQuestions().length,
+    sessionError: runtime.sessionError(), now: clock(),
+  }))
+  const byID = createMemo(() => new Map(turns().map((turn) => [turn.id, turn])))
+  const selectedText = () => {
+    const selection = window.getSelection()
+    return Boolean(scroller && selection && !selection.isCollapsed && selection.rangeCount && selection.getRangeAt(0).intersectsNode(scroller))
   }
-  const onScroll = () => {
-    stick = nearBottom()
+  const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+  const save = () => runtime.updateTimelineView({ following: following(), top: scroller.scrollTop }, props.sessionID)
+  const captureAnchor = (preferred?: HTMLElement) => {
+    if (!scroller) return
+    const top = scroller.getBoundingClientRect().top
+    const entries = [...scroller.querySelectorAll<HTMLElement>("[data-entry-key], [data-block-key]")]
+    const visible = preferred ?? entries.find((element) => element.getBoundingClientRect().bottom > top)
+    if (visible) anchor = { key: visible.dataset.scrollKey ?? visible.dataset.entryKey!, offset: visible.getBoundingClientRect().top - top, turnID: visible.closest<HTMLElement>("[data-turn-id]")?.dataset.turnId }
   }
-  const pauseAutoScroll = () => {
-    stick = false
-  }
-  const onWheel = (event: WheelEvent) => {
-    if (event.deltaY >= 0 || !scroller) return
-    const top = scroller.scrollTop
-    pauseAutoScroll()
-    requestAnimationFrame(() => {
-      if (!scroller) return
-      if (Math.abs(scroller.scrollTop - top) < 1 && nearBottom()) stick = true
+  const scheduleLayout = () => {
+    if (frame !== undefined) cancelAnimationFrame(frame)
+    frame = requestAnimationFrame(() => {
+      frame = undefined
+      if (disposed) return
+      if (following() && !selectedText()) scroller.scrollTop = scroller.scrollHeight
+      else if (anchor) {
+        const element = [...scroller.querySelectorAll<HTMLElement>("[data-entry-key], [data-scroll-key], [data-block-key]")].find((element) => (element.dataset.scrollKey ?? element.dataset.entryKey) === anchor!.key)
+          ?? [...scroller.querySelectorAll<HTMLElement>("[data-turn-id]")].find((element) => element.dataset.turnId === anchor!.turnID)
+        if (element) scroller.scrollTop += element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.offset
+      }
+      save()
+      captureAnchor()
     })
   }
-  const onPointerDown = (event: PointerEvent) => {
-    const target = event.target
-    if (!(target instanceof Element)) return
-    if (
-      target.closest(".work-head, .work-step-head") ||
-      target.closest(".work-status-head:not(:disabled)")
-    ) {
-      pauseAutoScroll()
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (nearBottom()) stick = true
-        })
-      })
-    }
+  const pause = () => { captureAnchor(); setFollowing(false); save() }
+  const latest = () => {
+    window.getSelection()?.removeAllRanges()
+    anchor = undefined
+    setFollowing(true)
+    save()
+    scheduleLayout()
   }
+  onMount(() => {
+    if (saved.top !== undefined && !saved.following) scroller.scrollTop = saved.top
+    else scroller.scrollTop = scroller.scrollHeight
+    captureAnchor()
+    const onSelection = () => { if (selectedText()) pause() }
+    document.addEventListener("selectionchange", onSelection)
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(scheduleLayout)
+    observer?.observe(inner)
+    onCleanup(() => { observer?.disconnect(); document.removeEventListener("selectionchange", onSelection) })
+  })
+  createEffect(on(() => [runtime.messages(), runtime.partsByMessage(), runtime.status(), runtime.settling()], scheduleLayout, { defer: true }))
+  createEffect(() => {
+    if (runtime.status()?.type !== "retry") return
+    const timer = window.setInterval(() => setClock(Date.now()), 1000)
+    onCleanup(() => window.clearInterval(timer))
+  })
+  onCleanup(() => { save(); disposed = true; if (frame !== undefined) cancelAnimationFrame(frame) })
 
-  createEffect(
-    on(
-      () => [messages(), runtime.partsByMessage(), runtime.busy(), reconnecting()],
-      () => {
-        if (stick && scroller) {
-          requestAnimationFrame(() => {
-            scroller?.scrollTo({ top: scroller.scrollHeight })
-          })
-        }
-      },
-    ),
-  )
-
-  return (
-    <div
-      class="timeline"
-      ref={scroller}
-      onScroll={onScroll}
-      onWheel={onWheel}
-      onPointerDown={onPointerDown}
-      aria-busy={runtime.busy()}
-    >
-      <div class="timeline-inner">
-        <Index each={items()}>
-          {(item, index) => (
-            <Switch>
-              <Match when={asCompaction(item())}>
-                {(compaction) => (
-                  <CompactionMark
-                    live={isLive(item(), index)}
-                    status={compaction().status}
-                    summary={compaction().summary}
-                    error={compaction().error}
-                  />
-                )}
-              </Match>
-              <Match when={asTurn(item())}>
-                {(turn) => (
-                  <ChatTurnView
-                    turn={turn()}
-                    partsByMessage={runtime.partsByMessage()}
-                    live={isLive(item(), index)}
-                  />
-                )}
-              </Match>
-            </Switch>
-          )}
-        </Index>
-        <Show when={showLiveTail()}>
-          <WorkGroup parts={[]} live />
+  return <div class="timeline-region">
+    <div class="timeline" ref={scroller} aria-busy={turns().some((turn) => turn.active)}
+      onWheel={(event) => { userScroll = true; if (event.deltaY < 0) pause() }}
+      onTouchStart={() => { userScroll = true; pause() }}
+      onKeyDown={(event) => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) { userScroll = true; pause() } }}
+      onPointerDown={(event) => {
+        const target = event.target as Element
+        if (target.closest(".work-head, .work-step-head")) { userScroll = false; pause() }
+        else if (event.target === scroller) { userScroll = true; pause() }
+      }}
+      onScroll={() => {
+        if (userScroll) { setFollowing(nearBottom() && !selectedText()); userScroll = false }
+        save(); captureAnchor()
+      }}>
+      <div class="timeline-inner" ref={inner}>
+        <Show when={projects.connection() !== "connected"}>
+          <div class="connection-notice" role="status">{projects.connection() === "connecting" ? "正在连接后端…" : "连接已中断，正在重连…"}</div>
         </Show>
-        <Show when={!runtime.busy() && runtime.sessionError()}>
-          <div class="error-card">{runtime.sessionError()}</div>
+        <For each={turns().map((turn) => turn.id)}>{(id) => <ChatTurnView turn={byID().get(id)!}
+          partsByMessage={runtime.partsByMessage()} following={following() && !selectedText()}
+          onInspect={pause} beforeLayout={() => captureAnchor(document.activeElement?.closest<HTMLElement>("[data-scroll-key], [data-entry-key]") ?? undefined)} afterLayout={scheduleLayout} />}</For>
+        <Show when={runtime.syncError()}>
+          <div class="connection-notice">同步回复失败：{runtime.syncError()} <button type="button" class="ghost-btn" onClick={() => void runtime.resync()}>重新同步回复</button></div>
         </Show>
       </div>
     </div>
-  )
+    <Show when={!following()}><button type="button" class="jump-latest" onClick={latest}>回到最新 ↓</button></Show>
+  </div>
 }

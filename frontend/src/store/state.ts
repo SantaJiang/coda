@@ -2,6 +2,7 @@ import type { ComposerAttachment } from "../lib/attachments"
 import type { ConfiguredModel, SelectableModel } from "../lib/models"
 import type { PermissionMode } from "../lib/permissions"
 import type { SendShortcut } from "../lib/settings"
+import type { TimelineViewState } from "../lib/conversation"
 import type {
   Message,
   Part,
@@ -32,6 +33,18 @@ export type SessionDraft = {
   attachments: ComposerAttachment[]
 }
 
+export type OutgoingPrompt = {
+  messageID: string
+  sessionID: string
+  project: Project
+  text: string
+  files: ComposerAttachment[]
+  model: { providerID: string; modelID: string }
+  agent: string
+  variant?: string | null
+  partIDs: string[]
+}
+
 export function emptySessionDraft(): SessionDraft {
   return { composer: "", attachments: [] }
 }
@@ -54,6 +67,17 @@ export type AppState = {
   permissions: Record<string, PermissionRequest>
   questions: Record<string, QuestionRequest>
   sendingBySession: Record<string, boolean>
+  stoppingBySession: Record<string, boolean>
+  stoppedTurnBySession: Record<string, string>
+  stoppedTurns: Record<string, boolean>
+  syncErrors: Record<string, string>
+  settlingBySession: Record<string, boolean>
+  eventRevision: Record<string, number>
+  seenEventIDs: string[]
+  removedMessages: Record<string, string>
+  removedParts: Record<string, { messageID: string; sessionID: string }>
+  outgoing: Record<string, OutgoingPrompt>
+  timelineViews: Record<string, TimelineViewState>
   drafts: Record<string, SessionDraft>
   error: string | null
   configuredModels: ConfiguredModel[]
@@ -96,6 +120,17 @@ export const initialState: AppState = {
   permissions: {},
   questions: {},
   sendingBySession: {},
+  stoppingBySession: {},
+  stoppedTurnBySession: {},
+  stoppedTurns: {},
+  syncErrors: {},
+  settlingBySession: {},
+  eventRevision: {},
+  seenEventIDs: [],
+  removedMessages: {},
+  removedParts: {},
+  outgoing: {},
+  timelineViews: {},
   drafts: {},
   error: null,
   configuredModels: [],
