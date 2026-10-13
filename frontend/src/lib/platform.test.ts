@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { applyWindowChromeAttr, isWindowsPlatform, revealMainWindow, usesCustomWindowControls } from "./platform"
+import windowCapabilities from "../../src-tauri/capabilities/default.json"
 
 const originalPlatform = Object.getOwnPropertyDescriptor(navigator, "platform")
 const originalUa = Object.getOwnPropertyDescriptor(navigator, "userAgent")
@@ -21,6 +22,15 @@ afterEach(() => {
 })
 
 describe("window chrome platform", () => {
+  it("grants the main window permissions needed to reveal the Windows shell", () => {
+    expect(windowCapabilities.windows).toContain("main")
+    expect(windowCapabilities.permissions).toEqual(expect.arrayContaining([
+      "core:window:allow-show",
+      "core:window:allow-set-shadow",
+      "core:window:allow-set-focus",
+    ]))
+  })
+
   it("treats macOS as overlay, not custom controls", () => {
     stubNavigator("MacIntel", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
     markTauri()
