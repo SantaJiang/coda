@@ -66,7 +66,9 @@ fn legacy_settings_path() -> PathBuf {
     if cfg!(windows) {
         if let Ok(appdata) = std::env::var("APPDATA") {
             if !appdata.trim().is_empty() {
-                return PathBuf::from(appdata).join("ai.coda.app").join("settings.json");
+                return PathBuf::from(appdata)
+                    .join("ai.coda.app")
+                    .join("settings.json");
             }
         }
         return home.join("AppData/Roaming/ai.coda.app/settings.json");
@@ -143,7 +145,10 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir() -> PathBuf {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let dir = std::env::temp_dir().join(format!("coda-home-test-{nanos}"));
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -152,7 +157,10 @@ mod tests {
     #[test]
     fn uses_explicit_coda_home() {
         assert_eq!(
-            coda_home_from(Some(" /tmp/custom-coda ".into()), Some(PathBuf::from("/Users/me"))),
+            coda_home_from(
+                Some(" /tmp/custom-coda ".into()),
+                Some(PathBuf::from("/Users/me"))
+            ),
             PathBuf::from("/tmp/custom-coda")
         );
     }
@@ -175,23 +183,45 @@ mod tests {
         fs::create_dir_all(&legacy_config_dir).unwrap();
         fs::create_dir_all(&legacy_data_dir).unwrap();
         fs::write(&legacy_settings, "{\"theme\":\"dark\"}").unwrap();
-        fs::write(legacy_config_dir.join("opencode.jsonc"), "{\"model\":\"x\"}").unwrap();
+        fs::write(
+            legacy_config_dir.join("opencode.jsonc"),
+            "{\"model\":\"x\"}",
+        )
+        .unwrap();
         fs::write(legacy_data_dir.join("opencode-local.db"), "db").unwrap();
         fs::write(legacy_data_dir.join("auth.json"), "{}").unwrap();
 
         fs::create_dir_all(dest.join("data")).unwrap();
         copy_if_missing(&legacy_settings, &dest.join("settings.json"));
-        copy_if_missing(&legacy_config_dir.join("opencode.jsonc"), &dest.join("opencode.jsonc"));
+        copy_if_missing(
+            &legacy_config_dir.join("opencode.jsonc"),
+            &dest.join("opencode.jsonc"),
+        );
         copy_dir_contents(&legacy_data_dir, &dest.join("data"));
 
-        assert_eq!(fs::read_to_string(dest.join("settings.json")).unwrap(), "{\"theme\":\"dark\"}");
-        assert_eq!(fs::read_to_string(dest.join("opencode.jsonc")).unwrap(), "{\"model\":\"x\"}");
-        assert_eq!(fs::read_to_string(dest.join("data/opencode-local.db")).unwrap(), "db");
-        assert_eq!(fs::read_to_string(dest.join("data/auth.json")).unwrap(), "{}");
+        assert_eq!(
+            fs::read_to_string(dest.join("settings.json")).unwrap(),
+            "{\"theme\":\"dark\"}"
+        );
+        assert_eq!(
+            fs::read_to_string(dest.join("opencode.jsonc")).unwrap(),
+            "{\"model\":\"x\"}"
+        );
+        assert_eq!(
+            fs::read_to_string(dest.join("data/opencode-local.db")).unwrap(),
+            "db"
+        );
+        assert_eq!(
+            fs::read_to_string(dest.join("data/auth.json")).unwrap(),
+            "{}"
+        );
 
         fs::write(&legacy_settings, "changed").unwrap();
         copy_if_missing(&legacy_settings, &dest.join("settings.json"));
-        assert_eq!(fs::read_to_string(dest.join("settings.json")).unwrap(), "{\"theme\":\"dark\"}");
+        assert_eq!(
+            fs::read_to_string(dest.join("settings.json")).unwrap(),
+            "{\"theme\":\"dark\"}"
+        );
 
         let _ = fs::remove_dir_all(root);
     }

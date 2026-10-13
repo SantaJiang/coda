@@ -26,7 +26,11 @@ fn keep_alive(_app: &AppHandle) -> bool {
     };
     serde_json::from_str::<serde_json::Value>(&raw)
         .ok()
-        .and_then(|value| value.get("keepBackendAlive").and_then(|flag| flag.as_bool()))
+        .and_then(|value| {
+            value
+                .get("keepBackendAlive")
+                .and_then(|flag| flag.as_bool())
+        })
         .unwrap_or(false)
 }
 
@@ -99,7 +103,9 @@ fn spawn(app: &AppHandle, port: &str) -> Result<(), String> {
         .stderr(Stdio::from(log_err));
     detach_session(&mut cmd);
 
-    let child = cmd.spawn().map_err(|err| format!("spawn {sidecar:?}: {err}"))?;
+    let child = cmd
+        .spawn()
+        .map_err(|err| format!("spawn {sidecar:?}: {err}"))?;
     let mut slot = OWNED.lock().map_err(|err| err.to_string())?;
     *slot = Some(child);
     Ok(())
@@ -125,7 +131,10 @@ fn find_sidecar_in(dir: &Path) -> Option<PathBuf> {
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if !(name == "coda-backend" || name == "coda-backend.exe" || name.starts_with("coda-backend-")) {
+        if !(name == "coda-backend"
+            || name == "coda-backend.exe"
+            || name.starts_with("coda-backend-"))
+        {
             continue;
         }
         let path = entry.path();
@@ -214,7 +223,10 @@ fn listening_pids(port: &str) -> Vec<u32> {
 
 #[cfg(unix)]
 fn is_sidecar_process(pid: u32) -> bool {
-    let Ok(output) = Command::new("ps").args(["-p", &pid.to_string(), "-o", "args="]).output() else {
+    let Ok(output) = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "args="])
+        .output()
+    else {
         return false;
     };
     let args = String::from_utf8_lossy(&output.stdout);
@@ -229,7 +241,9 @@ fn is_sidecar_process(pid: u32) -> bool {
     else {
         return false;
     };
-    String::from_utf8_lossy(&output.stdout).to_ascii_lowercase().contains("coda-backend")
+    String::from_utf8_lossy(&output.stdout)
+        .to_ascii_lowercase()
+        .contains("coda-backend")
 }
 
 #[cfg(unix)]
