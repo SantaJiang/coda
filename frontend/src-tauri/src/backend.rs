@@ -20,18 +20,21 @@ fn port() -> String {
         .unwrap_or_else(|| DEFAULT_PORT.to_string())
 }
 
-fn keep_alive(_app: &AppHandle) -> bool {
-    let Ok(raw) = fs::read_to_string(paths::settings_path()) else {
-        return false;
-    };
-    serde_json::from_str::<serde_json::Value>(&raw)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("keepBackendAlive")
-                .and_then(|flag| flag.as_bool())
-        })
-        .unwrap_or(false)
+pub fn supervise(app: AppHandle) {
+    ensure_running(&app);
+    while !crate::lifecycle::exiting() {
+        std::thread::sleep(Duration::from_secs(2));
+        let dead = OWNED.lock().ok().and_then(|mut slot| {
+            let child = slot.as_mut()?;
+            child.try_wait().ok().flatten().map(|_| child.id())
+        });
+        if let Some(pid) = dead {
+            if !crate::lifecycle::exiting() {
+                crate::lifecycle::backend_died(pid);
+                ensure_running(&app);
+            }
+        }
+    }
 }
 
 pub fn ensure_running(app: &AppHandle) {
@@ -56,22 +59,21 @@ pub fn ensure_running(app: &AppHandle) {
     eprintln!("Coda backend did not become ready on 127.0.0.1:{port}");
 }
 
-pub fn stop_if_needed(app: &AppHandle) {
-    if keep_alive(app) {
-        let _ = OWNED.lock().map(|mut slot| slot.take());
-        return;
-    }
+pub fn stop_if_needed(_app: &AppHandle) {
     // 这个窗口没有拉起 sidecar 时，不要停掉其他窗口或开发服务占用的端口。
-    let mut owned = false;
     if let Ok(mut slot) = OWNED.lock() {
         if let Some(mut child) = slot.take() {
-            owned = true;
+            #[cfg(unix)]
+            let _ = Command::new("kill")
+                .args(["-KILL", "--", &format!("-{}", child.id())])
+                .status();
+            #[cfg(windows)]
+            let _ = Command::new("taskkill")
+                .args(["/PID", &child.id().to_string(), "/F", "/T"])
+                .status();
             let _ = child.kill();
             let _ = child.wait();
         }
-    }
-    if owned && !cfg!(debug_assertions) {
-        stop_sidecar_on_port(&port());
     }
 }
 
@@ -94,6 +96,7 @@ fn spawn(app: &AppHandle, port: &str) -> Result<(), String> {
     cmd.args(["serve", "--port", port, "--hostname", "127.0.0.1"])
         .env("CODA_PORT", port)
         .env("CODA_HOME", &home)
+        .env("CODA_DESKTOP_OWNER", crate::lifecycle::owner())
         .env("OPENCODE_DISABLE_AUTOUPDATE", "1")
         .env("OPENCODE_CLIENT", "coda")
         .env("OPENCODE_CHANNEL", "local")
@@ -178,86 +181,6 @@ fn healthy(port: &str) -> bool {
     ok && (text.contains("\"healthy\":true") || text.contains("\"healthy\": true"))
 }
 
-fn stop_sidecar_on_port(port: &str) {
-    let self_pid = std::process::id();
-    for pid in listening_pids(port) {
-        if pid == self_pid || !is_sidecar_process(pid) {
-            continue;
-        }
-        kill_pid(pid);
-    }
-}
-
-#[cfg(unix)]
-fn listening_pids(port: &str) -> Vec<u32> {
-    let Ok(output) = Command::new("lsof")
-        .args(["-ti", &format!("tcp:{port}"), "-sTCP:LISTEN"])
-        .output()
-    else {
-        return Vec::new();
-    };
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| line.trim().parse().ok())
-        .collect()
-}
-
-#[cfg(windows)]
-fn listening_pids(port: &str) -> Vec<u32> {
-    let suffix = format!(":{port}");
-    let Ok(output) = Command::new("netstat").args(["-ano", "-p", "TCP"]).output() else {
-        return Vec::new();
-    };
-    let mut pids = Vec::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 5 || parts[3] != "LISTENING" || !parts[1].ends_with(&suffix) {
-            continue;
-        }
-        if let Ok(pid) = parts[4].parse() {
-            pids.push(pid);
-        }
-    }
-    pids
-}
-
-#[cfg(unix)]
-fn is_sidecar_process(pid: u32) -> bool {
-    let Ok(output) = Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "args="])
-        .output()
-    else {
-        return false;
-    };
-    let args = String::from_utf8_lossy(&output.stdout);
-    args.contains("coda-backend")
-}
-
-#[cfg(windows)]
-fn is_sidecar_process(pid: u32) -> bool {
-    let Ok(output) = Command::new("tasklist")
-        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
-        .output()
-    else {
-        return false;
-    };
-    String::from_utf8_lossy(&output.stdout)
-        .to_ascii_lowercase()
-        .contains("coda-backend")
-}
-
-#[cfg(unix)]
-fn kill_pid(pid: u32) {
-    let _ = Command::new("kill").arg(pid.to_string()).status();
-}
-
-#[cfg(windows)]
-fn kill_pid(pid: u32) {
-    let _ = Command::new("taskkill")
-        .args(["/PID", &pid.to_string(), "/F", "/T"])
-        .status();
-}
-
 #[cfg(unix)]
 fn detach_session(cmd: &mut Command) {
     use std::os::unix::process::CommandExt;
@@ -269,6 +192,5 @@ fn detach_session(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-    cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB);
+    cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
 }

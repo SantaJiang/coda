@@ -1,6 +1,6 @@
 {
   "name": "coda",
-  "version": "1.4.1",
+  "version": "1.5.1",
   "description": "Coda — 精简桌面 Agent 客户端",
   "type": "module",
   "scripts": {
@@ -15,11 +15,13 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "^2.12",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-http": "^2.5.9",
+    "@tauri-apps/plugin-notification": "2",
     "@tauri-apps/plugin-opener": "^2",
     "dompurify": "^3.4.15",
+    "ghostty-web": "github:anomalyco/ghostty-web#83c0a07b8628b748aed073b232cb4b52a6ca11c1",
     "highlight.js": "^11.11.1",
     "marked": "^15.0.12",
     "solid-js": "^1.9.3"

@@ -80,6 +80,7 @@ async function request<T>(
     body?: unknown
     extraQuery?: Record<string, string>
     expectJson?: boolean
+    raw?: boolean
   },
 ): Promise<T> {
   const headers: Record<string, string> = {
@@ -105,7 +106,7 @@ async function request<T>(
       `${method} ${path} failed (${response.status})`
     throw new ApiError(message, response.status)
   }
-  return unwrap<T>(body)
+  return options?.raw ? body as T : unwrap<T>(body)
 }
 
 export async function healthcheck() {
@@ -281,4 +282,19 @@ export async function replyQuestion(directory: string, requestID: string, answer
 
 export async function rejectQuestion(directory: string, requestID: string) {
   return request<boolean>("POST", `/question/${requestID}/reject`, { directory })
+}
+
+export type TerminalInfo = {
+  id: string; sessionID: string; rootSessionID: string; command: string; cwd: string; startedAt: number; lastOutputAt: number
+  endedAt?: number; exitCode?: number; reason?: string; status: "starting" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  recoverable?: boolean; needsInput?: boolean; nextCheckAt?: number; consumed?: boolean; suppressed?: boolean; hidden?: boolean; error?: string; cursor: number; baseCursor: number
+}
+export type TerminalLog = { data: string; start: number; cursor: number; baseCursor: number; endCursor: number; truncated: boolean; status: TerminalInfo["status"]; ended?: boolean }
+export const isTerminalRunning = (info: TerminalInfo) => info.status === "starting" || info.status === "running"
+const terminalPath = (sessionID: string, id?: string) => `/session/${encodeURIComponent(sessionID)}/terminals${id ? `/${encodeURIComponent(id)}` : ""}`
+export const listTerminals = (directory: string, sessionID: string) => request<{ backendID: string; items: TerminalInfo[] }>("GET", terminalPath(sessionID), { directory })
+export const terminalControl = (directory: string, sessionID: string, id: string, action: "cancel" | "hide" | "show" | "resume") => request("POST", `${terminalPath(sessionID, id)}/control`, { directory, body: { action } })
+export const terminalLog = (directory: string, sessionID: string, id: string, cursor?: number, limit?: number) => request<TerminalLog>("GET", `${terminalPath(sessionID, id)}/log`, { directory, raw: true, extraQuery: { ...(cursor === undefined ? {} : { cursor: String(cursor) }), ...(limit === undefined ? {} : { limit: String(limit) }) } })
+export function terminalStreamURL(directory: string, sessionID: string, id: string, cursor: number) {
+  return withDirectory(`${terminalPath(sessionID, id)}/stream`, directory, { cursor: String(cursor) })
 }

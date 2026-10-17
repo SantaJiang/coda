@@ -1,9 +1,8 @@
-use tauri::RunEvent;
-
 #[cfg(any(windows, test))]
 use std::time::Duration;
 
 mod backend;
+mod lifecycle;
 mod paths;
 
 #[tauri::command]
@@ -102,10 +101,17 @@ mod mac_traffic_lights;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            lifecycle::show(app)
+        }))
+        .plugin(tauri_plugin_notification::init())
+        .on_window_event(lifecycle::window_event)
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![
+            lifecycle::desktop_activity,
+            lifecycle::desktop_quit,
             path_exists,
             settings_read,
             settings_write,
@@ -114,6 +120,7 @@ pub fn run() {
         ])
         .setup(|app| {
             paths::migrate_legacy();
+            lifecycle::install(app);
             #[cfg(target_os = "macos")]
             mac_traffic_lights::install_main(app);
             // 窗口在这个 hook 之前就已经创建。Windows 上它默认可见，但 WebView2
@@ -126,16 +133,12 @@ pub fn run() {
                 schedule_reveal_fallback(app);
             }
             let handle = app.handle().clone();
-            std::thread::spawn(move || backend::ensure_running(&handle));
+            std::thread::spawn(move || backend::supervise(handle));
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while running Coda")
-        .run(|app, event| {
-            if let RunEvent::Exit = event {
-                backend::stop_if_needed(app);
-            }
-        });
+        .run(lifecycle::run_event);
 }
 
 /// 跟 `global.css` 里的 `--bg` 保持一致，避免 WebView2 在首帧用默认白底。

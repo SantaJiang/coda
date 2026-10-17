@@ -10,7 +10,7 @@ import {
   resolveSelectedKey,
   toBackendPatch,
 } from "../lib/models"
-import { flushShared, onSharedChange, type SharedSettings } from "../lib/shared"
+import { onSharedChange, type SharedSettings } from "../lib/shared"
 import { newestDraft } from "../lib/draft-session"
 import {
   createLocalProject,
@@ -179,9 +179,8 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
           reportError(handle, error, "更新权限失败")
         })
       }
-      if (typeof patch.keepBackendAlive === "boolean" && patch.keepBackendAlive !== state.keepBackendAlive) {
-        setState("keepBackendAlive", patch.keepBackendAlive)
-      }
+      if (patch.taskRecovery) setState("taskRecovery", patch.taskRecovery)
+      if (patch.stopBehavior) setState("stopBehavior", patch.stopBehavior)
       if (patch.models || "selectedModelKey" in patch) {
         const configured = loadConfiguredModels()
         const extras = menuDiscoveredModels(state.discoveredModels)
@@ -194,50 +193,19 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     }
     const unsubscribeShared = onSharedChange(applySharedPatch)
 
-    let closing = false
-    let unlistenClose: (() => void) | undefined
-    let closeDisposed = false
-    void (async () => {
-      try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window")
-        const win = getCurrentWindow()
-        let unlisten: (() => void) | undefined
-        unlisten = await win.onCloseRequested(async (event) => {
-          if (closing) return
-          // 只要这个监听还在，运行时就会先拦住原生关闭，再把事件交给这里。
-          event.preventDefault()
-          closing = true
-          await Promise.race([
-            flushShared().catch(() => undefined),
-            new Promise((resolve) => window.setTimeout(resolve, 1500)),
-          ])
-          flushPendingDraftPersist()
-          // 监听还在时，后续 close 也会被拦住。窗口权限里没有 destroy。
-          // 先卸掉监听，再用已授权的 close 把窗口关掉。
-          const stop = unlisten
-          unlisten = undefined
-          unlistenClose = undefined
-          try {
-            await stop?.()
-          } catch {
-            // 卸监听失败时仍尝试关闭
-          }
-          try {
-            await win.close()
-          } catch {
-            closing = false
-          }
-        })
-        if (closeDisposed) void unlisten?.()
-        else unlistenClose = unlisten
-      } catch {
-        // 浏览器预览没有窗口句柄
-      }
-    })()
-    onCleanup(() => {
-      closeDisposed = true
-      unlistenClose?.()
+    let stopQuitShortcut: (() => void) | undefined
+    let desktopDisposed = false
+    void import("../lib/desktop").then(({ prepareNotifications, installQuitShortcut }) => {
+      if (desktopDisposed) return
+      void prepareNotifications()
+      stopQuitShortcut = installQuitShortcut()
     })
+    onCleanup(() => { desktopDisposed = true; stopQuitShortcut?.() })
+    const reportActivity = window.setInterval(() => {
+      const active = Object.values(state.status).some((status) => status.type !== "idle")
+      void import("../lib/desktop").then(({ reportDesktopActivity }) => reportDesktopActivity(active))
+    }, 2000)
+    onCleanup(() => window.clearInterval(reportActivity))
 
     const stop = subscribe(
       (parsed) => {

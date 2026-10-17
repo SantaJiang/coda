@@ -11,5 +11,4 @@ export const STORAGE_KEYS = {
   permissionMode: "coda.permissionMode",
   sendShortcut: "coda.sendShortcut",
   theme: "coda.theme",
-  keepBackendAlive: "coda.keepBackendAlive",
 } as const

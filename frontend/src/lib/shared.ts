@@ -1,6 +1,6 @@
 import type { ConfiguredModel } from "./models"
 import type { PermissionMode } from "./permissions"
-import type { SendShortcut } from "./settings"
+import type { SendShortcut, TaskRecovery, StopBehavior } from "./settings"
 import type { Theme } from "./theme"
 import type { Project } from "./types"
 
@@ -10,7 +10,8 @@ export type SharedSettings = {
   theme?: Theme
   sendShortcut?: SendShortcut
   permissionMode?: PermissionMode
-  keepBackendAlive?: boolean
+  taskRecovery?: TaskRecovery
+  stopBehavior?: StopBehavior
   projects?: Project[]
   lastProject?: string | null
 }
@@ -21,6 +22,7 @@ const WRITE_DEBOUNCE_MS = 150
 
 let memory: SharedSettings | null = null
 let hydrated = false
+let retiredDetected = false
 let writeTimer: ReturnType<typeof setTimeout> | undefined
 // 本地已改、还没写进文件的 key。刷新时不用文件值覆盖它们，
 // 写入时只把这些 key 合并进文件，避免整份覆盖掉另一个实例的改动。
@@ -54,7 +56,7 @@ export function mergeHydrated(file: SharedSettings | null, seed: SharedSettings)
     const hasContent = (seed.models?.length ?? 0) > 0 || (seed.projects?.length ?? 0) > 0
     return { memory: hasContent ? seed : null, shouldWrite: hasContent }
   }
-  return { memory: { ...seed, ...file }, shouldWrite: false }
+  return { memory: { ...seed, ...stripRetiredSettings(file) }, shouldWrite: "keepBackendAlive" in file }
 }
 
 export async function hydrateShared(seed: () => SharedSettings) {
@@ -66,7 +68,10 @@ export async function hydrateShared(seed: () => SharedSettings) {
     for (const key of Object.keys(memory) as Array<keyof SharedSettings>) dirty.add(key)
   }
   installWindowHandlers()
-  if (result.shouldWrite) await writeSettingsFile()
+  if ((result.shouldWrite || retiredDetected) && memory) {
+    for (const key of Object.keys(memory) as Array<keyof SharedSettings>) dirty.add(key)
+    await writeSettingsFile()
+  }
 }
 
 export async function flushShared() {
@@ -104,6 +109,7 @@ async function readSettingsFile(): Promise<SharedSettings | null> {
     const raw = await invokeSettings<string | null>("settings_read")
     if (!raw) return null
     const parsed = JSON.parse(raw) as unknown
+    if (parsed && typeof parsed === "object" && "keepBackendAlive" in parsed) retiredDetected = true
     return parsed && typeof parsed === "object" ? stripRetiredSettings(parsed as SharedSettings) : null
   } catch {
     return null
@@ -113,7 +119,7 @@ async function readSettingsFile(): Promise<SharedSettings | null> {
 // 已下线的字段：不再读写 pinned 模型。读文件时统一剔除，
 // 避免老 settings.json 里的残留键被合并回内存又写回文件。
 export function stripRetiredSettings(settings: SharedSettings) {
-  const { pinnedModelKeys: _retired, ...rest } = settings as SharedSettings & { pinnedModelKeys?: string[] }
+  const { pinnedModelKeys: _retired, keepBackendAlive: _background, ...rest } = settings as SharedSettings & { pinnedModelKeys?: string[]; keepBackendAlive?: boolean }
   return rest
 }
 

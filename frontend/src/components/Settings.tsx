@@ -96,21 +96,28 @@ export function Settings() {
           </section>
 
           <section class="settings-group">
-            <div class="settings-label">后端</div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={chrome.keepBackendAlive()}
-              class="settings-toggle"
-              onClick={() => chrome.setKeepBackendAlive(!chrome.keepBackendAlive())}
-            >
-              <span class="settings-toggle-text">
-                <span class="settings-choice-name">退出后保持后端运行</span>
-                <span class="settings-choice-desc">关闭后，退出 Coda 时会一并停止内置后端</span>
-              </span>
-              <span class="settings-switch" aria-hidden="true" />
-            </button>
+            <div class="settings-label">后端异常中断后的任务恢复</div>
+            <div class="settings-choices">
+              <button class="settings-choice" classList={{ active: chrome.taskRecovery() === "auto" }} onClick={() => chrome.setTaskRecovery("auto")}>
+                <span class="settings-choice-name">自动继续</span><span class="settings-choice-desc">检查任务状态后继续，权限请求仍需确认</span>
+              </button>
+              <button class="settings-choice" classList={{ active: chrome.taskRecovery() === "manual" }} onClick={() => chrome.setTaskRecovery("manual")}>
+                <span class="settings-choice-name">手动继续</span><span class="settings-choice-desc">保留中断记录，点击继续任务后恢复</span>
+              </button>
+            </div>
           </section>
+          <section class="settings-group">
+            <div class="settings-label">停止按钮行为</div>
+            <div class="settings-choices">
+              <button class="settings-choice" classList={{ active: chrome.stopBehavior() === "all" }} onClick={() => chrome.setStopBehavior("all")}>
+                <span class="settings-choice-name">停止 AI 与本轮命令</span><span class="settings-choice-desc">同时终止当前轮次仍在运行的终端</span>
+              </button>
+              <button class="settings-choice" classList={{ active: chrome.stopBehavior() === "ai" }} onClick={() => chrome.setStopBehavior("ai")}>
+                <span class="settings-choice-name">只停止 AI</span><span class="settings-choice-desc">终端继续运行，完成后不会自动唤醒 AI</span>
+              </button>
+            </div>
+          </section>
+          <p class="settings-choice-desc">关闭窗口后 Coda 留在系统托盘；通过托盘“退出 Coda”停止所有任务。</p>
 
           <div class="settings-version">版本 {version()}</div>
         </div>

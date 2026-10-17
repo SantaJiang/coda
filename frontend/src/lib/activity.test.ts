@@ -29,6 +29,16 @@ function tool(
 }
 
 describe("activity presentation", () => {
+  it("uses the server check deadline without treating the execution timeout as a wait estimate", () => {
+    const waiting = tool("wait", "shell_wait", { timeout: 120000 }, {
+      status: "running", metadata: { nextCheckAt: 1_700_000_010_000 },
+    })
+    expect(activityStatus([waiting], 1_700_000_000_000)).toBe("Waiting for shell 10s")
+    expect(activityStatus([waiting], 1_700_000_020_000)).toBe("Waiting for shell 0s")
+    const running = tool("run", "bash", { command: "bun install", timeout: 120000 }, { status: "running" })
+    expect(activityStatus([running], 1_700_000_000_000)).not.toContain("Waiting")
+  })
+
   it("separates file reads from searches and keeps other action counts", () => {
     const parts: Part[] = [
       tool("r1", "read", { filePath: "/repo/a.ts" }),

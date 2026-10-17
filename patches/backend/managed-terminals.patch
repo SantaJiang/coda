@@ -1,0 +1,1458 @@
+diff --git a/packages/opencode/src/index.ts b/packages/opencode/src/index.ts
+index 13540a73a3..f3eff02beb 100644
+--- a/packages/opencode/src/index.ts
++++ b/packages/opencode/src/index.ts
+@@ -1,3 +1,4 @@
++import { watchDesktop } from "./terminal/desktop"
+ import yargs from "yargs"
+ import { hideBin } from "yargs/helpers"
+ import { RunCommand } from "./cli/cmd/run"
+@@ -30,6 +31,8 @@ import { errorMessage } from "./util/error"
+ import { PluginCommand } from "./cli/cmd/plug"
+ import { Heap } from "./cli/heap"
+ 
++watchDesktop()
++
+ const args = hideBin(process.argv)
+ 
+ function show(out: string) {
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/api.ts b/packages/opencode/src/server/routes/instance/httpapi/api.ts
+index f5076ad080..0d5a7c9e60 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/api.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/api.ts
+@@ -1,3 +1,4 @@
++import { TerminalApi } from "./groups/terminal"
+ import { Schema } from "effect"
+ import { HttpApi } from "effect/unstable/httpapi"
+ import { EventV2 } from "@opencode-ai/core/event"
+@@ -59,6 +60,7 @@ export const RootHttpApi = HttpApi.make("opencode-root")
+   .middleware(Authorization)
+ 
+ export const InstanceHttpApi = HttpApi.make("opencode-instance")
++  .addHttpApi(TerminalApi)
+   .addHttpApi(ConfigApi)
+   .addHttpApi(ExperimentalApi)
+   .addHttpApi(FileApi)
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
+index 4a20e1d2a0..a4e79d827f 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
+@@ -1,3 +1,5 @@
++import * as Terminals from "@/terminal/client"
++import * as TerminalStore from "@/terminal/store"
+ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+ import { Agent } from "@/agent/agent"
+ import { SessionV1 } from "@opencode-ai/core/v1/session"
+@@ -176,6 +178,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
+     })
+ 
+     const remove = Effect.fn("SessionHttpApi.remove")(function* (ctx: { params: { sessionID: SessionID } }) {
++      const directory = (yield* InstanceState.context).directory
++      yield* Effect.promise(() => Terminals.stopSession(directory, ctx.params.sessionID, true))
+       yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
+       return true
+     })
+@@ -230,7 +234,17 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
+     })
+ 
+     const abort = Effect.fn("SessionHttpApi.abort")(function* (ctx: { params: { sessionID: SessionID } }) {
++      const directory = (yield* InstanceState.context).directory
++      const messages = yield* session.messages({ sessionID: ctx.params.sessionID }).pipe(Effect.orDie)
++      const turnID = messages.findLast((message) => message.info.role === "user")?.info.id
++      const run = TerminalStore.run(ctx.params.sessionID)
++      if (run) TerminalStore.saveRun({ ...run, active: false, suppressed: true })
++      for (const task of TerminalStore.list(directory, ctx.params.sessionID))
++        if (!turnID || task.turnID === turnID) TerminalStore.update(task.id, { suppressed: true })
+       yield* promptSvc.cancel(ctx.params.sessionID)
++      yield* Effect.promise(() =>
++        Terminals.stopSession(directory, ctx.params.sessionID, TerminalStore.settings().stopBehavior !== "ai", turnID),
++      )
+       return true
+     })
+ 
+@@ -324,7 +338,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
+             const match = yield* session
+               .findMessage(sessionID, (item) => item.info.role === "assistant")
+               .pipe(Effect.catch(() => Effect.succeed(Option.none())))
+-            if (Option.isSome(match) && match.value.info.role === "assistant" && !match.value.info.error && !match.value.info.time.completed) {
++            if (
++              Option.isSome(match) &&
++              match.value.info.role === "assistant" &&
++              !match.value.info.error &&
++              !match.value.info.time.completed
++            ) {
+               yield* session.updateMessage({
+                 ...match.value.info,
+                 error,
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/server.ts b/packages/opencode/src/server/routes/instance/httpapi/server.ts
+index 94555ca278..5fe3a2e191 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/server.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/server.ts
+@@ -1,3 +1,4 @@
++import { terminalHandlers } from "./handlers/terminal"
+ import { Config as EffectConfig, Context, Effect, Layer } from "effect"
+ import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
+ import { HttpClient, HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
+@@ -164,6 +165,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
+     permissionHandlers,
+     providerHandlers,
+     sessionHandlers,
++    terminalHandlers,
+     syncHandlers,
+     tuiHandlers,
+     workspaceHandlers,
+diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
+index 447fc18811..fadc1ac3f6 100644
+--- a/packages/opencode/src/session/prompt.ts
++++ b/packages/opencode/src/session/prompt.ts
+@@ -1,3 +1,5 @@
++import * as TerminalStore from "../terminal/store"
++import * as TerminalClient from "../terminal/client"
+ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+ import path from "path"
+@@ -1092,6 +1094,7 @@ const layer = Layer.effect(
+           // running (e.g. the client switching permission mode mid-run) apply
+           // to the next step instead of only on the next prompt.
+           session = yield* sessions.get(sessionID).pipe(Effect.orDie)
++          if (flags.client === "coda") TerminalStore.owner()
+ 
+           let msgs = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+             Effect.provideService(Database.Service, database),
+@@ -1100,6 +1103,38 @@ const layer = Layer.effect(
+           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
+ 
+           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
++          if (flags.client === "coda")
++            TerminalStore.saveRun({
++              sessionID,
++              ownerID: TerminalStore.owner().id,
++              turnID: lastUser.id,
++              backendID: TerminalClient.backendID,
++              active: true,
++            })
++
++          const terminalTasks =
++            flags.client === "coda"
++              ? TerminalStore.list(ctx.directory, sessionID).filter(
++                  (task) => task.sessionID === sessionID && task.turnID === lastUser.id && !task.suppressed,
++                )
++              : []
++          // A persisted tool result is the acknowledgement; do not consume a result merely because a process exited.
++          for (const task of terminalTasks) {
++            const delivered = msgs.some((message) =>
++              message.parts.some(
++                (part) =>
++                  part.type === "tool" &&
++                  part.state.status === "completed" &&
++                  part.state.metadata?.terminalID === task.id &&
++                  !["starting", "running"].includes(String(part.state.metadata?.terminalStatus)),
++              ),
++            )
++            if (delivered && !task.consumed) TerminalStore.update(task.id, { consumed: true })
++          }
++          const pendingTerminals = terminalTasks.filter((task) => {
++            const control = TerminalStore.control(task.id)
++            return !control.consumed && !control.needsInput
++          })
+ 
+           const lastAssistantMsg = msgs.findLast(
+             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
+@@ -1116,6 +1151,7 @@ const layer = Layer.effect(
+             lastAssistant?.finish &&
+             !["tool-calls", "unknown"].includes(lastAssistant.finish) &&
+             !hasToolCalls &&
++            pendingTerminals.length === 0 &&
+             lastAssistant.parentID === lastUser.id
+           ) {
+             const orphan = lastAssistantMsg?.parts.find(
+@@ -1227,7 +1263,16 @@ const layer = Layer.effect(
+             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
+             const promptOps = yield* ops()
+ 
++            let terminalRoot = session
++            while (terminalRoot.parentID) terminalRoot = yield* sessions.get(terminalRoot.parentID).pipe(Effect.orDie)
++            const rootHistory =
++              terminalRoot.id === sessionID
++                ? msgs
++                : yield* sessions.messages({ sessionID: terminalRoot.id }).pipe(Effect.orDie)
++            const rootTurn = rootHistory.findLast((message) => message.info.role === "user")?.info.id
+             const tools = yield* SessionTools.resolve({
++              rootSessionID: terminalRoot.id,
++              rootTurnID: rootTurn,
+               agent,
+               session,
+               model,
+@@ -1265,6 +1310,18 @@ const layer = Layer.effect(
+               sys.mcp(agent, session.permission),
+               MessageV2.toModelMessagesEffect(msgs, model),
+             ])
++            if (pendingTerminals.length && lastAssistant?.finish && !hasToolCalls) {
++              // Avoid a tight stream of model calls if a provider ends its answer while shells are active.
++              const pending = pendingTerminals[0]!
++              yield* Effect.promise(() => TerminalClient.wait(pending.id, TerminalStore.active(pending) ? 30_000 : 0))
++              modelMsgs.push({
++                role: "user",
++                content:
++                  "[Coda task status] The task still has an unacknowledged terminal result. Use shell_wait or shell_status for " +
++                  pending.id +
++                  ". Inspect the result before finishing; never restart the original command automatically.",
++              })
++            }
+             const system = [
+               ...env,
+               ...instructions,
+@@ -1320,7 +1377,8 @@ const layer = Layer.effect(
+               }
+             }
+ 
+-            if (result === "stop") return "break" as const
++            if (result === "stop")
++              return pendingTerminals.length && !handle.message.error ? ("continue" as const) : ("break" as const)
+             if (result === "compact") {
+               yield* compaction.create({
+                 sessionID,
+@@ -1339,6 +1397,10 @@ const layer = Layer.effect(
+           continue
+         }
+ 
++        if (flags.client === "coda") {
++          const run = TerminalStore.run(sessionID)
++          if (run) TerminalStore.saveRun({ ...run, active: false })
++        }
+         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+         return yield* lastAssistant(sessionID)
+       },
+@@ -1347,6 +1409,14 @@ const layer = Layer.effect(
+     const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
+       input: LoopInput,
+     ) {
++      if (flags.client === "coda") {
++        const checkpoint = TerminalStore.run(input.sessionID)
++        if (checkpoint?.suppressed) {
++          const history = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
++          if (history.findLast((message) => message.info.role === "user")?.info.id === checkpoint.turnID)
++            return yield* lastAssistant(input.sessionID)
++        }
++      }
+       return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+     })
+ 
+diff --git a/packages/opencode/src/session/tools.ts b/packages/opencode/src/session/tools.ts
+index 99f7aec4fd..28d2948835 100644
+--- a/packages/opencode/src/session/tools.ts
++++ b/packages/opencode/src/session/tools.ts
+@@ -46,6 +46,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
+   bypassAgentCheck: boolean
+   messages: SessionV1.WithParts[]
+   promptOps: TaskPromptOps
++  rootSessionID?: string
++  rootTurnID?: string
+ }) {
+   const tools: Record<string, AITool> = {}
+   const run = yield* EffectBridge.make()
+@@ -61,7 +63,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
+     abort: options.abortSignal!,
+     messageID: input.processor.message.id,
+     callID: options.toolCallId,
+-    extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
++    extra: {
++      rootSessionID: input.rootSessionID ?? input.session.id,
++      rootTurnID: input.rootTurnID,
++      model: input.model,
++      bypassAgentCheck: input.bypassAgentCheck,
++      promptOps: input.promptOps,
++    },
+     agent: input.agent.name,
+     messages: input.messages,
+     metadata: (val) =>
+diff --git a/packages/opencode/src/tool/registry.ts b/packages/opencode/src/tool/registry.ts
+index 9167cb3ea6..7545b019a9 100644
+--- a/packages/opencode/src/tool/registry.ts
++++ b/packages/opencode/src/tool/registry.ts
+@@ -1,3 +1,4 @@
++import * as TerminalTools from "../terminal/tools"
+ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+ import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
+ import { Ripgrep } from "@opencode-ai/core/ripgrep"
+@@ -108,6 +109,9 @@ const layer = Layer.effect(
+     const webfetch = yield* WebFetchTool
+     const websearch = yield* WebSearchTool
+     const shell = yield* ShellTool
++    const shellWait = yield* TerminalTools.Wait
++    const shellStatus = yield* TerminalTools.Status
++    const shellCancel = yield* TerminalTools.Cancel
+     const globtool = yield* GlobTool
+     const writetool = yield* WriteTool
+     const edit = yield* EditTool
+@@ -209,6 +213,9 @@ const layer = Layer.effect(
+         const tool = yield* Effect.all({
+           invalid: Tool.init(invalid),
+           shell: Tool.init(shell),
++          shellWait: Tool.init(shellWait),
++          shellStatus: Tool.init(shellStatus),
++          shellCancel: Tool.init(shellCancel),
+           read: Tool.init(read),
+           glob: Tool.init(globtool),
+           grep: Tool.init(greptool),
+@@ -232,6 +239,7 @@ const layer = Layer.effect(
+             tool.invalid,
+             ...(questionEnabled ? [tool.question] : []),
+             tool.shell,
++            ...(flags.client === "coda" ? [tool.shellWait, tool.shellStatus, tool.shellCancel] : []),
+             tool.read,
+             tool.glob,
+             tool.grep,
+diff --git a/packages/opencode/src/tool/shell.ts b/packages/opencode/src/tool/shell.ts
+index 1e4423e017..4fb9cc8d4b 100644
+--- a/packages/opencode/src/tool/shell.ts
++++ b/packages/opencode/src/tool/shell.ts
+@@ -1,3 +1,4 @@
++import * as TerminalTools from "../terminal/tools"
+ import { Effect, Stream } from "effect"
+ import os from "os"
+ import { createWriteStream } from "node:fs"
+@@ -604,9 +605,16 @@ export const ShellTool = Tool.define(
+         yield* Effect.logInfo("shell tool using shell", { shell })
+ 
+         return {
+-          description: prompt.description,
++          description:
++            flags.client === "coda"
++              ? prompt.description.replace(
++                  /If not specified, commands will time out after \d+ms\./g,
++                  "If omitted, commands have no execution deadline.",
++                ) +
++                "\nIn Coda, commands run in managed terminals. Unspecified timeout means no execution deadline. The initial wait defaults to 10 seconds; wait_ms controls only the next check. If still running, use shell_wait with task_id and cursor until completion. Never claim success while a command is running. Use non-interactive install flags; interactive terminal input is unavailable."
++              : prompt.description,
+           parameters: prompt.parameters,
+-          execute: (params: Parameters, ctx: Tool.Context) =>
++          execute: (params: Parameters, ctx: Tool.Context): Effect.Effect<Tool.ExecuteResult> =>
+             Effect.gen(function* () {
+               const instanceCtx = yield* InstanceState.context
+               const cwd = params.workdir
+@@ -628,6 +636,20 @@ export const ShellTool = Tool.define(
+                 }),
+               )
+ 
++              if (flags.client === "coda")
++                return yield* TerminalTools.execute(
++                  {
++                    shell,
++                    command: params.command,
++                    cwd,
++                    directory: instanceCtx.directory,
++                    env: yield* shellEnv(ctx, cwd),
++                    timeout: params.timeout,
++                    wait_ms: params.wait_ms,
++                  },
++                  ctx,
++                )
++
+               return yield* run(
+                 {
+                   shell,
+diff --git a/packages/opencode/src/tool/shell/prompt.ts b/packages/opencode/src/tool/shell/prompt.ts
+index b576b77297..b2d68a98e7 100644
+--- a/packages/opencode/src/tool/shell/prompt.ts
++++ b/packages/opencode/src/tool/shell/prompt.ts
+@@ -14,6 +14,9 @@ export type Limits = {
+ 
+ export function parameterSchema() {
+   return Schema.Struct({
++    wait_ms: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(120_000))).annotate({
++      description: "Initial wait interval in milliseconds (default 10000, max 120000); does not terminate the command",
++    }),
+     command: Schema.String.annotate({ description: "The command to execute" }),
+     timeout: Schema.optional(PositiveInt).annotate({ description: "Optional timeout in milliseconds" }),
+     workdir: Schema.optional(Schema.String).annotate({
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/groups/terminal.ts b/packages/opencode/src/server/routes/instance/httpapi/groups/terminal.ts
+new file mode 100644
+index 0000000000..4b5f139f83
+--- /dev/null
++++ b/packages/opencode/src/server/routes/instance/httpapi/groups/terminal.ts
+@@ -0,0 +1,55 @@
++import { Schema } from "effect"
++import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiError } from "effect/unstable/httpapi"
++import { Authorization } from "../middleware/authorization"
++import { InstanceContextMiddleware } from "../middleware/instance-context"
++import { WorkspaceRoutingMiddleware, WorkspaceRoutingQueryFields } from "../middleware/workspace-routing"
++import { SessionID } from "@/session/schema"
++
++const query = Schema.Struct({ ...WorkspaceRoutingQueryFields })
++const params = { sessionID: SessionID, terminalID: Schema.String }
++export const TerminalApi = HttpApi.make("coda-terminal").add(
++  HttpApiGroup.make("terminal")
++    .add(
++      HttpApiEndpoint.get("list", "/session/:sessionID/terminals", {
++        params: { sessionID: SessionID },
++        query,
++        error: [HttpApiError.BadRequest, HttpApiError.NotFound],
++        success: Schema.Unknown,
++      }),
++      HttpApiEndpoint.get("logs", "/session/:sessionID/terminals/:terminalID/log", {
++        params,
++        query: Schema.Struct({
++          ...WorkspaceRoutingQueryFields,
++          cursor: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
++          limit: Schema.optional(
++            Schema.NumberFromString.check(
++              Schema.isInt(),
++              Schema.isGreaterThanOrEqualTo(1),
++              Schema.isLessThanOrEqualTo(262144),
++            ),
++          ),
++        }),
++        error: [HttpApiError.BadRequest, HttpApiError.NotFound],
++        success: Schema.Unknown,
++      }),
++      HttpApiEndpoint.get("stream", "/session/:sessionID/terminals/:terminalID/stream", {
++        params,
++        query: Schema.Struct({
++          ...WorkspaceRoutingQueryFields,
++          cursor: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
++        }),
++        error: [HttpApiError.BadRequest, HttpApiError.NotFound],
++        success: Schema.String,
++      }),
++      HttpApiEndpoint.post("control", "/session/:sessionID/terminals/:terminalID/control", {
++        params,
++        query,
++        payload: Schema.Struct({ action: Schema.Literals(["cancel", "hide", "show", "resume"]) }),
++        error: [HttpApiError.BadRequest, HttpApiError.NotFound],
++        success: Schema.Unknown,
++      }),
++    )
++    .middleware(InstanceContextMiddleware)
++    .middleware(WorkspaceRoutingMiddleware)
++    .middleware(Authorization),
++)
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/handlers/terminal.ts b/packages/opencode/src/server/routes/instance/httpapi/handlers/terminal.ts
+new file mode 100644
+index 0000000000..f7ede0949a
+--- /dev/null
++++ b/packages/opencode/src/server/routes/instance/httpapi/handlers/terminal.ts
+@@ -0,0 +1,125 @@
++import { Effect, Scope, Schedule } from "effect"
++import * as Stream from "effect/Stream"
++import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
++import { HttpServerResponse } from "effect/unstable/http"
++import { InstanceHttpApi } from "../api"
++import { InstanceState } from "@/effect/instance-state"
++import { Session } from "@/session/session"
++import { SessionPrompt } from "@/session/prompt"
++import { SessionStatus } from "@/session/status"
++import { SessionID } from "@/session/schema"
++import * as Store from "@/terminal/store"
++import * as Client from "@/terminal/client"
++import { eligible, resume } from "@/terminal/recovery"
++import { InstanceStore } from "@/project/instance-store"
++
++export const terminalHandlers = HttpApiBuilder.group(InstanceHttpApi, "terminal", (handlers) =>
++  Effect.gen(function* () {
++    const sessions = yield* Session.Service
++    const prompt = yield* SessionPrompt.Service
++    const status = yield* SessionStatus.Service
++    const scope = yield* Scope.Scope
++    const instances = yield* InstanceStore.Service
++    const checked = Effect.fnUntraced(function* (params: { sessionID: SessionID; terminalID: string }) {
++      const directory = (yield* InstanceState.context).directory
++      yield* sessions.get(params.sessionID).pipe(Effect.mapError(() => new HttpApiError.NotFound({})))
++      const info = Store.list(directory, params.sessionID).find((info) => info.id === params.terminalID)
++      if (!info) return yield* Effect.fail(new HttpApiError.NotFound({}))
++      return yield* Effect.promise(() => Client.refresh(info.id))
++    })
++    const recover = (info: Store.Info) =>
++      resume(info, sessions, prompt, status).pipe(
++        Effect.catchCause((cause) => Effect.sync(() => Store.update(info.id, { error: String(cause) }))),
++      )
++    // Recovery belongs to the backend, including sessions not currently open in
++    // the WebView. Each session still shares the persisted stop guard and lock.
++    yield* Effect.gen(function* () {
++      if (Store.settings().taskRecovery === "manual") return
++      let owner: Store.Owner
++      try {
++        owner = Store.owner()
++      } catch {
++        return
++      }
++      const tasks = Store.list().filter((info) => eligible(info, owner.id) && !info.error)
++      for (const info of tasks)
++        yield* instances.provide({ directory: info.directory }, recover(info)).pipe(
++          Effect.catchCause((cause) => Effect.sync(() => Store.update(info.id, { error: String(cause) }))),
++          Effect.forkIn(scope),
++        )
++    }).pipe(
++      Effect.catchCause(() => Effect.void),
++      Effect.repeat(Schedule.spaced("5 seconds")),
++      Effect.forkIn(scope),
++    )
++    return handlers
++      .handle("list", ({ params }) =>
++        Effect.gen(function* () {
++          yield* sessions.get(params.sessionID).pipe(Effect.mapError(() => new HttpApiError.NotFound({})))
++          const directory = (yield* InstanceState.context).directory
++          const list = yield* Effect.promise(() =>
++            Promise.all(Store.list(directory, params.sessionID).map((info) => Client.refresh(info.id))),
++          )
++          let ownerID = ""
++          try {
++            ownerID = Store.owner().id
++          } catch {}
++          const candidates = list.map((info) => ({ ...info, recoverable: eligible(info, ownerID) }))
++          if (Store.settings().taskRecovery !== "manual") {
++            for (const info of candidates)
++              if (info.recoverable && !info.error) yield* recover(info).pipe(Effect.forkIn(scope))
++          }
++          return { backendID: Client.backendID, items: candidates }
++        }),
++      )
++      .handle("logs", ({ params, query }) =>
++        Effect.gen(function* () {
++          const info = yield* checked(params)
++          if (query.cursor !== undefined && (!Number.isSafeInteger(query.cursor) || query.cursor < 0))
++            return yield* Effect.fail(new HttpApiError.BadRequest({}))
++          return {
++            ...Store.log(info, query.cursor, Math.max(1, Math.min(256 * 1024, query.limit ?? 64 * 1024))),
++            status: info.status,
++          }
++        }),
++      )
++      .handleRaw("stream", ({ params, query }) =>
++        Effect.gen(function* () {
++          yield* checked(params)
++          let cursor = query.cursor
++          if (cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 0))
++            return yield* Effect.fail(new HttpApiError.BadRequest({}))
++          const sample = Effect.promise(async () => {
++            const info = await Client.refresh(params.terminalID)
++            const output = Store.log(info, cursor)
++            cursor = output.cursor
++            return { ...output, status: info.status, ended: !Store.active(info) && cursor >= info.cursor }
++          })
++          const stream = Stream.make(0).pipe(
++            Stream.concat(Stream.tick("500 millis")),
++            Stream.mapEffect(() => sample),
++            Stream.takeUntil((frame) => frame.ended),
++            Stream.map((frame) => `data: ${JSON.stringify(frame)}\n\n`),
++            Stream.encodeText,
++          )
++          return HttpServerResponse.stream(stream, {
++            contentType: "text/event-stream",
++            headers: { "Cache-Control": "no-cache", "X-Accel-Buffering": "no" },
++          })
++        }),
++      )
++      .handle("control", ({ params, payload }) =>
++        Effect.gen(function* () {
++          const info = yield* checked(params)
++          if (payload.action === "cancel") return yield* Effect.promise(() => Client.cancel(info.id))
++          if (payload.action === "hide" || payload.action === "show") {
++            if (Store.active(info)) return yield* Effect.fail(new HttpApiError.BadRequest({}))
++            Store.update(info.id, { hidden: payload.action === "hide" })
++            return true
++          }
++          yield* recover(info).pipe(Effect.forkIn(scope))
++          return true
++        }),
++      )
++  }),
++)
+diff --git a/packages/opencode/src/terminal/client.ts b/packages/opencode/src/terminal/client.ts
+new file mode 100644
+index 0000000000..55cb5291f2
+--- /dev/null
++++ b/packages/opencode/src/terminal/client.ts
+@@ -0,0 +1,301 @@
++import fs from "node:fs"
++import path from "node:path"
++import { spawn as ptySpawn } from "@opencode-ai/core/pty/pty.bun"
++import { spawnSync } from "node:child_process"
++import * as Store from "./store"
++
++type Entry = {
++  info: Store.Info
++  process: ReturnType<typeof ptySpawn>
++  listeners: { dispose(): void }[]
++  done: Promise<void>
++  settle(): void
++  exitCode?: number
++  timer?: ReturnType<typeof setTimeout>
++  killTimer?: ReturnType<typeof setTimeout>
++}
++const entries = new Map<string, Entry>()
++const MAX_LOG = 100 * 1024 * 1024
++const SEGMENT = 1024 * 1024
++export const backendID = `${process.pid}-${Date.now()}`
++let watcher: ReturnType<typeof setInterval> | undefined
++function persist(info: Store.Info) {
++  Store.atomic(path.join(Store.taskDir(info.id), "info.json"), info)
++}
++function kill(entry: Entry, force = false) {
++  if (process.platform === "win32") {
++    spawnSync("taskkill", ["/PID", String(entry.process.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" })
++    return
++  }
++  try {
++    process.kill(-entry.process.pid, force ? "SIGKILL" : "SIGTERM")
++  } catch {
++    try {
++      entry.process.kill(force ? "SIGKILL" : "SIGTERM")
++    } catch {}
++  }
++}
++function finish(entry: Entry, code?: number) {
++  if (!Store.active(entry.info)) return
++  try {
++    Store.owner()
++  } catch {
++    if (!entry.info.reason) {
++      const desktop = Store.json<Store.Owner>(path.join(Store.home(), "runtime", "desktop.json"))
++      entry.info.reason = desktop?.exiting ? "Cancelled: Coda exited" : "Interrupted: Coda desktop disconnected"
++    }
++    kill(entry, true)
++  }
++  if (entry.timer) clearTimeout(entry.timer)
++  if (entry.killTimer) {
++    entry.exitCode = code
++    return
++  }
++  entry.info.status = entry.info.reason?.startsWith("Cancelled")
++    ? "cancelled"
++    : entry.info.reason?.startsWith("Interrupted")
++      ? "interrupted"
++      : entry.info.reason
++        ? "failed"
++        : code === 0
++          ? "completed"
++          : "failed"
++  entry.info.exitCode = entry.info.reason ? undefined : code
++  entry.info.endedAt = Date.now()
++  persist(entry.info)
++  entry.settle()
++  for (const listener of entry.listeners) listener.dispose()
++  entries.delete(entry.info.id)
++  if (!entries.size && watcher) {
++    clearInterval(watcher)
++    watcher = undefined
++  }
++}
++function append(info: Store.Info, text: string) {
++  const bytes = Buffer.from(text)
++  for (let offset = 0; offset < bytes.length; ) {
++    let segment = info.segments.at(-1)
++    if (!segment || segment.size >= SEGMENT) {
++      segment = { name: `output-${info.cursor}.log`, start: info.cursor, size: 0 }
++      info.segments.push(segment)
++    }
++    const chunk = bytes.subarray(offset, offset + Math.min(SEGMENT - segment.size, bytes.length - offset))
++    fs.appendFileSync(path.join(Store.taskDir(info.id), segment.name), chunk, { mode: 0o600 })
++    segment.size += chunk.length
++    info.cursor += chunk.length
++    offset += chunk.length
++    while (info.cursor - info.baseCursor > MAX_LOG && info.segments.length > 1) {
++      const old = info.segments.shift()!
++      info.baseCursor = old.start + old.size
++      fs.rmSync(path.join(Store.taskDir(info.id), old.name), { force: true })
++    }
++  }
++  info.lastOutputAt = Date.now()
++  const plain = text.slice(-2048).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
++  if (
++    /(?:password|username|authentication token)\s*:|press (?:enter|return|any key)|\[(?:y\/n|yes\/no)\]|\(y\/n\)/i.test(
++      plain,
++    )
++  )
++    Store.update(info.id, { needsInput: true })
++  persist(info)
++}
++function monitor() {
++  if (watcher) return
++  watcher = setInterval(() => {
++    for (const entry of entries.values()) {
++      try {
++        if (Store.owner().id === entry.info.ownerID) {
++          try {
++            process.kill(entry.process.pid, 0)
++          } catch (error) {
++            if ((error as NodeJS.ErrnoException).code === "ESRCH") {
++              entry.info.reason ??= "Interrupted: terminal exited without delivering its result"
++              finish(entry)
++            }
++          }
++          continue
++        }
++      } catch {}
++      entry.info.reason = "Interrupted: Coda desktop exited"
++      kill(entry, true)
++      finish(entry)
++    }
++  }, 1000)
++  watcher.unref()
++}
++process.once("exit", () => {
++  for (const entry of entries.values()) {
++    kill(entry, true)
++    entry.info.reason = "Interrupted: backend exited"
++    finish(entry)
++  }
++})
++export async function refresh(id: string) {
++  const entry = entries.get(id)
++  let info = entry?.info ?? Store.read(id)
++  if (!info) throw new Error("Terminal not found")
++  if (Store.active(info) && !entry) {
++    info = {
++      ...info,
++      status: "interrupted",
++      endedAt: Date.now(),
++      reason: "Interrupted: backend restarted; inspect project state before retrying",
++    }
++    persist(info)
++  }
++  return { ...info, ...Store.control(id) }
++}
++export async function start(
++  input: Omit<
++    Store.Info,
++    "id" | "ownerID" | "status" | "startedAt" | "lastOutputAt" | "cursor" | "baseCursor" | "segments"
++  > & { env: NodeJS.ProcessEnv; timeout?: number; wait_ms?: number },
++) {
++  const owner = Store.owner()
++  Store.cleanup()
++  const id = Store.idFor(input.sessionID, input.callID)
++  fs.mkdirSync(Store.root(), { recursive: true, mode: 0o700 })
++  try {
++    fs.mkdirSync(Store.taskDir(id), { mode: 0o700 })
++  } catch (error) {
++    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
++    return refresh(id)
++  }
++  const { env, timeout, wait_ms: _, ...fields } = input
++  const now = Date.now()
++  const info: Store.Info = {
++    ...fields,
++    ownerID: owner.id,
++    id,
++    backendPID: process.pid,
++    startedAt: now,
++    lastOutputAt: now,
++    status: "starting",
++    cursor: 0,
++    baseCursor: 0,
++    segments: [],
++  }
++  persist(info)
++  Store.update(id, { consumed: false, suppressed: false })
++  try {
++    Store.owner()
++    const name = path
++      .basename(input.shell)
++      .toLowerCase()
++      .replace(/\.exe$/, "")
++    const args =
++      name === "cmd"
++        ? ["/d", "/s", "/c", "set /p _coda_ready= & " + input.command]
++        : /^(pwsh|powershell)$/.test(name)
++          ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "$null = [Console]::ReadLine(); " + input.command]
++          : ["-c", 'read -r _coda_ready; exec "$0" -c "$1"', input.shell, input.command]
++    const proc = ptySpawn(input.shell, args, {
++      cwd: input.cwd,
++      cols: 120,
++      rows: 32,
++      name: "xterm-256color",
++      env: Object.fromEntries(
++        Object.entries(env).filter((item): item is [string, string] => typeof item[1] === "string"),
++      ),
++    })
++    let settle!: () => void
++    const done = new Promise<void>((resolve) => {
++      settle = resolve
++    })
++    const entry: Entry = { info, process: proc, listeners: [], done, settle }
++    entries.set(id, entry)
++    info.pid = proc.pid
++    info.status = "running"
++    persist(info)
++    entry.listeners.push(
++      proc.onData((text) => {
++        try {
++          append(info, text)
++        } catch (error) {
++          info.reason = `Unable to save terminal output: ${error}`
++          kill(entry, true)
++          finish(entry)
++        }
++      }),
++      proc.onExit(({ exitCode }) => finish(entry, exitCode)),
++    )
++    // bun-pty begins reading synchronously inside its constructor. Hold the command
++    // at a private input gate until both callbacks are installed, so fast exits are observable.
++    proc.write(process.platform === "win32" ? "\r" : "\n")
++    if (timeout)
++      entry.timer = setTimeout(() => {
++        info.reason = `Command exceeded explicit timeout of ${timeout} ms`
++        entry.killTimer = setTimeout(() => {
++          kill(entry, true)
++          entry.killTimer = undefined
++          finish(entry, entry.exitCode)
++        }, 3000)
++        kill(entry)
++      }, timeout)
++    monitor()
++    return { ...info, ...Store.control(id) }
++  } catch (error) {
++    info.status = "failed"
++    info.endedAt = Date.now()
++    info.reason = String(error)
++    persist(info)
++    throw error
++  }
++}
++export async function cancel(id: string) {
++  const info = await refresh(id)
++  Store.update(id, { suppressed: true, nextCheckAt: undefined })
++  const entry = entries.get(id)
++  if (!entry || !Store.active(info)) return info
++  entry.info.reason = "Cancelled by user"
++  if (entry.killTimer) {
++    await entry.done
++    return refresh(id)
++  }
++  entry.killTimer = setTimeout(() => {
++    kill(entry, true)
++    entry.killTimer = undefined
++    finish(entry, entry.exitCode)
++  }, 3000)
++  kill(entry)
++  await entry.done
++  return refresh(id)
++}
++export async function wait(id: string, waitMs: number, signal?: AbortSignal) {
++  const deadline = Date.now() + Math.max(0, Math.min(120_000, waitMs))
++  Store.update(id, { nextCheckAt: deadline })
++  try {
++    const entry = entries.get(id)
++    if (!entry || !Store.active(entry.info) || waitMs === 0) return refresh(id)
++    await new Promise<void>((resolve, reject) => {
++      const complete = () => {
++        clearTimeout(timer)
++        signal?.removeEventListener("abort", abort)
++        resolve()
++      }
++      const abort = () => {
++        clearTimeout(timer)
++        signal?.removeEventListener("abort", abort)
++        reject(signal?.reason ?? new Error("Aborted"))
++      }
++      const timer = setTimeout(complete, Math.max(0, deadline - Date.now()))
++      entry.done.then(complete)
++      if (signal?.aborted) abort()
++      else signal?.addEventListener("abort", abort, { once: true })
++    })
++    return refresh(id)
++  } finally {
++    Store.update(id, { nextCheckAt: undefined })
++  }
++}
++export async function stopSession(directory: string, sessionID: string, all: boolean, turnID?: string) {
++  const tasks = Store.list(directory, sessionID).filter(
++    (info) => !turnID || info.turnID === turnID || info.rootTurnID === turnID,
++  )
++  for (const info of tasks) Store.update(info.id, { suppressed: true })
++  if (all) await Promise.all(tasks.filter(Store.active).map((info) => cancel(info.id)))
++}
++export async function shutdown() {
++  await Promise.all([...entries.keys()].map(cancel))
++}
+diff --git a/packages/opencode/src/terminal/desktop.ts b/packages/opencode/src/terminal/desktop.ts
+new file mode 100644
+index 0000000000..538102c976
+--- /dev/null
++++ b/packages/opencode/src/terminal/desktop.ts
+@@ -0,0 +1,15 @@
++import { owner } from "./store"
++import { shutdown } from "./client"
++
++// Owned sidecars must not outlive a crashed desktop, including during a model request.
++export function watchDesktop() {
++  if (!process.env.CODA_DESKTOP_OWNER) return
++  const timer = setInterval(() => {
++    try {
++      if (owner().id === process.env.CODA_DESKTOP_OWNER) return
++    } catch {}
++    clearInterval(timer)
++    void shutdown().finally(() => process.exit(0))
++  }, 1000)
++  timer.unref()
++}
+diff --git a/packages/opencode/src/terminal/recovery.ts b/packages/opencode/src/terminal/recovery.ts
+new file mode 100644
+index 0000000000..f241614879
+--- /dev/null
++++ b/packages/opencode/src/terminal/recovery.ts
+@@ -0,0 +1,99 @@
++import { Effect } from "effect"
++import { Session } from "../session/session"
++import { SessionPrompt } from "../session/prompt"
++import { SessionStatus } from "../session/status"
++import { SessionID, PartID } from "../session/schema"
++import * as Store from "./store"
++import * as Client from "./client"
++import { result } from "./tools"
++import fs from "node:fs"
++
++export function eligible(info: Store.Info & Store.Control, ownerID: string) {
++  const checkpoint = Store.run(info.sessionID)
++  return (
++    info.ownerID === ownerID &&
++    !info.suppressed &&
++    !checkpoint?.suppressed &&
++    ((info.status === "interrupted" && !info.consumed) ||
++      Boolean(checkpoint?.active && checkpoint.backendID !== Client.backendID && checkpoint.turnID === info.turnID))
++  )
++}
++
++const recovering = new Set<string>()
++export function resume(
++  info: Store.Info,
++  sessions: Session.Interface,
++  prompt: SessionPrompt.Interface,
++  status: SessionStatus.Interface,
++) {
++  return Effect.gen(function* () {
++    const key = info.sessionID
++    if (recovering.has(key)) return
++    const currentStatus = (yield* status.list()).get(SessionID.make(key))
++    if (currentStatus && currentStatus.type !== "idle") return
++    recovering.add(key)
++    try {
++      Store.owner()
++      if (!fs.existsSync(info.directory)) throw new Error("项目目录不存在，请恢复目录后继续任务")
++      const current = Store.control(info.id)
++      const checkpoint = Store.run(key)
++      if (current.suppressed || checkpoint?.suppressed || (current.consumed && !checkpoint?.active)) return
++      const messages = yield* sessions.messages({ sessionID: SessionID.make(key) }).pipe(Effect.orDie)
++      const user = messages.findLast((message) => message.info.role === "user")
++      if (!user || user.info.id !== info.turnID || info.ownerID !== Store.owner().id) {
++        Store.update(info.id, { suppressed: true })
++        return
++      }
++      const tasks = Store.list(info.directory, key).filter(
++        (task) => task.sessionID === key && task.turnID === info.turnID && !task.suppressed,
++      )
++      for (const task of tasks) {
++        const next = yield* Effect.promise(() => Client.refresh(task.id))
++        const value = result(next)
++        for (const message of messages)
++          for (const part of message.parts) {
++            if (part.type !== "tool") continue
++            const terminalID = "metadata" in part.state ? part.state.metadata?.terminalID : undefined
++            if (terminalID !== task.id && !(message.info.id === task.messageID && part.callID === task.callID)) continue
++            yield* sessions.updatePart({
++              ...part,
++              state: {
++                status: "completed",
++                input: part.state.input,
++                title: value.title,
++                metadata: value.metadata,
++                output: value.output,
++                time: { start: task.startedAt, end: Date.now() },
++              },
++            })
++          }
++      }
++      const assistant = messages.findLast((message) => message.info.role === "assistant")
++      if (assistant?.info.role === "assistant")
++        yield* sessions.updateMessage({
++          ...assistant.info,
++          finish: "tool-calls",
++          error: undefined,
++          time: { ...assistant.info.time, completed: Date.now() },
++        })
++      Store.update(info.id, { error: undefined })
++      if (checkpoint?.active) {
++        const latestUser = messages.findLast((message) => message.info.role === "user")
++        if (latestUser)
++          yield* sessions.updatePart({
++            id: PartID.ascending(),
++            type: "text",
++            synthetic: true,
++            text: "[Coda recovery] The backend was interrupted. First inspect the project and existing command results. Do not replay an earlier command automatically.",
++            sessionID: latestUser.info.sessionID,
++            messageID: latestUser.info.id,
++          })
++      }
++      if (Store.control(info.id).suppressed || Store.run(key)?.suppressed) return
++      yield* prompt.loop({ sessionID: SessionID.make(key) })
++      for (const task of tasks) Store.update(task.id, { consumed: true })
++    } finally {
++      recovering.delete(key)
++    }
++  })
++}
+diff --git a/packages/opencode/src/terminal/store.ts b/packages/opencode/src/terminal/store.ts
+new file mode 100644
+index 0000000000..747ab9055d
+--- /dev/null
++++ b/packages/opencode/src/terminal/store.ts
+@@ -0,0 +1,153 @@
++import fs from "node:fs"
++import path from "node:path"
++import os from "node:os"
++import { createHash, randomUUID } from "node:crypto"
++
++export type Status = "starting" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
++export type Info = {
++  id: string
++  ownerID: string
++  directory: string
++  sessionID: string
++  rootSessionID: string
++  rootTurnID?: string
++  messageID: string
++  turnID: string
++  callID: string
++  command: string
++  cwd: string
++  shell: string
++  startedAt: number
++  lastOutputAt: number
++  endedAt?: number
++  status: Status
++  pid?: number
++  backendPID?: number
++  exitCode?: number
++  reason?: string
++  cursor: number
++  baseCursor: number
++  segments: { name: string; start: number; size: number }[]
++}
++export type Control = {
++  needsInput?: boolean
++  nextCheckAt?: number
++  consumed?: boolean
++  suppressed?: boolean
++  hidden?: boolean
++  error?: string
++}
++export type Settings = { taskRecovery?: "auto" | "manual"; stopBehavior?: "all" | "ai" }
++export const home = () => path.resolve(process.env.CODA_HOME || path.join(os.homedir(), ".coda"))
++export const root = () => path.join(home(), "terminals")
++export type Owner = { id: string; pid: number; at: number; exiting: boolean }
++export function owner() {
++  const value = json<Owner>(path.join(home(), "runtime", "desktop.json"))
++  if (!value || value.exiting) throw new Error("Coda desktop is not running or is exiting")
++  try {
++    process.kill(value.pid, 0)
++  } catch (error) {
++    if ((error as NodeJS.ErrnoException).code !== "EPERM") throw new Error("Coda desktop is no longer running")
++  }
++  return value
++}
++export const active = (info: Info) => info.status === "starting" || info.status === "running"
++export function taskDir(id: string) {
++  if (!/^term_[a-f0-9]{32}$/.test(id)) throw new Error("Invalid terminal ID")
++  return path.join(root(), id)
++}
++export function atomic(file: string, value: unknown) {
++  const tmp = `${file}.${randomUUID()}.tmp`
++  fs.writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 })
++  fs.renameSync(tmp, file)
++}
++export function json<T>(file: string): T | undefined {
++  try {
++    return JSON.parse(fs.readFileSync(file, "utf8")) as T
++  } catch (error) {
++    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
++    throw error
++  }
++}
++export const settings = () => json<Settings>(path.join(home(), "settings.json")) ?? {}
++export const read = (id: string) => json<Info>(path.join(taskDir(id), "info.json"))
++export const control = (id: string) => json<Control>(path.join(taskDir(id), "control.json")) ?? {}
++export function update(id: string, patch: Partial<Control>) {
++  atomic(path.join(taskDir(id), "control.json"), { ...control(id), ...patch })
++}
++export function list(directory?: string, sessionID?: string) {
++  fs.mkdirSync(root(), { recursive: true, mode: 0o700 })
++  return fs
++    .readdirSync(root())
++    .filter((id) => /^term_[a-f0-9]{32}$/.test(id))
++    .flatMap((id) => {
++      const info = read(id)
++      return info &&
++        (!directory || info.directory === path.resolve(directory)) &&
++        (!sessionID || info.sessionID === sessionID || info.rootSessionID === sessionID)
++        ? [{ ...info, ...control(id) }]
++        : []
++    })
++    .sort((a, b) => a.startedAt - b.startedAt)
++}
++export function idFor(sessionID: string, callID: string) {
++  return "term_" + createHash("sha256").update(`${sessionID}\0${callID}`).digest("hex").slice(0, 32)
++}
++export function log(info: Info, cursor?: number, limit = 64 * 1024) {
++  const requested = cursor ?? Math.max(info.baseCursor, info.cursor - limit)
++  let at = Math.max(info.baseCursor, Math.min(info.cursor, requested))
++  const start = at
++  const chunks: Buffer[] = []
++  let left = Math.min(limit, 256 * 1024)
++  for (const segment of info.segments) {
++    if (!left || segment.start + segment.size <= at) continue
++    const offset = Math.max(0, at - segment.start)
++    const size = Math.min(segment.size - offset, left)
++    if (size <= 0) continue
++    let fd: number | undefined
++    try {
++      fd = fs.openSync(path.join(taskDir(info.id), segment.name), "r")
++      const bytes = Buffer.alloc(size)
++      const n = fs.readSync(fd, bytes, 0, size, offset)
++      chunks.push(bytes.subarray(0, n))
++      at = segment.start + offset + n
++      left -= n
++    } catch (error) {
++      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
++    } finally {
++      if (fd !== undefined) fs.closeSync(fd)
++    }
++  }
++  return {
++    data: Buffer.concat(chunks).toString("base64"),
++    start,
++    cursor: at,
++    baseCursor: info.baseCursor,
++    endCursor: info.cursor,
++    truncated: requested < info.baseCursor,
++  }
++}
++export function cleanup() {
++  for (const info of list())
++    if (!active(info) && info.endedAt && Date.now() - info.endedAt > 7 * 86400_000)
++      fs.rmSync(taskDir(info.id), { recursive: true, force: true })
++}
++
++export type Run = {
++  sessionID: string
++  ownerID: string
++  turnID: string
++  backendID: string
++  active: boolean
++  suppressed?: boolean
++}
++function runPath(sessionID: string) {
++  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(sessionID)) throw new Error("Invalid session ID")
++  const folder = path.join(home(), "runs")
++  fs.mkdirSync(folder, { recursive: true, mode: 0o700 })
++  return path.join(folder, `${sessionID}.json`)
++}
++export const run = (sessionID: string) => json<Run>(runPath(sessionID))
++export function saveRun(value: Run) {
++  atomic(runPath(value.sessionID), value)
++}
+diff --git a/packages/opencode/src/terminal/tools.ts b/packages/opencode/src/terminal/tools.ts
+new file mode 100644
+index 0000000000..2338760108
+--- /dev/null
++++ b/packages/opencode/src/terminal/tools.ts
+@@ -0,0 +1,107 @@
++import path from "node:path"
++import { Effect, Schema } from "effect"
++import { Tool } from "../tool/tool"
++import { InstanceState } from "../effect/instance-state"
++import * as Client from "./client"
++import * as Store from "./store"
++
++export function result(info: Store.Info, cursor?: number) {
++  const output = Store.log(info, cursor, 24 * 1024)
++  const text = Buffer.from(output.data, "base64").toString("utf8")
++  const running = Store.active(info)
++  const needsInput = Store.control(info.id).needsInput === true
++  const silent = Date.now() - info.lastOutputAt > 300_000
++  return {
++    title: info.command,
++    metadata: { terminalID: info.id, terminalStatus: info.status, exit: info.exitCode, cursor: output.cursor },
++    output: JSON.stringify({
++      task_id: info.id,
++      status: info.status,
++      exit_code: info.exitCode,
++      cursor: output.cursor,
++      output: text || "(no new output)",
++      truncated: output.truncated,
++      has_more_output: output.cursor < output.endCursor,
++      reason: info.reason,
++      needs_input: needsInput,
++      silent_for_five_minutes: silent,
++      instruction:
++        needsInput && running
++          ? "The command appears to require interactive input. This terminal is read-only: explain the blocker to the user, cancel or replace the command with an authorized non-interactive operation. Do not keep waiting blindly."
++          : running
++            ? "Command is still running. Use shell_wait with this task_id and cursor; wait_ms normally 30000, or 60000 if unchanged (maximum 120000). Do not rerun the command. Inspect authentication or interactive prompts; never invent a completion ETA."
++            : "Command has ended. Inspect its exit status before continuing.",
++    }),
++  }
++}
++
++export function execute(
++  input: {
++    shell: string
++    command: string
++    cwd: string
++    directory: string
++    env: NodeJS.ProcessEnv
++    timeout?: number
++    wait_ms?: number
++  },
++  ctx: Tool.Context,
++) {
++  return Effect.gen(function* () {
++    const info = yield* Effect.promise(() =>
++      Client.start({
++        ...input,
++        rootSessionID: String(ctx.extra?.rootSessionID ?? ctx.sessionID),
++        rootTurnID: typeof ctx.extra?.rootTurnID === "string" ? ctx.extra.rootTurnID : undefined,
++        sessionID: ctx.sessionID,
++        messageID: ctx.messageID,
++        turnID: ctx.messages.findLast((item) => item.info.role === "user")?.info.id ?? ctx.messageID,
++        callID: ctx.callID ?? ctx.messageID,
++      }),
++    )
++    const waitMs = Math.max(1, Math.min(120_000, input.wait_ms ?? 10_000))
++    yield* ctx.metadata({ metadata: { terminalID: info.id, nextCheckAt: Date.now() + waitMs } })
++    const next = yield* Effect.promise(() => Client.wait(info.id, waitMs, ctx.abort))
++    return result(next)
++  })
++}
++
++const params = {
++  task_id: Schema.String,
++  cursor: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
++}
++const WaitParameters = Schema.Struct({
++  ...params,
++  wait_ms: Schema.optional(
++    Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(120_000)),
++  ),
++})
++
++function define(name: "shell_wait" | "shell_status" | "shell_cancel") {
++  return Tool.define(
++    name,
++    Effect.succeed({
++      description:
++        name === "shell_wait"
++          ? "Wait for an existing shell command, returning immediately on completion. Time is the next check interval, not a command timeout or completion ETA. Pass the previous cursor to receive only new output. Default 30 seconds; use 60 seconds when unchanged, maximum 120 seconds."
++          : name === "shell_cancel"
++            ? "Stop an existing shell command and its process tree."
++            : "Read an existing shell command's status and new output without waiting.",
++      parameters: WaitParameters,
++      execute: (input: typeof WaitParameters.Type, ctx: Tool.Context) =>
++        Effect.gen(function* () {
++          const directory = path.resolve((yield* InstanceState.context).directory)
++          const info = yield* Effect.promise(() => Client.refresh(input.task_id))
++          if (info.directory !== directory || info.sessionID !== ctx.sessionID)
++            throw new Error("Terminal does not belong to this session")
++          if (name === "shell_cancel") return result(yield* Effect.promise(() => Client.cancel(info.id)), input.cursor)
++          const ms = name === "shell_wait" ? (input.wait_ms ?? 30_000) : 0
++          yield* ctx.metadata({ metadata: { terminalID: info.id, nextCheckAt: Date.now() + ms } })
++          return result(yield* Effect.promise(() => Client.wait(info.id, ms, ctx.abort)), input.cursor)
++        }),
++    }),
++  )
++}
++export const Wait = define("shell_wait")
++export const Status = define("shell_status")
++export const Cancel = define("shell_cancel")
+diff --git a/packages/opencode/test/terminal/managed.test.ts b/packages/opencode/test/terminal/managed.test.ts
+new file mode 100644
+index 0000000000..ec69359e37
+--- /dev/null
++++ b/packages/opencode/test/terminal/managed.test.ts
+@@ -0,0 +1,187 @@
++import { afterAll, beforeAll, expect, test } from "bun:test"
++import fs from "node:fs"
++import path from "node:path"
++import { tmpdir } from "../fixture/fixture"
++import * as Client from "../../src/terminal/client"
++import * as Store from "../../src/terminal/store"
++
++let temporary: Awaited<ReturnType<typeof tmpdir>>
++const previous = process.env.CODA_HOME
++let heartbeat: ReturnType<typeof setInterval>
++const owner = () =>
++  Store.atomic(path.join(Store.home(), "runtime", "desktop.json"), {
++    id: "terminal-test",
++    pid: process.pid,
++    at: Date.now(),
++    exiting: false,
++  })
++beforeAll(async () => {
++  temporary = await tmpdir()
++  process.env.CODA_HOME = temporary.path
++  fs.mkdirSync(path.join(temporary.path, "runtime"), { recursive: true })
++  owner()
++  heartbeat = setInterval(owner, 1000)
++})
++afterAll(async () => {
++  clearInterval(heartbeat)
++  await Client.shutdown()
++  if (previous === undefined) delete process.env.CODA_HOME
++  else process.env.CODA_HOME = previous
++  await temporary[Symbol.asyncDispose]()
++})
++const command = (command: string, key: string, timeout?: number) =>
++  Client.start({
++    command,
++    callID: key,
++    sessionID: "ses_test",
++    rootSessionID: "ses_test",
++    messageID: "msg_test",
++    turnID: "msg_user",
++    directory: temporary.path,
++    cwd: temporary.path,
++    shell: process.platform === "win32" ? "cmd.exe" : "/bin/sh",
++    env: process.env,
++    timeout,
++  })
++const output = (info: Store.Info) => Buffer.from(Store.log(info, 0).data, "base64").toString("utf8")
++
++test("quick completion returns without exhausting its wait and retains unicode output", async () => {
++  if (process.platform === "win32") return
++  const info = await command("printf '你好 terminal\\n'", "quick")
++  const before = Date.now()
++  const done = await Client.wait(info.id, 5000)
++  expect(Date.now() - before).toBeLessThan(3000)
++  expect(done.status).toBe("completed")
++  expect(output(done)).toContain("你好 terminal")
++})
++test("a check interval expiring does not kill the process and duplicate starts reuse the PID", async () => {
++  if (process.platform === "win32") return
++  const info = await command("printf first; sleep 0.4; printf second", "long")
++  const checked = await Client.wait(info.id, 1)
++  expect(checked.status).toBe("running")
++  expect(Store.control(info.id).nextCheckAt).toBeUndefined()
++  const duplicate = await command("printf should-not-execute", "long")
++  expect(duplicate.pid).toBe(info.pid)
++  const done = await Client.wait(info.id, 3000)
++  expect(output(done)).toContain("firstsecond")
++  expect(output(done)).not.toContain("should-not-execute")
++})
++test("aborting a wait leaves its command running, and cancellation is idempotent", async () => {
++  if (process.platform === "win32") return
++  const info = await command("sleep 30", "abort")
++  const abort = new AbortController()
++  const waiting = Client.wait(info.id, 10000, abort.signal)
++  abort.abort(new Error("stop waiting"))
++  await expect(waiting).rejects.toThrow("stop waiting")
++  expect((await Client.refresh(info.id)).status).toBe("running")
++  const cancelled = await Promise.all([Client.cancel(info.id), Client.cancel(info.id)])
++  expect(cancelled.map((item) => item.status)).toEqual(["cancelled", "cancelled"])
++  expect((await Client.cancel(info.id)).status).toBe("cancelled")
++})
++test("explicit timeout and non-zero exit remain failures", async () => {
++  if (process.platform === "win32") return
++  const timed = await command("sleep 30", "timeout", 50)
++  const expired = await Client.wait(timed.id, 5000)
++  expect(expired.status).toBe("failed")
++  expect(expired.reason).toContain("explicit timeout")
++  const bad = await command("printf error; exit 7", "exit")
++  const done = await Client.wait(bad.id, 3000)
++  expect(done.exitCode).toBe(7)
++  expect(done.status).toBe("failed")
++})
++test("incremental output cursors neither drop nor repeat bytes", async () => {
++  if (process.platform === "win32") return
++  const info = await command("printf '中文abcdef'", "cursor")
++  const done = await Client.wait(info.id, 3000)
++  const chunks: Buffer[] = []
++  let cursor = 0
++  while (cursor < done.cursor) {
++    const frame = Store.log(done, cursor, 2)
++    chunks.push(Buffer.from(frame.data, "base64"))
++    cursor = frame.cursor
++  }
++  expect(Buffer.concat(chunks).toString("utf8").trim()).toBe("中文abcdef")
++})
++test("stale persisted running entries are interrupted without replaying their command", async () => {
++  const id = Store.idFor("ses_test", "stale")
++  fs.mkdirSync(Store.taskDir(id))
++  const info: Store.Info = {
++    id,
++    ownerID: "earlier-app",
++    sessionID: "ses_test",
++    rootSessionID: "ses_test",
++    messageID: "msg_test",
++    turnID: "msg_user",
++    callID: "stale",
++    directory: temporary.path,
++    cwd: temporary.path,
++    shell: "/bin/sh",
++    command: "must never execute",
++    status: "running",
++    startedAt: Date.now(),
++    lastOutputAt: Date.now(),
++    cursor: 0,
++    baseCursor: 0,
++    segments: [],
++  }
++  Store.atomic(path.join(Store.taskDir(id), "info.json"), info)
++  expect((await Client.refresh(id)).status).toBe("interrupted")
++  expect((await command("must never execute", "stale")).status).toBe("interrupted")
++})
++test("only-stop-AI suppresses continuation without cancelling the command", async () => {
++  if (process.platform === "win32") return
++  const info = await command("sleep 30", "suppress")
++  await Client.stopSession(temporary.path, "ses_test", false, "msg_user")
++  expect((await Client.refresh(info.id)).status).toBe("running")
++  expect(Store.control(info.id).suppressed).toBe(true)
++  await Client.cancel(info.id)
++})
++
++test("cancelling a shell also kills descendants which ignore TERM", async () => {
++  if (process.platform === "win32") return
++  const info = await command("sh -c 'trap \"\" TERM; echo child-$$; while :; do sleep 1; done' & wait", "tree")
++  const deadline = Date.now() + 3000
++  let pid = 0
++  while (!pid && Date.now() < deadline) {
++    const frame = await Client.refresh(info.id)
++    pid = Number(output(frame).match(/child-(\d+)/)?.[1])
++    if (!pid) await Bun.sleep(20)
++  }
++  expect(pid).toBeGreaterThan(0)
++  await Client.cancel(info.id)
++  expect(() => process.kill(pid, 0)).toThrow()
++}, 10000)
++
++test("interactive prompts are surfaced without silently terminating the command", async () => {
++  if (process.platform === "win32") return
++  const info = await command("printf 'Password: '; sleep 30", "interactive")
++  const deadline = Date.now() + 2000
++  while (!Store.control(info.id).needsInput && Date.now() < deadline) await Bun.sleep(20)
++  expect(Store.control(info.id).needsInput).toBe(true)
++  expect((await Client.refresh(info.id)).status).toBe("running")
++  await Client.cancel(info.id)
++})
++
++test("fast commands cannot exit before their output and exit listeners are installed", async () => {
++  if (process.platform === "win32") return
++  for (let n = 0; n < 30; n++) {
++    const info = await command("printf fast-result", `fast-${n}`)
++    const done = await Client.wait(info.id, 1000)
++    expect(done.status).toBe("completed")
++    expect(output(done)).toContain("fast-result")
++  }
++}, 15000)
++
++test("disk logs rotate at 100 MiB and stale cursors explicitly report truncation", async () => {
++  if (process.platform === "win32") return
++  const info = await command("head -c 106954752 /dev/zero | tr '\\000' x", "rotation")
++  const done = await Client.wait(info.id, 20000)
++  expect(done.status).toBe("completed")
++  expect(done.cursor).toBeGreaterThan(100 * 1024 * 1024)
++  expect(done.cursor - done.baseCursor).toBeLessThanOrEqual(100 * 1024 * 1024)
++  const frame = Store.log(done, 0, 24 * 1024)
++  expect(frame.truncated).toBe(true)
++  expect(frame.start).toBe(done.baseCursor)
++  expect(Buffer.from(frame.data, "base64").length).toBe(24 * 1024)
++  expect(done.segments.length).toBeLessThanOrEqual(100)
++}, 25000)

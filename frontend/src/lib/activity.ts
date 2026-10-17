@@ -260,21 +260,10 @@ export function activitySummary(parts: Part[]) {
   return capitalize(bits.join(", "))
 }
 
-const WAIT_AFTER_MS = 2000
-
-function waitSeconds(value: unknown) {
-  const ms = Number(value)
-  if (!Number.isFinite(ms) || ms <= 0) return 0
-  return Math.max(1, Math.round(ms / 1000))
-}
-
-function waitLabelFor(part: ToolPart, now: number, action = "") {
-  const seconds = waitSeconds(part.state.input?.timeout)
-  if (!seconds) return ""
-  const time = "time" in part.state ? part.state.time : undefined
-  const start = time?.start ? toMs(time.start) : Number.NaN
-  if (!Number.isFinite(start) || now - start < WAIT_AFTER_MS) return ""
-  return action ? `Waiting up to ${seconds}s · ${action}` : `Waiting up to ${seconds}s for ${part.tool.toLowerCase()}`
+function waitLabelFor(part: ToolPart, now: number) {
+  const deadline = "metadata" in part.state ? Number(part.state.metadata?.nextCheckAt) : Number.NaN
+  if (!Number.isFinite(deadline)) return ""
+  return `Waiting for shell ${Math.max(0, Math.ceil((deadline - now) / 1000))}s`
 }
 
 function withDetail(verb: string, detail: string) {
@@ -387,9 +376,9 @@ function liveStepLabel(part: ToolPart, now: number) {
   if (name === "edit" || name === "write" || name === "multiedit" || name === "apply_patch" || name === "applypatch") {
     return withDetail("Editing", file)
   }
-  if (name === "bash" || name === "shell") {
+  if (["bash", "shell", "shell_wait", "shell_status", "shell_cancel"].includes(name)) {
     const action = headline || commandAction(command)
-    const waiting = waitLabelFor(part, now, action)
+    const waiting = waitLabelFor(part, now)
     if (waiting) return waiting
     return withDetail("Running", action)
   }
@@ -475,7 +464,7 @@ export function stepPresentation(part: Part): StepPresentation {
   if (name === "apply_patch" || name === "applypatch") {
     return file ? { action: "Patched", detail: file } : { action: "Applied patch" }
   }
-  if (name === "bash" || name === "shell") {
+  if (["bash", "shell", "shell_wait", "shell_status", "shell_cancel"].includes(name)) {
     const titled = title && String(title).trim() !== command.trim() ? String(title).trim() : ""
     const described = String(input.description ?? input.title ?? "").trim()
     const action = described || titled || commandAction(command)

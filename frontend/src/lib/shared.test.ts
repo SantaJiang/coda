@@ -40,9 +40,9 @@ describe("mergeForWrite", () => {
   })
 
   it("only overlays dirty keys onto the latest file so other instances survive", () => {
-    const file: SharedSettings = { theme: "light", sendShortcut: "mod-enter", keepBackendAlive: true }
+    const file: SharedSettings = { theme: "light", sendShortcut: "mod-enter", stopBehavior: "ai" }
     const merged = mergeForWrite(file, { theme: "dark", sendShortcut: "enter" }, ["theme"])
-    expect(merged).toEqual({ theme: "dark", sendShortcut: "mod-enter", keepBackendAlive: true })
+    expect(merged).toEqual({ theme: "dark", sendShortcut: "mod-enter", stopBehavior: "ai" })
   })
 
   it("removes keys deleted locally", () => {
@@ -54,10 +54,11 @@ describe("mergeForWrite", () => {
 
 describe("stripRetiredSettings", () => {
   it("drops the retired pinned-models key from an old settings file", () => {
-    const file = { theme: "light", pinnedModelKeys: ["opencode/big-pickle"] } as unknown as SharedSettings
+    const file = { theme: "light", pinnedModelKeys: ["opencode/big-pickle"], keepBackendAlive: true } as unknown as SharedSettings
     const stripped = stripRetiredSettings(file)
     expect(stripped).toEqual({ theme: "light" })
     expect(stripped).not.toHaveProperty("pinnedModelKeys")
+    expect(stripped).not.toHaveProperty("keepBackendAlive")
   })
 
   it("leaves a current settings file untouched", () => {

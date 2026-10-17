@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-desktop-activity"
+description = "Report whether Coda has active tasks for its tray notification"
+commands.allow = ["desktop_activity"]
+
+[[permission]]
+identifier = "allow-desktop-quit"
+description = "Route the desktop quit shortcut through native task cleanup"
+commands.allow = ["desktop_quit"]

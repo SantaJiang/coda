@@ -67,6 +67,7 @@ function WorkStep(props: { part: Part; open: boolean; onToggle: () => void; inac
     return stepPresentation(props.part)
   })
   const tool = () => props.part.type === "tool" ? props.part : undefined
+  const terminalID = () => { const state = tool()?.state; return state && "metadata" in state && typeof state.metadata?.terminalID === "string" ? state.metadata.terminalID : undefined }
   const thinking = () => props.part.type === "reasoning" ? props.part.text : ""
   const parameters = () => tool()?.tool === "question" ? "" : tool()?.state.input ? JSON.stringify(tool()!.state.input, null, 2) : ""
   const output = () => {
@@ -100,6 +101,7 @@ function WorkStep(props: { part: Part; open: boolean; onToggle: () => void; inac
         <Show when={expandable()}><Icon name="chevron-right" class="work-step-caret" /></Show>
       </span>
     </button>
+    <Show when={terminalID()}>{(id) => <button class="work-terminal-link" onClick={() => window.dispatchEvent(new CustomEvent("coda:open-terminal", { detail: id() }))}>查看终端</button>}</Show>
     <Show when={failed() && !props.open}><div class="step-error-preview">{output()}</div></Show>
     <Show when={props.open && expandable()}>
       <Show when={props.part.type === "reasoning"} fallback={<div class="tool-details">

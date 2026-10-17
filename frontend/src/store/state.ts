@@ -1,7 +1,7 @@
 import type { ComposerAttachment } from "../lib/attachments"
 import type { ConfiguredModel, SelectableModel } from "../lib/models"
 import type { PermissionMode } from "../lib/permissions"
-import type { SendShortcut } from "../lib/settings"
+import type { SendShortcut, TaskRecovery, StopBehavior } from "../lib/settings"
 import type { TimelineViewState } from "../lib/conversation"
 import type {
   Message,
@@ -14,7 +14,7 @@ import type {
   Todo,
 } from "../lib/types"
 import { loadPermissionMode } from "../lib/permissions"
-import { loadKeepBackendAlive, loadSendShortcut } from "../lib/settings"
+import { loadTaskRecovery, loadStopBehavior, loadSendShortcut } from "../lib/settings"
 
 export type ConnectionState = "connecting" | "connected" | "disconnected"
 
@@ -95,7 +95,8 @@ export type AppState = {
   planPanelDismissed: boolean
   settingsOpen: boolean
   sendShortcut: SendShortcut
-  keepBackendAlive: boolean
+  taskRecovery: TaskRecovery
+  stopBehavior: StopBehavior
   selectedVariant: string | null
   modelVariants: Record<string, string[]>
   queuedBySession: Record<string, QueuedMessage[]>
@@ -148,7 +149,8 @@ export const initialState: AppState = {
   planPanelDismissed: false,
   settingsOpen: false,
   sendShortcut: loadSendShortcut(),
-  keepBackendAlive: loadKeepBackendAlive(),
+  taskRecovery: loadTaskRecovery(),
+  stopBehavior: loadStopBehavior(),
   selectedVariant: null,
   modelVariants: {},
   queuedBySession: {},

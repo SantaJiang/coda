@@ -7,13 +7,14 @@ import { hydrateShared } from "./lib/shared"
 import { initTheme, loadTheme } from "./lib/theme"
 import { clearRetiredModelStorage, loadConfiguredModels, loadSelectedModelKey } from "./lib/models"
 import { loadPermissionMode } from "./lib/permissions"
-import { loadKeepBackendAlive, loadSendShortcut } from "./lib/settings"
+import { clearRetiredBackgroundSetting, loadTaskRecovery, loadStopBehavior, loadSendShortcut } from "./lib/settings"
 import { loadLastProject, loadProjects } from "./lib/persist"
 import App from "./App"
 
 async function boot() {
   try {
     clearRetiredModelStorage()
+    clearRetiredBackgroundSetting()
     try {
       await hydrateShared(() => ({
         models: loadConfiguredModels(),
@@ -21,7 +22,8 @@ async function boot() {
         theme: loadTheme(),
         sendShortcut: loadSendShortcut(),
         permissionMode: loadPermissionMode(),
-        keepBackendAlive: loadKeepBackendAlive(),
+        taskRecovery: loadTaskRecovery(),
+        stopBehavior: loadStopBehavior(),
         projects: loadProjects(),
         lastProject: loadLastProject(),
       }))

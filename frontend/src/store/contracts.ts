@@ -2,7 +2,7 @@ import type { ComposerAttachment } from "../lib/attachments"
 import type { ModelConfigImportMode } from "../lib/model-config-file"
 import type { ConfiguredModel, ModelForm, SelectableModel } from "../lib/models"
 import type { PermissionMode } from "../lib/permissions"
-import type { SendShortcut } from "../lib/settings"
+import type { SendShortcut, TaskRecovery, StopBehavior } from "../lib/settings"
 import type { SessionDot } from "../lib/session-status"
 import type {
   Message,
@@ -113,7 +113,8 @@ export type ChromeApi = {
   permissionLabel: () => string
   settingsOpen: () => boolean
   sendShortcut: () => SendShortcut
-  keepBackendAlive: () => boolean
+  taskRecovery: () => TaskRecovery
+  stopBehavior: () => StopBehavior
   planPanelDismissed: () => boolean
   setPlanMode: (on: boolean) => void
   openPlusMenu: () => void
@@ -125,5 +126,6 @@ export type ChromeApi = {
   openSettings: () => void
   closeSettings: () => void
   setSendShortcut: (shortcut: SendShortcut) => void
-  setKeepBackendAlive: (value: boolean) => void
+  setTaskRecovery: (value: TaskRecovery) => void
+  setStopBehavior: (value: StopBehavior) => void
 }

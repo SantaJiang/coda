@@ -3006,3 +3006,30 @@ button.ctx-pill:hover {
 .connection-notice { color: var(--text-muted); font-size: 12px; padding-bottom: 12px; }
 .jump-latest { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); border: 1px solid var(--border); border-radius: 18px; padding: 7px 14px; background: var(--bg-elevated); color: var(--text); cursor: pointer; box-shadow: 0 2px 8px #0003; z-index: 2; }
 .tool-details .work-step-body { max-height: 360px; overflow: auto; }
+
+/* Session terminals share the existing plan sidebar. */
+.terminal-dock { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 32px; margin-bottom: 4px; color: var(--text-muted); font-size: 11px; }
+.terminal-dock-button { display: flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 7px; padding: 5px 9px; background: var(--bg-sidebar); color: var(--text); cursor: pointer; }
+.terminal-dock-state { color: var(--text-muted); font-size: 10px; }
+.terminal-live-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.shell-wait { font-variant-numeric: tabular-nums; }
+.session-aside.terminal-aside { position: relative; flex: 0 0 auto; width: min(var(--terminal-width, 420px), 45%); min-width: 260px; }
+.aside-resize { position: absolute; z-index: 5; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }
+.terminal-panel-head { display: flex; align-items: center; gap: 4px; min-height: 43px; padding: 0 8px; border-bottom: 1px solid var(--border); }
+.terminal-panel-head > button:not(.icon-btn) { background: transparent; color: var(--text-muted); border: 0; padding: 7px 9px; cursor: pointer; }
+.terminal-panel-head > button.active { color: var(--text); background: var(--bg-hover); border-radius: 5px; }
+.terminal-head-space { flex: 1; }
+.terminal-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.terminal-list { max-height: 160px; overflow-y: auto; padding: 5px; border-bottom: 1px solid var(--border); }
+.terminal-list-item { display: flex; align-items: center; border-radius: 5px; }
+.terminal-list-item.selected { background: var(--bg-hover); }
+.terminal-list-select { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 8px; color: var(--text); background: transparent; border: 0; cursor: pointer; text-align: left; font: 11px Menlo, Consolas, monospace; }
+.terminal-list-select .truncate { flex: 1; }
+.terminal-small-status { flex-shrink: 0; font-size: 10px; color: var(--text-muted); }
+.terminal-resume, .terminal-follow, .terminal-earlier { border: 1px solid var(--border); background: var(--bg-sidebar); border-radius: 5px; color: var(--text); padding: 4px 7px; font-size: 11px; cursor: pointer; }
+.terminal-output { position: relative; min-height: 100px; flex: 1; display: flex; flex-direction: column; padding: 0 8px 8px; }
+.terminal-canvas { flex: 1; min-height: 80px; overflow: hidden; border-radius: 5px; }
+.terminal-notice { color: var(--text-muted); font-size: 11px; padding: 6px 10px; overflow-wrap: anywhere; }
+.terminal-follow { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); }
+.terminal-earlier { align-self: center; margin-bottom: 5px; }
+.work-terminal-link { margin: 3px 0 5px 20px; border: 0; background: none; color: var(--text-muted); cursor: pointer; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; }

@@ -64,7 +64,7 @@ export function toolActivity(part: ToolPart) {
   if (name === "read") return `读取文件${file}`
   if (["edit", "write", "multiedit", "apply_patch", "applypatch"].includes(name)) return `修改文件${file}`
   if (["glob", "grep", "list", "ls"].includes(name)) return "搜索项目"
-  if (["bash", "shell"].includes(name)) return "执行命令"
+  if (["bash", "shell", "shell_wait", "shell_status", "shell_cancel"].includes(name)) return "执行命令"
   if (name === "websearch") return "搜索网页"
   if (name === "webfetch") return "读取网页"
   if (name === "question") return "处理提问"

@@ -3,7 +3,7 @@ import { Icon } from "./Icon"
 import { useChrome, useRuntime } from "../store/app"
 import { ChromeDrag, WindowControls } from "./WindowChrome"
 
-export function TodoDock() {
+export function TodoDock(props: { embedded?: boolean } = {}) {
   const runtime = useRuntime()
   const chrome = useChrome()
   const todos = createMemo(() => runtime.todos())
@@ -12,7 +12,7 @@ export function TodoDock() {
   return (
     <Show when={todos().length > 0}>
       <div class="plan-panel">
-        <ChromeDrag class="plan-head">
+        <Show when={!props.embedded}><ChromeDrag class="plan-head">
           <div class="plan-title" data-tauri-drag-region="">
             计划
           </div>
@@ -29,7 +29,7 @@ export function TodoDock() {
             <Icon name="times" />
           </button>
           <WindowControls />
-        </ChromeDrag>
+        </ChromeDrag></Show>
         <ol class="plan-list">
           <For each={todos()}>
             {(todo, index) => (

@@ -47,23 +47,12 @@ export function saveSendShortcut(value: SendShortcut) {
   setSharedValue({ sendShortcut: value })
 }
 
-export function loadKeepBackendAlive(): boolean {
-  const shared = sharedValue("keepBackendAlive")
-  if (typeof shared === "boolean") return shared
-  try {
-    return localStorage.getItem(STORAGE_KEYS.keepBackendAlive) === "true"
-  } catch {
-    return false
-  }
-}
-
-export function saveKeepBackendAlive(value: boolean) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.keepBackendAlive, String(value))
-  } catch {
-    // ignore
-  }
-  setSharedValue({ keepBackendAlive: value })
-  // 退出前必须落盘：Rust 侧退出时直接读 settings.json 决定是否停后端
-  void flushShared()
+export type TaskRecovery = "auto" | "manual"
+export type StopBehavior = "all" | "ai"
+export function loadTaskRecovery(): TaskRecovery { return sharedValue("taskRecovery") === "manual" ? "manual" : "auto" }
+export function loadStopBehavior(): StopBehavior { return sharedValue("stopBehavior") === "ai" ? "ai" : "all" }
+export function saveTaskRecovery(value: TaskRecovery) { setSharedValue({ taskRecovery: value }); void flushShared() }
+export function saveStopBehavior(value: StopBehavior) { setSharedValue({ stopBehavior: value }); void flushShared() }
+export function clearRetiredBackgroundSetting() {
+  try { localStorage.removeItem("coda.keepBackendAlive") } catch {}
 }
