@@ -63,9 +63,12 @@ pub fn show(app: &tauri::AppHandle) {
     }
 }
 
-// A transparent, antialiased C matching the application's existing vector logo.
+// A transparent, antialiased C with round caps like the application's vector logo.
 fn tray_image() -> tauri::image::Image<'static> {
     let size = 36usize;
+    let radius = 11.5;
+    let half_stroke = 2.5;
+    let cap = radius * std::f64::consts::FRAC_1_SQRT_2;
     let mut rgba = vec![0u8; size * size * 4];
     for y in 0..size {
         for x in 0..size {
@@ -75,7 +78,14 @@ fn tray_image() -> tauri::image::Image<'static> {
                     let dx = x as f64 + (sx as f64 + 0.5) / 4.0 - 18.0;
                     let dy = y as f64 + (sy as f64 + 0.5) / 4.0 - 18.0;
                     let r = (dx * dx + dy * dy).sqrt();
-                    if (9.0..=14.0).contains(&r) && !(dx > 5.5 && dy.abs() < 8.5) {
+                    // The arc ends at +/-45 degrees. Beyond those ends, measure
+                    // distance to the endpoint to produce a semicircular cap.
+                    let distance = if dx <= dy.abs() {
+                        (r - radius).abs()
+                    } else {
+                        ((dx - cap).powi(2) + (dy.abs() - cap).powi(2)).sqrt()
+                    };
+                    if distance <= half_stroke {
                         coverage += 1;
                     }
                 }
