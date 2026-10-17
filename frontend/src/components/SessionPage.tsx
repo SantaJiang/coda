@@ -12,6 +12,7 @@ import { QuestionDock } from "./QuestionDock"
 import { QueueDock } from "./QueueDock"
 import { TodoDock } from "./TodoDock"
 import { ChromeDrag, WindowControls } from "./WindowChrome"
+import { Icon } from "./Icon"
 
 const TerminalPanel = lazy(() => import("./TerminalPanel"))
 
@@ -82,10 +83,12 @@ export function SessionPage() {
           <aside class="session-aside terminal-aside" style={{ "--terminal-width": `${terminals.view().width}px` }}>
             <div class="aside-resize" onPointerDown={resize} role="separator" aria-orientation="vertical" aria-label="调整侧栏宽度" />
             <header class="terminal-panel-head">
-              <button classList={{ active: showTerminal() }} onClick={() => terminals.patch({ open: true, tab: "terminal" })}>终端</button>
-              <Show when={runtime.hasPlan()}><button classList={{ active: !showTerminal() }} onClick={() => terminals.patch({ open: true, tab: "plan" })}>计划</button></Show>
+              <button class="session-chrome-title" classList={{ active: showTerminal() }} onClick={() => terminals.patch({ open: true, tab: "terminal" })}>终端</button>
+              <Show when={runtime.hasPlan()}><button class="session-chrome-title" classList={{ active: !showTerminal() }} onClick={() => terminals.patch({ open: true, tab: "plan" })}>计划</button></Show>
               <span class="terminal-head-space" /><WindowControls />
-              <button class="icon-btn" aria-label="关闭侧栏" onClick={() => { terminals.patch({ open: false }); chrome.closePlanPanel() }}>×</button>
+              <button class="icon-btn" aria-label="收起侧栏" title="收起侧栏" onClick={() => { terminals.patch({ open: false }); chrome.closePlanPanel() }}>
+                <Icon name="chevron-right" />
+              </button>
             </header>
             <Show when={showTerminal()} fallback={<TodoDock embedded />}>
               <Suspense fallback={<div class="terminal-notice">正在加载终端…</div>}>

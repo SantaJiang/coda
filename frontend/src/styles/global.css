@@ -3038,9 +3038,10 @@ button.ctx-pill:hover {
 .shell-wait { font-variant-numeric: tabular-nums; }
 .session-aside.terminal-aside { position: relative; flex: 0 0 auto; width: min(var(--terminal-width, 420px), 45%); min-width: 260px; }
 .aside-resize { position: absolute; z-index: 5; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }
-.terminal-panel-head { display: flex; align-items: center; gap: 4px; min-height: 43px; padding: 0 8px; border-bottom: 1px solid var(--border); }
-.terminal-panel-head > button:not(.icon-btn) { background: transparent; color: var(--text-muted); border: 0; padding: 7px 9px; cursor: pointer; }
-.terminal-panel-head > button.active { color: var(--text); background: var(--bg-hover); border-radius: 5px; }
+.terminal-panel-head { display: flex; align-items: center; flex: 0 0 var(--chrome-h); height: var(--chrome-h); min-width: 0; box-shadow: inset 0 -1px var(--border); }
+.terminal-panel-head > button.session-chrome-title { flex: 0 1 auto; background: transparent; border: 0; cursor: pointer; text-align: left; }
+.terminal-panel-head > button.session-chrome-title:not(.active) { opacity: 0.6; }
+.terminal-panel-head > .icon-btn { margin-right: 8px; }
 .terminal-head-space { flex: 1; }
 .terminal-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .terminal-list { max-height: 160px; overflow-y: auto; padding: 5px; border-bottom: 1px solid var(--border); }
