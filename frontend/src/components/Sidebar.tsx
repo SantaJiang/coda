@@ -6,11 +6,40 @@ import { isMacPlatform } from "../lib/settings"
 import { type SessionDot } from "../lib/session-status"
 import { useChrome, useProjects, useRuntime } from "../store/app"
 import type { Project, Session } from "../lib/types"
-import { Icon } from "./Icon"
 import { ChromeDrag } from "./WindowChrome"
 
 const COLLAPSE_MS = 200
 const COLLAPSE_EASE = "cubic-bezier(0.16, 1, 0.3, 1)"
+
+const SIDEBAR_ICON_PATHS = {
+  plus: "M12 5v14M5 12h14",
+  compose: "m7 20-4 1V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2ZM8 11h8M12 7v8",
+  folder: "M3 8V6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8Zm0 1h18",
+  "folder-open": "M3 18V6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2M5 20h12.5a2 2 0 0 0 1.9-1.4l1.5-5A2 2 0 0 0 19 11H7.5a2 2 0 0 0-1.9 1.4l-2.5 5A1.2 1.2 0 0 0 5 20Z",
+  home: "m3 10 9-7 9 7M5 9v11h14V9M9 20v-7h6v7",
+  warning: "m10.3 4-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01",
+  "ellipsis-h": "M5 12h.01M12 12h.01M19 12h.01",
+  pencil: "m16 3 5 5M4 15l-1 6 6-1L21 8a3.5 3.5 0 0 0-5-5Z",
+  cog: "M10 3h4l.5 2.5 2 1.2L19 6l2 3.5-2 1.7v2l2 1.7-2 3.5-2.5-.7-2 1.2L14 21h-4l-.5-2.1-2-1.2-2.5.7-2-3.5 2-1.7v-2L3 9.5 5 6l2.5.7 2-1.2ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
+  times: "m6 6 12 12M6 18 18 6",
+} as const
+
+function SidebarIcon(props: { name: keyof typeof SIDEBAR_ICON_PATHS; class?: string }) {
+  return (
+    <svg
+      class={`sidebar-icon ${props.class ?? ""}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d={SIDEBAR_ICON_PATHS[props.name]} />
+    </svg>
+  )
+}
 
 function TreeCollapse(props: { open: boolean; children: JSX.Element }) {
   let el: HTMLDivElement | undefined
@@ -173,14 +202,14 @@ export function Sidebar() {
         onClick={() => projects.startDraft()}
         disabled={!projects.selectedProject() || projects.selectedProject()?.missing}
       >
-        <Icon name="plus" />
+        <SidebarIcon name="compose" />
         <span>新会话</span>
       </button>
 
       <div class="projects-head">
         <span>项目</span>
         <button class="icon-btn" type="button" title="添加项目文件夹" onClick={() => void projects.addProject()}>
-          <Icon name="plus" />
+          <SidebarIcon name="plus" />
         </button>
       </div>
 
@@ -200,7 +229,7 @@ export function Sidebar() {
               const sessionDot = (sessionID: string) => runtime.sessionDot(sessionID)
               return (
                 <div class="tree-project" classList={{ missing: !!project().missing }}>
-                  <div class="tree-root">
+                  <div class="tree-root" classList={{ active: projects.selectedProject()?.id === project().id && (!project().expanded || !projects.selectedSessionId()) }}>
                     <button
                       type="button"
                       class="tree-root-main"
@@ -208,13 +237,11 @@ export function Sidebar() {
                       title={project().path}
                       onClick={() => projects.toggleProject(project().id)}
                     >
-                      <span class="chevron-hit" classList={{ open: project().expanded }}>
-                        <Icon name="chevron-right" class="tree-chevron" />
-                      </span>
                       <span class="tree-icon">
-                        <Icon
+                        <SidebarIcon
+                          class="tree-folder"
                           name={
-                            isLocalProject(project()) ? "home" : project().missing ? "warning" : "folder"
+                            isLocalProject(project()) ? "home" : project().missing ? "warning" : project().expanded ? "folder-open" : "folder"
                           }
                         />
                       </span>
@@ -239,7 +266,7 @@ export function Sidebar() {
                             aria-label="更多"
                             onClick={() => toggleMoreMenu(project().id)}
                           >
-                            <Icon name="ellipsis-h" />
+                            <SidebarIcon name="ellipsis-h" />
                           </button>
                           <Show when={moreMenuId() === project().id}>
                             <div class="context-menu tree-more-menu" role="menu">
@@ -280,7 +307,7 @@ export function Sidebar() {
                           projects.startDraft()
                         }}
                       >
-                        <Icon name="plus" />
+                        <SidebarIcon name="plus" />
                       </button>
                     </div>
                   </div>
@@ -329,7 +356,7 @@ export function Sidebar() {
                             >
                               <Show when={isLocalDraft(session)}>
                                 <span class="tree-draft-icon" title="未提交的草稿">
-                                  <Icon name="pencil" />
+                                  <SidebarIcon name="pencil" />
                                 </span>
                               </Show>
                               <span class="truncate">{sessionLabel(session)}</span>
@@ -375,7 +402,7 @@ export function Sidebar() {
               : "正在重连…"}
         </span>
         <button class="icon-btn" type="button" title="设置" aria-label="设置" onClick={() => chrome.openSettings()}>
-          <Icon name="cog" />
+          <SidebarIcon name="cog" />
         </button>
       </div>
 
@@ -432,7 +459,7 @@ export function Sidebar() {
                     aria-label="关闭"
                     onClick={() => setConfirmTarget(null)}
                   >
-                    <Icon name="times" />
+                    <SidebarIcon name="times" />
                   </button>
                 </header>
                 <p class="dialog-hint">

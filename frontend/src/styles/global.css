@@ -20,7 +20,7 @@
 
 :root {
   color-scheme: dark;
-  --sidebar: 248px;
+  --sidebar: 264px;
   --chrome-h: 36px;
   --radius: 10px;
   --font-chat: 14px;
@@ -192,13 +192,47 @@ a,
 }
 
 .sidebar {
+  --nav-bg: #1f1f1e;
+  --nav-hover: #282827;
+  --nav-active: #30302f;
+  --nav-text: #d9d9d8;
+  --nav-muted: #919190;
   display: flex;
   flex-direction: column;
-  background: var(--bg-sidebar);
-  border-right: 1px solid var(--border);
+  background: var(--nav-bg);
+  border-right: 1px solid color-mix(in srgb, var(--nav-text) 8%, transparent);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+:root[data-theme="light"] .sidebar {
+  --nav-bg: #f7f7f5;
+  --nav-hover: #ededea;
+  --nav-active: #e5e5e2;
+  --nav-text: #323231;
+  --nav-muted: #787877;
+}
+
+.sidebar-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.sidebar button:focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: -2px;
+}
+
+.sidebar .icon-btn {
+  color: var(--nav-muted);
+}
+
+.sidebar .icon-btn:hover {
+  background: var(--nav-hover);
+  color: var(--nav-text);
 }
 
 .sidebar-chrome {
@@ -221,19 +255,22 @@ a,
 .new-session {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 10px 10px 10px;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-elevated);
-  color: var(--text);
+  flex-shrink: 0;
+  gap: 10px;
+  margin: 8px 8px 12px;
+  height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--nav-text);
+  font-size: 14px;
+  text-align: left;
   -webkit-app-region: no-drag;
 }
 
 .new-session:hover:not(:disabled) {
-  background: var(--bg-hover);
+  background: var(--nav-hover);
 }
 
 .new-session:disabled {
@@ -245,10 +282,11 @@ a,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px 6px;
-  color: var(--text-muted);
-  font-size: 12px;
-  letter-spacing: 0.04em;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 14px 0 18px;
+  color: var(--nav-muted);
+  font-size: 13px;
 }
 
 .icon-btn {
@@ -283,7 +321,17 @@ a,
   flex: 1 1 0;
   min-height: 0;
   overflow: auto;
-  padding: 4px 8px 12px 4px;
+  padding: 2px 8px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.tree:hover {
+  scrollbar-color: var(--scrollbar) transparent;
+}
+
+.tree-project {
+  margin-bottom: 6px;
 }
 
 .tree-empty {
@@ -293,16 +341,16 @@ a,
 }
 
 .tree-empty.nested {
-  padding-left: 24px;
+  padding-left: 36px;
 }
 
 .tree-root,
 .tree-session {
   width: 100%;
   border: none;
-  border-radius: 7px;
+  border-radius: 10px;
   background: transparent;
-  color: var(--text);
+  color: var(--nav-text);
   text-align: left;
 }
 
@@ -311,10 +359,9 @@ a,
   align-items: center;
   gap: 2px;
   box-sizing: border-box;
-  min-height: 30px;
-  padding: 4px;
-  color: var(--text);
-  font-size: 13px;
+  min-height: 32px;
+  padding: 4px 6px 4px 10px;
+  font-size: 14px;
 }
 
 .tree-root-main {
@@ -322,27 +369,23 @@ a,
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  min-height: 24px;
   padding: 0;
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 13px;
+  font-size: inherit;
   text-align: left;
 }
 
 .tree-icon {
+  position: relative;
   display: grid;
   place-items: center;
   width: 16px;
   height: 16px;
-  min-width: 16px;
-  min-height: 16px;
   flex-shrink: 0;
-}
-
-.tree-icon .fa {
-  font-size: 13px;
 }
 
 .tree-root-main .truncate,
@@ -389,7 +432,8 @@ a,
   pointer-events: none;
 }
 
-.tree-project:hover .tree-root-actions,
+.tree-root:hover .tree-root-actions,
+.tree-root:focus-within .tree-root-actions,
 .tree-root-actions.open,
 .tree-root-actions.pinned {
   opacity: 1;
@@ -423,22 +467,26 @@ a,
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  height: 28px;
-  min-height: 28px;
-  padding: 0 8px 0 24px;
+  height: 31px;
+  min-height: 31px;
+  padding: 0 12px 0 36px;
   border: none;
-  border-radius: 7px;
+  border-radius: 10px;
   background: transparent;
-  color: var(--text-muted);
-  font-size: 12.5px;
+  color: var(--nav-text);
+  font-size: 14px;
   text-align: left;
 }
 
 .tree-root:hover,
-.tree-session-main:hover,
+.tree-session-main:hover {
+  background: var(--nav-hover);
+}
+
+.tree-root.active,
 .tree-session.active .tree-session-main {
-  background: var(--bg-active);
-  color: var(--text);
+  background: var(--nav-active);
+  color: var(--nav-text);
 }
 
 .tree-session.draft .tree-session-main {
@@ -453,15 +501,11 @@ a,
 .tree-draft-icon {
   display: grid;
   place-items: center;
-  width: 14px;
-  height: 14px;
-  min-width: 14px;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
   flex-shrink: 0;
   color: var(--text-faint);
-}
-
-.tree-draft-icon .fa {
-  font-size: 11px;
 }
 
 .tree-session.draft .tree-session-main:hover .tree-draft-icon,
@@ -471,13 +515,13 @@ a,
 
 .tree-rename {
   width: 100%;
-  height: 28px;
-  padding: 0 8px 0 24px;
-  border: 1px solid var(--accent);
-  border-radius: 7px;
+  height: 31px;
+  padding: 0 12px 0 35px;
+  border: 1px solid var(--focus-border);
+  border-radius: 10px;
   background: var(--bg-elevated);
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 14px;
   outline: none;
 }
 
@@ -625,26 +669,6 @@ button.ctx-pill:hover {
   cursor: default;
 }
 
-.chevron-hit {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.tree-chevron {
-  flex-shrink: 0;
-  color: var(--text-faint);
-  font-size: 12px;
-  transform: rotate(0deg);
-  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.chevron-hit.open .tree-chevron {
-  transform: rotate(90deg);
-}
-
 .session-dot {
   width: 6px;
   height: 6px;
@@ -682,7 +706,6 @@ button.ctx-pill:hover {
   justify-content: space-between;
   gap: 8px;
   padding: 10px 12px 12px;
-  border-top: 1px solid var(--border);
 }
 
 .status-pill {
