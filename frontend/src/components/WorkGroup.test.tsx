@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { createMemo, createRoot, createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import { StoreProviders } from "../store/ctx"
@@ -13,7 +13,7 @@ const assistant = (done = false): AssistantMessage => ({ id: "a1", sessionID: "s
 const part = (id: string, type: "text" | "reasoning", text: string): Part => ({ id, type, text, sessionID: "s1", messageID: "a1" })
 const tool: Part = { id: "t1", type: "tool", tool: "read", callID: "t1", sessionID: "s1", messageID: "a1", state: { status: "completed", input: { filePath: "app.ts" }, output: "contents" } }
 
-afterEach(() => { window.getSelection()?.removeAllRanges(); while (cleanups.length) cleanups.pop()?.() })
+afterEach(() => { vi.useRealTimers(); window.getSelection()?.removeAllRanges(); while (cleanups.length) cleanups.pop()?.() })
 function setup(initial: Part[] = [], completed = false) {
   return createRoot((disposeRoot) => {
   const [parts, setParts] = createSignal(initial)
@@ -35,10 +35,29 @@ function setup(initial: Part[] = [], completed = false) {
 }
 
 describe("streaming turn presentation", () => {
+  it("keeps the upward status transition when a work group gives way to prose", () => {
+    vi.useFakeTimers()
+    const { container, setParts } = setup([tool])
+    expect(container.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe("Planning next moves")
+    setParts([tool, part("p1", "text", "正在汇总")])
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
+    expect(container.querySelector(".turn-status .flipping .out")?.textContent).toBe("Planning next moves")
+    expect(container.querySelector(".turn-status .flipping .in")?.textContent).toBe("Writing response")
+    vi.advanceTimersByTime(320)
+    expect(container.querySelector(".out")).toBeNull()
+  })
+  it("does not add view-terminal links to command steps", () => {
+    const shell = { ...tool, tool: "shell", state: { status: "completed", input: { command: "git status" }, output: "clean", metadata: { terminalID: "term-fast" } } } as Part
+    const { container } = setup([shell], true)
+    ;(container.querySelector(".worked-for > .work-head") as HTMLButtonElement).click()
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    expect(container.textContent).not.toContain("查看终端")
+    expect(container.querySelector(".work-terminal-link")).toBeNull()
+  })
   it("has one status before content and independent thought details", () => {
     const { container, setParts } = setup()
     expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
-    expect(container.querySelector('[role="status"]')?.textContent).toBe("等待响应")
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Planning next moves")
     setParts([part("r1", "reasoning", "思考原文")])
     expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
     expect(container.querySelector(".reasoning-inline")).toBeNull()
@@ -92,7 +111,7 @@ describe("streaming turn presentation", () => {
     expect(container.querySelector(".work-failure")?.textContent).toContain("1 项失败")
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
     expect(container.querySelector(".step-error-preview")?.textContent).toContain("read failed")
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("正在思考")
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("Planning next moves")
   })
   it("separates activity groups with prose and expands only the selected group", () => {
     const nextTool: Part = { ...tool, id: "t2", callID: "t2", tool: "bash", state: { status: "completed", input: { command: "bun run build" }, output: "built" } }
@@ -126,7 +145,7 @@ describe("streaming turn presentation", () => {
     setParts([part("p1", "text", "先检查"), tool, part("p2", "text", "继续处理")])
     expect(container.querySelector(".work-group")).toBe(group)
     expect(container.querySelector('.work-group [role="status"]')).toBeNull()
-    expect(container.querySelector('.turn-status [role="status"]')?.textContent).toContain("正在输出回复")
+    expect(container.querySelector('.turn-status [role="status"]')?.textContent).toContain("Writing response")
   })
   it("does not replace inspected step contents when completion is deferred, and allows manual folding", () => {
     const { container, setDone, setStatus, setFollowing } = setup([part("p1", "text", "先检查"), tool, part("p2", "text", "最终结论")])
@@ -148,7 +167,7 @@ describe("streaming turn presentation", () => {
     const thought: Part = { ...part("r1", "reasoning", "考虑完成"), time: { start: 1000, end: 3000 } } as Part
     const { container } = setup([thought])
     expect(container.querySelector('.work-group > .work-head')?.textContent).toContain("Thought 2s")
-    expect(container.querySelector('[role="status"]')?.textContent).toBe("正在继续处理")
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Planning next moves")
     expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
   })
   it("preserves inspected reasoning and text selection when tools join its group", () => {

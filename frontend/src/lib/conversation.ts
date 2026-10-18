@@ -1,5 +1,5 @@
 import { basename } from "./path"
-import { activityFailureCount, formatDuration, workDurationMs } from "./activity"
+import { activityFailureCount, activityStatus, formatDuration, workDurationMs } from "./activity"
 import { formatSessionErrorMessage, isAbortError } from "./session-status"
 import type { AssistantMessage, Message, Part, SessionStatus, ToolPart, UserMessage } from "./types"
 
@@ -75,22 +75,23 @@ export function toolActivity(part: ToolPart) {
 
 function statusLabel(phase: TurnPhase, entries: ConversationEntry[], ctx: ConversationContext) {
   const labels: Partial<Record<TurnPhase, string>> = {
-    sending: "发送中", waiting: "等待响应", permission: "等待你授权", question: "等待你回答",
-    stopping: "正在停止", settling: "正在同步回复", done: "已完成", failed: "回复失败", stopped: "已停止", interrupted: "回复已中断",
+    sending: "Planning next moves", waiting: "Planning next moves", permission: "Waiting for permission", question: "Asking questions",
+    stopping: "Stopping", settling: "Syncing response", done: "已完成", failed: "回复失败", stopped: "已停止", interrupted: "回复已中断",
   }
   if (phase === "retry") {
     const retry = ctx.status?.type === "retry" ? ctx.status : undefined
     const seconds = retry?.next ? Math.max(0, Math.ceil((retry.next - (ctx.now ?? Date.now())) / 1000)) : 0
-    return `正在重试${retry?.attempt ? ` · 第 ${retry.attempt} 次` : ""}${seconds ? ` · ${seconds} 秒后` : ""}`
+    return `Retrying${seconds ? ` in ${seconds}s` : ""}${retry?.attempt ? ` · attempt ${retry.attempt}` : ""}`
   }
   if (labels[phase]) return labels[phase]!
-  const tools = entries.flatMap((entry) => entry.kind === "part" && runningTool(entry.part) ? [entry.part] : [])
-  if (tools.length) return `${toolActivity(tools[tools.length - 1])}${tools.length > 1 ? ` · ${tools.length} 项运行中` : ""}`
+  const running = entries.flatMap((entry) => entry.kind === "part" && runningTool(entry.part) ? [entry.part] : [])
+  if (running.length) return `${activityStatus(running, ctx.now)}${running.length > 1 ? ` · ${running.length} 项运行中` : ""}`
   const last = entries[entries.length - 1]
-  if (last?.kind === "compaction" && last.status === "running") return "正在整理上下文"
-  if (last?.kind === "part" && last.part.type === "text") return "正在输出回复"
-  if (last?.kind === "part" && last.part.type === "reasoning" && Number.isFinite(last.part.time?.end)) return "正在继续处理"
-  return "正在思考"
+  if (last?.kind === "compaction" && last.status === "running") return "Compacting context"
+  if (last?.kind === "part" && last.part.type === "text") return "Writing response"
+  const parts = entries.flatMap((entry) => entry.kind === "part" ? [entry.part] : [])
+  const activity = activityStatus(parts, ctx.now)
+  return activity === "Thought" ? "Planning next moves" : activity
 }
 
 function successfulEnd(message?: AssistantMessage) {

@@ -3017,7 +3017,6 @@ button.ctx-pill:hover {
 .turn-status.failed, .step-error-preview { color: var(--danger, #e56c6c); }
 .turn-status .work-head { display: flex; align-items: center; gap: 8px; color: var(--text-muted); }
 .turn-status .work-summary-caret, .conversation-entry .work-step-caret { opacity: 1; }
-.turn-status.live > span::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: var(--accent); }
 .conversation-entry .work-step-label { width: 100%; gap: 8px; }
 .work-summary-caret.expanded { transform: rotate(90deg); }
 .conversation-entry { margin: 8px 0; }
@@ -3056,4 +3055,5 @@ button.ctx-pill:hover {
 .terminal-notice { color: var(--text-muted); font-size: 11px; padding: 6px 10px; overflow-wrap: anywhere; }
 .terminal-follow { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); }
 .terminal-earlier { align-self: center; margin-bottom: 5px; }
-.work-terminal-link { margin: 3px 0 5px 20px; border: 0; background: none; color: var(--text-muted); cursor: pointer; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; }
+
+.plan-unfinished { color: var(--text-muted); font-size: 12px; padding: 10px 14px 0; }

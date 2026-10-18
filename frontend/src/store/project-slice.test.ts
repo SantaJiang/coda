@@ -55,6 +55,7 @@ describe("project session detail synchronization", () => {
     const client = stubClient({
       listMessages: vi.fn(() => snapshot.promise),
       listSessionStatuses,
+      listTodos: vi.fn().mockResolvedValue([{ content: "build", status: "in_progress", priority: "high" }]),
     })
     const [state, setState] = createStore<AppState>({
       ...structuredClone(initialState),
@@ -85,6 +86,7 @@ describe("project session detail synchronization", () => {
         time: { start: 1_000, end: 3_000 },
       },
     ])
+    setState("todos", "s1", [{ content: "build", status: "completed", priority: "high" }])
     setState("status", "s1", { type: "idle" })
 
     snapshot.resolve([
@@ -110,6 +112,7 @@ describe("project session detail synchronization", () => {
     ])
     await loading
 
+    expect(state.todos.s1[0]?.status).toBe("completed")
     expect(listSessionStatuses).toHaveBeenCalledWith(directory)
     expect(state.status.s1).toEqual({ type: "idle" })
     expect(state.messages.s1[0]?.role === "assistant" ? state.messages.s1[0].time.completed : undefined).toBe(3_000)

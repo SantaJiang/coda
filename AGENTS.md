@@ -66,7 +66,7 @@ git -C backend apply ../patches/backend/<name>.patch
 | `prompt-failure-surface.patch` | `prompt_async` 失败处理、`SystemPrompt` 引用/技能加载、`FileSystemSearch` 的 fff 探测、技能列表排序 | 安装版 sidecar 里 `prompt_async` 崩溃后只发 `session.error`、不写助手消息、会话像没反应；补丁会把错误写回最后一条未完成助手消息并置 idle（已完成的历史轮次不再误标，崩溃早于新消息时走会话级错误卡）。`SystemPrompt.environment` 加载引用失败时必须用 `Effect.as([])` 恢复，不能 `.pipe(Effect.succeed([]))`（那会把 Effect 对象当函数调用，打包后报 `t[0] is not a function`）。同时兜住 location/fff/技能列表里的空项。 |
 | `coda-model-config-prompt.patch` | `packages/opencode/src/session/system.ts` 的 `environment`、`prompt/coda-models.txt` | 系统提示写明当前是 Coda 桌面客户端、用户数据在 `~/.coda`，并给出把 OpenCode 风格 provider JSON 转成 Coda `models` 数组、同时合并进 `~/.coda/opencode.jsonc` 的步骤。避免会话里的模型把配置写到 OpenCode CLI 或 macOS Application Support。 |
 | `coda-home.patch` | `packages/core/src/global.ts` | 当 `OPENCODE_CLIENT=coda` 或设置了 `CODA_HOME` 时，把 sidecar 的 config/data/cache/state/log 全部收到 `~/.coda`（默认）而不是 `~/.config/opencode` 与 `~/.local/share/opencode`。 |
-| `managed-terminals.patch` | Shell、会话执行/恢复、终端 API 与桌面存活监测 | Coda 后端内持有 PTY 长任务，执行上限与分段等待分离；提供有界日志、游标流、取消及中断恢复，按工具调用去重，并在桌面退出时清理命令。 |
+| `managed-terminals.patch` | Shell、会话执行/恢复、终端 API 与桌面存活监测 | Coda 后端内持有 PTY 长任务，执行上限与分段等待分离；提供有界日志、游标流、取消及中断恢复，按工具调用去重，并在桌面退出时清理命令；会话结束前核对未完成 Todo，避免漏写计划状态（不自动将未验证事项标为完成）。 |
 
 以后对 `backend/` 的任何行为性修改（非第 1 条的关键字替换），都要同样落成 `patches/backend/` 下的补丁并登记到这张表里。
 
@@ -88,7 +88,7 @@ bash ./scripts/sync-backend-mirror.sh
 
 ## 5. 版本号
 
-当前软件版本是 **1.5.1**。下面四处必须保持同一个 `x.y.z`，改一处就要一起改：
+当前软件版本是 **1.5.2**。下面四处必须保持同一个 `x.y.z`，改一处就要一起改：
 
 | 文件 | 字段 |
 |---|---|

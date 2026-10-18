@@ -39,6 +39,13 @@ describe("activity presentation", () => {
     expect(activityStatus([running], 1_700_000_000_000)).not.toContain("Waiting")
   })
 
+  it("uses ordinary command activity during the short initial wait", () => {
+    const start = 1_700_000_000_000
+    const command = tool("short", "bash", { command: "git status" }, { status: "running", metadata: { terminalStartedAt: start, nextCheckAt: start + 30000 } })
+    expect(activityStatus([command], start + 9999)).not.toContain("Waiting for shell")
+    expect(activityStatus([command], start + 10000)).toBe("Waiting for shell 20s")
+  })
+
   it("separates file reads from searches and keeps other action counts", () => {
     const parts: Part[] = [
       tool("r1", "read", { filePath: "/repo/a.ts" }),

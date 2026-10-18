@@ -210,6 +210,8 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         .filter(([, item]) => item?.sessionID === session.id)
         .map(([id]) => id),
     )
+    const todoListBefore = state.todos[session.id]
+    const todosBefore = JSON.stringify(state.todos[session.id] ?? [])
     const snapshotBefore = sessionSnapshotKey(state.status[session.id], beforeMessages, state.parts)
     const revisionBefore = state.eventRevision[session.id] ?? 0
     const [messages, todos, permissions, questions, statuses] = await Promise.all([
@@ -220,6 +222,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       listed(client.listSessionStatuses(directory)),
     ])
     if (gen !== detailGen) return
+    const todoListUnchanged = state.todos[session.id] === todoListBefore
 
     setState(
       produce((draft) => {
@@ -252,7 +255,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
             ? mergeParts(currentParts, incomingParts)
             : incomingParts
         }
-        if (todos.ok) draft.todos[session.id] = todos.value ?? []
+        if (todos.ok && todoListUnchanged && JSON.stringify(draft.todos[session.id] ?? []) === todosBefore) draft.todos[session.id] = todos.value ?? []
         const fromMessages = deriveStatusFromMessages(nextMessages)
         const lastRole = nextMessages[nextMessages.length - 1]?.role
         const derived = stateUnchanged

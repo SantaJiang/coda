@@ -22,8 +22,8 @@ export function SessionPage() {
   const chrome = useChrome()
   const terminals = useTerminals(() => projects.selectedProject()?.path, () => projects.selectedSession()?.id)
   const planAvailable = () => runtime.hasPlan() && !chrome.planPanelDismissed()
-  const showAside = () => terminals.view().open || planAvailable()
-  const showTerminal = () => terminals.view().open && terminals.view().tab === "terminal"
+  const showTerminal = () => terminals.view().open && terminals.view().tab === "terminal" && terminals.visible().length > 0
+  const showAside = () => showTerminal() || (terminals.view().open && terminals.view().tab === "plan" && runtime.hasPlan()) || planAvailable()
   const resize = (event: PointerEvent) => {
     event.preventDefault()
     const start = event.clientX, width = terminals.view().width
@@ -83,7 +83,7 @@ export function SessionPage() {
           <aside class="session-aside terminal-aside" style={{ "--terminal-width": `${terminals.view().width}px` }}>
             <div class="aside-resize" onPointerDown={resize} role="separator" aria-orientation="vertical" aria-label="调整侧栏宽度" />
             <header class="terminal-panel-head">
-              <button class="session-chrome-title" classList={{ active: showTerminal() }} onClick={() => terminals.patch({ open: true, tab: "terminal" })}>终端</button>
+              <Show when={terminals.visible().length}><button class="session-chrome-title" classList={{ active: showTerminal() }} onClick={() => terminals.patch({ open: true, tab: "terminal" })}>终端</button></Show>
               <Show when={runtime.hasPlan()}><button class="session-chrome-title" classList={{ active: !showTerminal() }} onClick={() => terminals.patch({ open: true, tab: "plan" })}>计划</button></Show>
               <span class="terminal-head-space" /><WindowControls />
               <button class="icon-btn" aria-label="收起侧栏" title="收起侧栏" onClick={() => { terminals.patch({ open: false }); chrome.closePlanPanel() }}>

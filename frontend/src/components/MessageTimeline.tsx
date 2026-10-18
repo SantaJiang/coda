@@ -76,7 +76,7 @@ function SessionTimeline(props: { sessionID: string }) {
   })
   createEffect(on(() => [runtime.messages(), runtime.partsByMessage(), runtime.status(), runtime.settling()], scheduleLayout, { defer: true }))
   createEffect(() => {
-    if (runtime.status()?.type !== "retry") return
+    if (!runtime.busy() && runtime.status()?.type !== "retry") return
     const timer = window.setInterval(() => setClock(Date.now()), 1000)
     onCleanup(() => window.clearInterval(timer))
   })

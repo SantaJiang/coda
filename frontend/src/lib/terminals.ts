@@ -1,4 +1,6 @@
 import { createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
+import { LONG_TERMINAL_MS } from "./terminal-policy"
+export { LONG_TERMINAL_MS } from "./terminal-policy"
 import { isTerminalRunning, listTerminals, terminalControl, type TerminalInfo } from "./api"
 
 type View = {
@@ -27,6 +29,10 @@ function load(key: string): View {
       }
   } catch {}
   return blank()
+}
+// Short commands keep their ordinary tool step; only sustained commands get a panel entry.
+export function isLongTerminal(info: TerminalInfo, now = Date.now()) {
+  return (info.endedAt ?? now) - info.startedAt >= LONG_TERMINAL_MS
 }
 export function useTerminals(directory: Accessor<string | undefined>, sessionID: Accessor<string | undefined>) {
   const [items, setItems] = createSignal<TerminalInfo[]>([])
@@ -79,7 +85,7 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
   })
   const tick = window.setInterval(() => setNow(Date.now()), 250)
   onCleanup(() => window.clearInterval(tick))
-  const visible = createMemo(() => items().filter((info) => !info.hidden))
+  const visible = createMemo(() => items().filter((info) => !info.hidden && isLongTerminal(info, now())))
   const selected = createMemo(
     () =>
       visible().find((info) => info.id === view().selected) ??
@@ -109,7 +115,7 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
     }
   }
   const waiting = createMemo(() =>
-    items().find((info) => isTerminalRunning(info) && info.nextCheckAt && info.nextCheckAt > now()),
+    visible().find((info) => isTerminalRunning(info) && info.nextCheckAt && info.nextCheckAt > now()),
   )
   return {
     items,

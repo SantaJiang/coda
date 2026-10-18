@@ -5,7 +5,7 @@ import { terminalStatusLabel } from "../lib/terminals"
 
 export function TerminalDock(props: { terminals: Terminals }) {
   const t = props.terminals
-  const recoverable = () => t.visible().find((info) => info.recoverable && !info.suppressed)
+  const recoverable = () => t.items().find((info) => info.recoverable && !info.suppressed)
   const running = () => t.visible().filter(isTerminalRunning).length
   const notice = () => {
     if (t.error()) return t.error()
@@ -16,9 +16,9 @@ export function TerminalDock(props: { terminals: Terminals }) {
     return ""
   }
   return (
-    <Show when={t.visible().length}>
+    <Show when={t.visible().length || recoverable()}>
       <div class="terminal-dock">
-        <button
+        <Show when={t.visible().length}><button
           class="terminal-dock-button"
           onClick={() => (t.view().open && t.view().tab === "terminal" ? t.patch({ open: false }) : t.open())}
           aria-expanded={t.view().open && t.view().tab === "terminal"}
@@ -28,7 +28,7 @@ export function TerminalDock(props: { terminals: Terminals }) {
           <span class="terminal-dock-state">
             {running() ? `${running()} 运行中` : t.selected() ? terminalStatusLabel(t.selected()!) : ""}
           </span>
-        </button>
+        </button></Show>
         <Show when={recoverable()}>
           {(info) => (
             <button class="terminal-resume" onClick={() => void t.action(info().id, "resume")}>

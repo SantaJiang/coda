@@ -61,10 +61,10 @@ describe("conversation event sequences", () => {
   it("prioritizes blockers and stopping over normal activity and retry", () => {
     const messages = [user(), assistant()]
     const status: SessionStatus = { type: "retry", attempt: 2, next: 5000 }
-    expect(project(messages, {}, status, { permissionCount: 1 })[0].label).toBe("等待你授权")
-    expect(project(messages, {}, status, { questionCount: 1 })[0].label).toBe("等待你回答")
-    expect(project(messages, {}, status, { stopping: true })[0].label).toBe("正在停止")
-    expect(project(messages, {}, status, { now: 3000 })[0].label).toBe("正在重试 · 第 2 次 · 2 秒后")
+    expect(project(messages, {}, status, { permissionCount: 1 })[0].label).toBe("Waiting for permission")
+    expect(project(messages, {}, status, { questionCount: 1 })[0].label).toBe("Asking questions")
+    expect(project(messages, {}, status, { stopping: true })[0].label).toBe("Stopping")
+    expect(project(messages, {}, status, { now: 3000 })[0].label).toBe("Retrying in 2s · attempt 2")
   })
 
   it("preserves output on failure, stop and interrupted legacy history", () => {

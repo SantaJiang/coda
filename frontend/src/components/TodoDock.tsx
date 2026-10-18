@@ -30,10 +30,13 @@ export function TodoDock(props: { embedded?: boolean } = {}) {
           </button>
           <WindowControls />
         </ChromeDrag></Show>
+        <Show when={!runtime.busy() && todos().some((todo) => todo.status === "pending" || todo.status === "in_progress")}>
+          <div class="plan-unfinished" role="status">计划仍有 {todos().filter((todo) => todo.status === "pending" || todo.status === "in_progress").length} 项未完成</div>
+        </Show>
         <ol class="plan-list">
           <For each={todos()}>
             {(todo, index) => (
-              <li classList={{ done: todo.status === "completed", active: todo.status === "in_progress" }}>
+              <li classList={{ done: todo.status === "completed", active: runtime.busy() && todo.status === "in_progress" }}>
                 <span class="plan-index">{index() + 1}</span>
                 <span class="plan-text">{todo.content}</span>
               </li>

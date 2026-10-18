@@ -21,7 +21,7 @@ function setup(overrides: Partial<AgentClient> = {}) {
     configuredModels: [{ id: "m", name: "model", providerID: "test", providerName: "Test", modelID: "model", baseURL: "https://example.com", apiKey: "fixture" }], selectedModelKey: "test/model",
   })
   const client = { updateSessionPermission: vi.fn().mockResolvedValue(undefined), promptAsync: vi.fn().mockResolvedValue(undefined), abortSession: vi.fn().mockResolvedValue(undefined),
-    listMessages: vi.fn().mockResolvedValue([]), listSessionStatuses: vi.fn().mockResolvedValue({}), listPermissions: vi.fn().mockResolvedValue([]), listQuestions: vi.fn().mockResolvedValue([]), ...overrides } as AgentClient
+    listMessages: vi.fn().mockResolvedValue([]), listSessionStatuses: vi.fn().mockResolvedValue({}), listPermissions: vi.fn().mockResolvedValue([]), listQuestions: vi.fn().mockResolvedValue([]), listTodos: vi.fn().mockResolvedValue([]), ...overrides } as AgentClient
   const runtime = createRuntimeSlice({ state, setState, client }, { skipQueueFlush: {}, sendAfterIdle: {}, flushing: {} })
   return { state, setState, client, runtime }
 }

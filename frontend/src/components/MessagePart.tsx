@@ -14,6 +14,7 @@ import type {
 import { useModels, useRuntime } from "../store/app"
 import { MarkdownView } from "./MarkdownView"
 import { WorkGroup } from "./WorkGroup"
+import { StatusText, useStatusLine, type StatusLine } from "./StatusText"
 import { ChangedFiles } from "./ChangedFiles"
 import { Icon } from "./Icon"
 
@@ -210,7 +211,7 @@ function EntryList(props: { entries: ConversationEntry[]; onInspect?: () => void
 function BlockList(props: {
   entries: ConversationEntry[]
   active: boolean
-  status: string
+  statusLine: StatusLine
   onInspect?: () => void
   beforeLayout?: () => void
   afterLayout?: () => void
@@ -232,7 +233,7 @@ function BlockList(props: {
     }>
       <div class="conversation-work-block" data-block-key={key} data-scroll-key={key}>
         <WorkGroup entries={block().entries} open={open()} onToggle={() => inspect(() => runtime.updateTimelineView({ groupOpen: { ...runtime.timelineView().groupOpen, [key]: !open() } }))}
-          inactive={!props.active} active={props.active && blocks()[blocks().length - 1]?.key === key} status={props.status}
+          inactive={!props.active} active={props.active && blocks()[blocks().length - 1]?.key === key} statusLine={props.statusLine}
           stepOpen={runtime.timelineView().stepOpen}
           onRevealThoughts={(keys) => {
             const opened = runtime.timelineView().stepOpen
@@ -276,6 +277,7 @@ export function ChatTurnView(props: {
 }) {
   const runtime = useRuntime()
   const models = useModels()
+  const statusLine = useStatusLine(() => props.turn.label, () => props.turn.active)
   const [grouped, setGrouped] = createSignal(props.turn.phase === "done")
   let initial = true
   createEffect(() => {
@@ -317,11 +319,11 @@ export function ChatTurnView(props: {
                 }} />
               </div>
             </Show>
-            <BlockList entries={props.turn.entries} active={props.turn.active} status={props.turn.label}
+            <BlockList entries={props.turn.entries} active={props.turn.active} statusLine={statusLine()}
               onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
             <Show when={props.turn.phase !== "done" && (!props.turn.active || conversationBlocks(props.turn.entries).slice(-1)[0]?.kind !== "work")}>
               <div class="turn-status" classList={{ live: props.turn.active, failed: props.turn.phase === "failed" }}>
-                <span class={props.turn.active ? "work-status-wave" : ""} role="status" aria-live="polite" aria-atomic="true">{props.turn.label}</span>
+                <StatusText line={statusLine()} active={props.turn.active} />
               </div>
             </Show>
           </>}>
@@ -329,7 +331,7 @@ export function ChatTurnView(props: {
               <div class="worked-for" classList={{ open: processOpen() }} data-scroll-key={`status:${props.turn.id}`}>
                 <WorkedSummary durationMs={props.turn.durationMs} failures={props.turn.failures} open={processOpen()} onToggle={toggleProcess} />
                 <Show when={processOpen()}><div class="worked-for-body">
-                  <BlockList entries={props.turn.process} active={false} status="" onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
+                  <BlockList entries={props.turn.process} active={false} statusLine={statusLine()} onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
                 </div></Show>
               </div>
             </Show>
