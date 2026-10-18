@@ -117,7 +117,17 @@ export function Settings() {
               </button>
             </div>
           </section>
-          <p class="settings-choice-desc">关闭窗口后 Coda 留在系统托盘；通过托盘“退出 Coda”停止所有任务。</p>
+          <section class="settings-group">
+            <div class="settings-label">关闭窗口时</div>
+            <div class="settings-choices">
+              <button type="button" class="settings-choice" classList={{ active: chrome.closeBehavior() === "quit" }} onClick={() => chrome.setCloseBehavior("quit")}>
+                <span class="settings-choice-name">直接退出程序</span><span class="settings-choice-desc">默认选项；有任务进行时先确认是否中断并退出</span>
+              </button>
+              <button type="button" class="settings-choice" classList={{ active: chrome.closeBehavior() === "tray" }} onClick={() => chrome.setCloseBehavior("tray")}>
+                <span class="settings-choice-name">最小化到托盘</span><span class="settings-choice-desc">隐藏窗口，任务继续在后台运行</span>
+              </button>
+            </div>
+          </section>
 
           <div class="settings-version">版本 {version()}</div>
         </div>

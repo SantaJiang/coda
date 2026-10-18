@@ -1,7 +1,7 @@
 import type { ComposerAttachment } from "../lib/attachments"
 import type { ConfiguredModel, SelectableModel } from "../lib/models"
 import type { PermissionMode } from "../lib/permissions"
-import type { SendShortcut, TaskRecovery, StopBehavior } from "../lib/settings"
+import type { SendShortcut, TaskRecovery, StopBehavior, CloseBehavior } from "../lib/settings"
 import type { TimelineViewState } from "../lib/conversation"
 import type {
   Message,
@@ -14,7 +14,7 @@ import type {
   Todo,
 } from "../lib/types"
 import { loadPermissionMode } from "../lib/permissions"
-import { loadTaskRecovery, loadStopBehavior, loadSendShortcut } from "../lib/settings"
+import { loadCloseBehavior, loadTaskRecovery, loadStopBehavior, loadSendShortcut } from "../lib/settings"
 
 export type ConnectionState = "connecting" | "connected" | "disconnected"
 
@@ -97,6 +97,7 @@ export type AppState = {
   sendShortcut: SendShortcut
   taskRecovery: TaskRecovery
   stopBehavior: StopBehavior
+  closeBehavior: CloseBehavior
   selectedVariant: string | null
   modelVariants: Record<string, string[]>
   queuedBySession: Record<string, QueuedMessage[]>
@@ -151,6 +152,7 @@ export const initialState: AppState = {
   sendShortcut: loadSendShortcut(),
   taskRecovery: loadTaskRecovery(),
   stopBehavior: loadStopBehavior(),
+  closeBehavior: loadCloseBehavior(),
   selectedVariant: null,
   modelVariants: {},
   queuedBySession: {},

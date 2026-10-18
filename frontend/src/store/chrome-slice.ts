@@ -1,4 +1,4 @@
-import { saveTaskRecovery, saveStopBehavior, saveSendShortcut, type SendShortcut } from "../lib/settings"
+import { saveCloseBehavior, saveTaskRecovery, saveStopBehavior, saveSendShortcut, type SendShortcut } from "../lib/settings"
 import { permissionPreset, savePermissionMode, type PermissionMode } from "../lib/permissions"
 import { isLocalDraft } from "../lib/draft-session"
 import { popoverPatch } from "./state"
@@ -27,6 +27,7 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
     sendShortcut: () => state.sendShortcut,
     taskRecovery: () => state.taskRecovery,
     stopBehavior: () => state.stopBehavior,
+    closeBehavior: () => state.closeBehavior,
     planPanelDismissed: () => state.planPanelDismissed,
     setPlanMode: (on) => {
       const id = state.selectedSessionId
@@ -55,6 +56,7 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
       setState("sendShortcut", shortcut)
       saveSendShortcut(shortcut)
     },
+    setCloseBehavior: (value) => { setState("closeBehavior", value); saveCloseBehavior(value) },
     setTaskRecovery: (value) => { setState("taskRecovery", value); saveTaskRecovery(value) },
     setStopBehavior: (value) => { setState("stopBehavior", value); saveStopBehavior(value) },
   }

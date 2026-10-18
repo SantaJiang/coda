@@ -1,6 +1,7 @@
 import { createEffect, onCleanup, onMount, type ParentProps } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import * as api from "../lib/api"
+import { installQuitShortcut, prepareNotifications } from "../lib/desktop"
 import { subscribeEvents } from "../lib/events"
 import {
   loadConfiguredModels,
@@ -28,6 +29,7 @@ import {
   saveProjectSessions,
 } from "../lib/persist"
 import { applyClientEvent } from "./apply-event"
+import { trackDesktopActivity } from "./desktop-activity"
 import { createChromeSlice } from "./chrome-slice"
 import { StoreProviders } from "./ctx"
 import { flushPendingDraftPersist, persistDraftSessions, rekeyDraftSessions } from "./draft-session-state"
@@ -180,6 +182,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
         })
       }
       if (patch.taskRecovery) setState("taskRecovery", patch.taskRecovery)
+      if (patch.closeBehavior) setState("closeBehavior", patch.closeBehavior === "tray" ? "tray" : "quit")
       if (patch.stopBehavior) setState("stopBehavior", patch.stopBehavior)
       if (patch.models || "selectedModelKey" in patch) {
         const configured = loadConfiguredModels()
@@ -193,19 +196,10 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     }
     const unsubscribeShared = onSharedChange(applySharedPatch)
 
-    let stopQuitShortcut: (() => void) | undefined
-    let desktopDisposed = false
-    void import("../lib/desktop").then(({ prepareNotifications, installQuitShortcut }) => {
-      if (desktopDisposed) return
-      void prepareNotifications()
-      stopQuitShortcut = installQuitShortcut()
-    })
-    onCleanup(() => { desktopDisposed = true; stopQuitShortcut?.() })
-    const reportActivity = window.setInterval(() => {
-      const active = Object.values(state.status).some((status) => status.type !== "idle")
-      void import("../lib/desktop").then(({ reportDesktopActivity }) => reportDesktopActivity(active))
-    }, 2000)
-    onCleanup(() => window.clearInterval(reportActivity))
+    void prepareNotifications()
+    const stopQuitShortcut = installQuitShortcut()
+    onCleanup(stopQuitShortcut)
+    trackDesktopActivity(state)
 
     const stop = subscribe(
       (parsed) => {

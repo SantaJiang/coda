@@ -56,3 +56,7 @@ export function saveStopBehavior(value: StopBehavior) { setSharedValue({ stopBeh
 export function clearRetiredBackgroundSetting() {
   try { localStorage.removeItem("coda.keepBackendAlive") } catch {}
 }
+
+export type CloseBehavior = "quit" | "tray"
+export function loadCloseBehavior(): CloseBehavior { return sharedValue("closeBehavior") === "tray" ? "tray" : "quit" }
+export function saveCloseBehavior(value: CloseBehavior) { setSharedValue({ closeBehavior: value }); void flushShared() }

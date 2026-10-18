@@ -3,9 +3,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{Manager, RunEvent, WindowEvent};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_notification::NotificationExt;
 
 static EXITING: AtomicBool = AtomicBool::new(false);
+static EXIT_PENDING: AtomicBool = AtomicBool::new(false);
 static EXIT_READY: AtomicBool = AtomicBool::new(false);
 static TRAY_READY: AtomicBool = AtomicBool::new(false);
 static NOTIFIED: AtomicBool = AtomicBool::new(false);
@@ -46,7 +48,7 @@ fn heartbeat() {
 
 #[tauri::command]
 pub fn desktop_activity(active: bool) {
-    ACTIVE.store(active, Ordering::Relaxed);
+    ACTIVE.store(active, Ordering::SeqCst);
 }
 
 #[tauri::command]
@@ -107,6 +109,8 @@ pub fn install(app: &tauri::App) {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
     heartbeat();
+    #[cfg(target_os = "macos")]
+    mac_exit::install(app.handle());
     #[cfg(target_os = "macos")]
     if let Err(error) = install_app_menu(app) {
         eprintln!("Coda application menu unavailable: {error}");
@@ -185,13 +189,23 @@ fn install_app_menu(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+// Read the shared preference natively, including before the WebView has loaded.
+fn close_to_tray() -> bool {
+    crate::settings_read()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .is_some_and(|settings| settings["closeBehavior"] == "tray")
+}
+
 pub fn window_event(window: &tauri::Window, event: &WindowEvent) {
     if let WindowEvent::CloseRequested { api, .. } = event {
         if exiting() {
             return;
         }
         api.prevent_close();
-        if !TRAY_READY.load(Ordering::Relaxed) {
+        if EXIT_PENDING.load(Ordering::SeqCst) {
+            return;
+        }
+        if !close_to_tray() || !TRAY_READY.load(Ordering::Relaxed) {
             request_exit(window.app_handle());
             return;
         }
@@ -277,6 +291,39 @@ pub fn backend_died(pid: u32) {
 }
 
 pub fn request_exit(app: &tauri::AppHandle) {
+    // Keep the backend and heartbeat alive until the user explicitly confirms.
+    // All ordinary exit entry points pass through this guard.
+    if exiting() || EXIT_PENDING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if ACTIVE.load(Ordering::SeqCst) || has_running_terminals() {
+        show(app);
+        let handle = app.clone();
+        let mut dialog = app
+            .dialog()
+            .message("还有会话或终端任务正在进行。退出将中断这些任务，是否继续？")
+            .title("退出 Coda？")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "中断并退出".into(),
+                "取消退出".into(),
+            ));
+        if let Some(window) = app.get_webview_window("main") {
+            dialog = dialog.parent(&window);
+        }
+        dialog.show(move |confirmed| {
+            if confirmed {
+                begin_exit(&handle);
+            }
+            EXIT_PENDING.store(false, Ordering::SeqCst);
+        });
+    } else {
+        begin_exit(app);
+        EXIT_PENDING.store(false, Ordering::SeqCst);
+    }
+}
+
+fn begin_exit(app: &tauri::AppHandle) {
     if EXITING.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -374,5 +421,56 @@ fn install_job() {
         {
             windows_sys::Win32::Foundation::CloseHandle(job);
         }
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod mac_exit {
+    use super::*;
+    use objc2::{
+        class, msg_send,
+        runtime::{AnyClass, AnyObject, Sel},
+        sel,
+    };
+
+    static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+    // Dock Quit and macOS termination requests call the application delegate
+    // directly, bypassing Tauri's ExitRequested and our custom application menu.
+    pub fn install(app: &tauri::AppHandle) {
+        let _ = APP.set(app.clone());
+        unsafe {
+            let application: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+            let delegate: *mut AnyObject = msg_send![application, delegate];
+            if let Some(delegate) = delegate.as_ref() {
+                let installed = objc2::ffi::class_addMethod(
+                    delegate.class() as *const AnyClass as *mut AnyClass,
+                    sel!(applicationShouldTerminate:),
+                    std::mem::transmute::<
+                        unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject) -> usize,
+                        objc2::runtime::Imp,
+                    >(should_terminate),
+                    c"Q@:@".as_ptr(),
+                );
+                if !installed.as_bool() {
+                    eprintln!("Coda termination guard could not be installed");
+                }
+            }
+        }
+    }
+
+    unsafe extern "C-unwind" fn should_terminate(
+        _delegate: *mut AnyObject,
+        _selector: Sel,
+        _application: *mut AnyObject,
+    ) -> usize {
+        if EXIT_READY.load(Ordering::SeqCst) {
+            return 1; // NSTerminateNow
+        }
+        if let Some(app) = APP.get() {
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || request_exit(&handle));
+        }
+        0 // NSTerminateCancel; the shared shutdown path will exit after cleanup.
     }
 }

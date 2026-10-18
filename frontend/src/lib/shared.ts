@@ -1,6 +1,6 @@
 import type { ConfiguredModel } from "./models"
 import type { PermissionMode } from "./permissions"
-import type { SendShortcut, TaskRecovery, StopBehavior } from "./settings"
+import type { SendShortcut, TaskRecovery, StopBehavior, CloseBehavior } from "./settings"
 import type { Theme } from "./theme"
 import type { Project } from "./types"
 
@@ -12,6 +12,7 @@ export type SharedSettings = {
   permissionMode?: PermissionMode
   taskRecovery?: TaskRecovery
   stopBehavior?: StopBehavior
+  closeBehavior?: CloseBehavior
   projects?: Project[]
   lastProject?: string | null
 }
