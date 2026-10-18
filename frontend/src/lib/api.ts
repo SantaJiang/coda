@@ -1,3 +1,4 @@
+import type { TerminalInfo, TerminalLog } from "./terminal-contracts"
 import { API_BASE, DEFAULT_AGENT } from "./config"
 import type { ComposerAttachment } from "./attachments"
 import type { ConfigPatch, ModelRef, ProviderList } from "./models"
@@ -79,7 +80,6 @@ async function request<T>(
     directory?: string
     body?: unknown
     extraQuery?: Record<string, string>
-    expectJson?: boolean
     raw?: boolean
   },
 ): Promise<T> {
@@ -284,12 +284,7 @@ export async function rejectQuestion(directory: string, requestID: string) {
   return request<boolean>("POST", `/question/${requestID}/reject`, { directory })
 }
 
-export type TerminalInfo = {
-  id: string; sessionID: string; rootSessionID: string; command: string; cwd: string; startedAt: number; lastOutputAt: number
-  endedAt?: number; exitCode?: number; reason?: string; status: "starting" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
-  recoverable?: boolean; needsInput?: boolean; nextCheckAt?: number; consumed?: boolean; suppressed?: boolean; hidden?: boolean; error?: string; cursor: number; baseCursor: number
-}
-export type TerminalLog = { data: string; start: number; cursor: number; baseCursor: number; endCursor: number; truncated: boolean; status: TerminalInfo["status"]; ended?: boolean }
+export type { TerminalInfo, TerminalLog } from "./terminal-contracts"
 export const isTerminalRunning = (info: TerminalInfo) => info.status === "starting" || info.status === "running"
 const terminalPath = (sessionID: string, id?: string) => `/session/${encodeURIComponent(sessionID)}/terminals${id ? `/${encodeURIComponent(id)}` : ""}`
 export const listTerminals = (directory: string, sessionID: string) => request<{ backendID: string; items: TerminalInfo[] }>("GET", terminalPath(sessionID), { directory })

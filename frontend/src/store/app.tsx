@@ -1,3 +1,4 @@
+import { createBackendBootstrap, createBackendConfigSync } from "./backend-config"
 import { createEffect, onCleanup, onMount, type ParentProps } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import * as api from "../lib/api"
@@ -9,9 +10,8 @@ import {
   menuDiscoveredModels,
   mergeSelectables,
   resolveSelectedKey,
-  toBackendPatch,
 } from "../lib/models"
-import { onSharedChange, type SharedSettings } from "../lib/shared"
+import { onSharedChange, sharedWriteError, type SharedSettings } from "../lib/shared"
 import { newestDraft } from "../lib/draft-session"
 import {
   createLocalProject,
@@ -59,53 +59,58 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
   const sendAfterIdle: Record<string, QueuedMessage | undefined> = {}
 
   const projects = createProjectSlice(handle)
-  const models = createModelSlice(handle)
+  const config = createBackendConfigSync(handle, (message) =>
+    setState("backendError", message ? `模型配置同步失败：${message}` : null),
+  )
+  const models = createModelSlice(handle, config)
   const runtime = createRuntimeSlice(handle, { skipQueueFlush, sendAfterIdle, flushing: {} })
   const chrome = createChromeSlice(handle)
 
   let lastSseConnected: boolean | null = null
-  let bootstrapped = false
-  let bootstrapping: Promise<void> | null = null
   const resyncAfterReconnect = async () => {
     const project = projects.selectedProject()
     if (project) await projects.refreshProjectSessions(project).catch(() => undefined)
     const session = projects.selectedSession()
     if (session) await projects.resyncSession(session).catch(() => undefined)
     const pending = new Set<string>([
-      ...Object.keys(state.queuedBySession), ...Object.keys(sendAfterIdle),
-      ...Object.keys(state.settlingBySession), ...Object.keys(state.stoppingBySession),
-      ...Object.entries(state.status).filter(([, status]) => status.type !== "idle").map(([id]) => id),
+      ...Object.keys(state.queuedBySession),
+      ...Object.keys(sendAfterIdle),
+      ...Object.keys(state.settlingBySession),
+      ...Object.keys(state.stoppingBySession),
+      ...Object.entries(state.status)
+        .filter(([, status]) => status.type !== "idle")
+        .map(([id]) => id),
       ...Object.values(state.outgoing).map((item) => item.sessionID),
     ])
     if (session) pending.add(session.id)
     await Promise.allSettled([...pending].map((id) => runtime.settleSession(id)))
   }
 
+  let backendProjectsRestored = false
+  const bootstrap = createBackendBootstrap({
+    healthcheck: () => client.healthcheck(),
+    initialize: async () => {
+      await config.sync()
+      if (!backendProjectsRestored) {
+        const backendProjects = await client.listProjects()
+        if (backendProjects.length) await projects.restoreProjects(backendProjects)
+        backendProjectsRestored = true
+      }
+      await models.refreshDiscovered()
+      for (const project of state.projects) void projects.hydrateProjectPath(project)
+    },
+    onError: (error) => setState("backendError", error instanceof Error ? error.message : "后端初始化失败，将自动重试"),
+    onReady: () => setState("backendError", null),
+  })
   const applySseConnection = (ok: boolean) => {
     setState("connection", ok ? "connected" : "disconnected")
+    if (!ok) {
+      config.invalidate()
+      bootstrap.invalidate()
+    }
     if (ok && lastSseConnected === false) void resyncAfterReconnect()
     lastSseConnected = ok
-  }
-  const bootstrapBackend = () => {
-    if (bootstrapped) return Promise.resolve()
-    if (bootstrapping) return bootstrapping
-    bootstrapping = (async () => {
-      const ok = await client.healthcheck().catch(() => false)
-      if (!ok) return
-      bootstrapped = true
-      const patch = toBackendPatch(loadConfiguredModels(), loadSelectedModelKey())
-      if (patch) await client.patchGlobalConfig(patch).catch(() => undefined)
-      const backendProjects = await client.listProjects().catch(() => [])
-      if (backendProjects.length) await projects.restoreProjects(backendProjects)
-      await models.refreshDiscovered()
-      // 打开时会话列表可能抢在 sidecar 监听之前失败。健康检查通过后再拉一次。
-      for (const project of state.projects) {
-        void projects.hydrateProjectPath(project)
-      }
-    })().finally(() => {
-      bootstrapping = null
-    })
-    return bootstrapping
+    if (ok) void bootstrap.ensure()
   }
 
   onMount(() => {
@@ -159,15 +164,13 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
       void projects.refreshProjectSessions(createLocalProject(home))
     })
 
+    // Retry initialization independently of reachability; a failed config write is not ready.
     const ping = window.setInterval(() => {
-      if (bootstrapped) {
-        window.clearInterval(ping)
-        return
-      }
-      void bootstrapBackend()
+      void bootstrap.ensure().then((ready) => {
+        if (ready) void config.sync().catch(() => undefined)
+      })
     }, 8000)
-
-    void bootstrapBackend()
+    void bootstrap.ensure()
 
     // 其他实例（run.sh 开发版 / 安装版）改了共享设置时，跟随更新本地状态。
     // 只改 state，不再回写 shared，避免两个实例互相回环。
@@ -188,13 +191,19 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
         const configured = loadConfiguredModels()
         const extras = menuDiscoveredModels(state.discoveredModels)
         const nextKey = resolveSelectedKey(configured, mergeSelectables(configured, extras), loadSelectedModelKey())
-        persistSelection(handle, nextKey)
         setState({ configuredModels: configured, selectedModelKey: nextKey })
-        const backendPatch = toBackendPatch(configured, nextKey)
-        if (backendPatch) void client.patchGlobalConfig(backendPatch).catch(() => undefined)
+        void config.sync().catch(() => undefined)
+        bootstrap.invalidate()
       }
     }
     const unsubscribeShared = onSharedChange(applySharedPatch)
+    const settingsError = (event: Event) => {
+      const message = (event as CustomEvent<string>).detail
+      if (message) setState("error", `设置保存失败：${message}`)
+      else if (state.error?.startsWith("设置保存失败：")) setState("error", null)
+    }
+    if (sharedWriteError()) setState("error", `设置保存失败：${sharedWriteError()}`)
+    window.addEventListener("coda:settings-error", settingsError)
 
     void prepareNotifications()
     const stopQuitShortcut = installQuitShortcut()
@@ -229,8 +238,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
       (connected) => {
         applySseConnection(connected)
         if (!connected) return
-        if (bootstrapped) void models.refreshDiscovered()
-        else void bootstrapBackend()
+        void models.refreshDiscovered()
       },
     )
 
@@ -238,6 +246,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
       flushPendingDraftPersist()
       stop()
       unsubscribeShared()
+      window.removeEventListener("coda:settings-error", settingsError)
       window.clearInterval(ping)
       window.removeEventListener("pagehide", flushPendingDraftPersist)
       window.removeEventListener("beforeunload", flushPendingDraftPersist)
@@ -292,7 +301,13 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
   })
 
   return (
-    <StoreProviders projects={projects} models={models} runtime={runtime} chrome={chrome}>
+    <StoreProviders
+      terminals={props.ports?.terminals}
+      projects={projects}
+      models={models}
+      runtime={runtime}
+      chrome={chrome}
+    >
       {props.children}
     </StoreProviders>
   )

@@ -1,7 +1,9 @@
 import { createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
 import { LONG_TERMINAL_MS } from "./terminal-policy"
 export { LONG_TERMINAL_MS } from "./terminal-policy"
-import { isTerminalRunning, listTerminals, terminalControl, type TerminalInfo } from "./api"
+import { isTerminalRunning } from "./api"
+import type { TerminalInfo } from "./terminal-contracts"
+import { defaultTerminalClient, type TerminalClient } from "./terminal-client"
 
 type View = {
   open: boolean
@@ -34,7 +36,7 @@ function load(key: string): View {
 export function isLongTerminal(info: TerminalInfo, now = Date.now()) {
   return (info.endedAt ?? now) - info.startedAt >= LONG_TERMINAL_MS
 }
-export function useTerminals(directory: Accessor<string | undefined>, sessionID: Accessor<string | undefined>) {
+export function useTerminals(directory: Accessor<string | undefined>, sessionID: Accessor<string | undefined>, client: TerminalClient = defaultTerminalClient) {
   const [items, setItems] = createSignal<TerminalInfo[]>([])
   const [view, setView] = createSignal(blank())
   const [error, setError] = createSignal("")
@@ -63,7 +65,7 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
       if (pending) return
       pending = true
       try {
-        const data = await listTerminals(dir, id)
+        const data = await client.list(dir, id)
         if (!disposed) {
           setItems(data.items)
           setError("")
@@ -108,7 +110,7 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
     if (!dir || !session) return
     const currentKey = key()
     try {
-      await terminalControl(dir, session, id, action)
+      await client.control(dir, session, id, action)
       if (key() === currentKey) await refreshCurrent?.()
     } catch (e) {
       if (key() === currentKey) setError(e instanceof Error ? e.message : "终端操作失败")
@@ -118,6 +120,7 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
     visible().find((info) => isTerminalRunning(info) && info.nextCheckAt && info.nextCheckAt > now()),
   )
   return {
+    client,
     items,
     visible,
     selected,

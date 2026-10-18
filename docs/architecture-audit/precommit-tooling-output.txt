@@ -1,0 +1,12 @@
+bun test v1.4.3 (26aa4e1a9)
+
+scripts/check-versions.test.ts:
+(pass) checks the package's own lockfile entry, rather than the first dependency [5.15ms]
+
+scripts/backend-source.test.ts:
+(pass) clean checkouts materialize the registered series; unknown edits are preserved [230.46ms]
+
+ 2 pass
+ 0 fail
+ 14 expect() calls
+Ran 2 tests across 2 files. [269.00ms]

@@ -18,6 +18,7 @@ vi.mock("../lib/api", async (original) => ({
     baseCursor: 0,
     endCursor: 6,
     truncated: false,
+    status: "running",
   }),
   terminalStreamURL: () => "http://localhost/terminal-stream",
 }))
@@ -81,7 +82,7 @@ it("supports terminal selection shortcuts without input, metadata or toolbar but
   )
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(new Response('data: {"data":"","cursor":6,"baseCursor":0,"ended":true}\n\n')),
+    vi.fn().mockResolvedValue(new Response('data: {"data":"","cursor":6,"baseCursor":0,"start":6,"endCursor":6,"truncated":false,"status":"completed","ended":true}\n\n')),
   )
   const info: TerminalInfo = {
     id: "first",

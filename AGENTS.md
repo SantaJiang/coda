@@ -68,6 +68,15 @@ git -C backend apply ../patches/backend/<name>.patch
 | `coda-home.patch` | `packages/core/src/global.ts` | 当 `OPENCODE_CLIENT=coda` 或设置了 `CODA_HOME` 时，把 sidecar 的 config/data/cache/state/log 全部收到 `~/.coda`（默认）而不是 `~/.config/opencode` 与 `~/.local/share/opencode`。 |
 | `managed-terminals.patch` | Shell、会话执行/恢复、终端 API 与桌面存活监测 | Coda 后端内持有 PTY 长任务，执行上限与分段等待分离；提供有界日志、游标流、取消及中断恢复，按工具调用去重，并在桌面退出时清理命令；会话结束前核对未完成 Todo，避免漏写计划状态（不自动将未验证事项标为完成）。 |
 
+新增补丁（接在 `managed-terminals.patch` 之后）：
+
+| 补丁 | 位置 | 作用 |
+|---|---|---|
+| `desktop-contracts.patch` | core 环境变量、构建入口、终端 HTTP Schema 与测试 | 优先读取 Coda 环境变量并兼容旧名；为终端信息、日志和控制响应建立明确契约，使用共享测试样本验证跨语言结构。 |
+| `shell-output-drain.patch` | `packages/opencode/src/tool/shell.ts` 与工具测试 | 快速命令退出后，在有界等待内排空输出流，避免进程已成功但最后一段输出丢失。 |
+
+`patches/backend/manifest.json` 记录补丁重建基准 `base`、已提交源码的 `revision`（省略时为 base）与补丁应用顺序。`bun run backend:prepare` 会在干净基准上应用这些补丁；已应用时核对内容，不覆盖未知改动。前四个历史补丁已包含在当前基准提交中，不重复应用。后端源码提交后保留 base 与补丁系列以验证内容，并将 revision 和父仓库 gitlink 更新到该提交；已含补丁的源码不会重复应用。启动和打包入口都执行这一检查，保证干净检出的发布源码与本地一致。升级后端时必须同步更新基准与清单。
+
 以后对 `backend/` 的任何行为性修改（非第 1 条的关键字替换），都要同样落成 `patches/backend/` 下的补丁并登记到这张表里。
 
 GitHub Actions 不能去上游拉本地独有的子模块提交。`.gitmodules` 指向公开镜像 [SantaJiang/coda-backend](https://github.com/SantaJiang/coda-backend) 的 `coda` 分支，父仓库的 gitlink SHA 必须已经出现在该镜像上，Actions 才能 checkout。

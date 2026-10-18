@@ -13,7 +13,7 @@ const COLLAPSE_EASE = "cubic-bezier(0.16, 1, 0.3, 1)"
 
 const SIDEBAR_ICON_PATHS = {
   plus: "M12 5v14M5 12h14",
-  compose: "m7 20-4 1V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2ZM8 11h8M12 7v8",
+  compose: "M10 3.5H6.5a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h11a3 3 0 0 0 3-3V14M16.5 4a2.475 2.475 0 0 1 3.5 3.5l-8.5 8.5-4 .5 .5-4Z",
   folder: "M3 8V6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8Zm0 1h18",
   "folder-open": "M3 18V6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2M5 20h12.5a2 2 0 0 0 1.9-1.4l1.5-5A2 2 0 0 0 19 11H7.5a2 2 0 0 0-1.9 1.4l-2.5 5A1.2 1.2 0 0 0 5 20Z",
   home: "m3 10 9-7 9 7M5 9v11h14V9M9 20v-7h6v7",

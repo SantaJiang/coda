@@ -1,0 +1,12 @@
+{
+  "status": "completed",
+  "exitCode": 0,
+  "output": "\r\nCoda terminal fixture\r\ndone\r\n",
+  "cursor": 31,
+  "model": "deterministic localhost mock",
+  "runtime": "actual compiled sidecar and PTY",
+  "stop": {
+    "status": "cancelled",
+    "processAlive": false
+  }
+}

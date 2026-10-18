@@ -1,0 +1,266 @@
+$ bash ./scripts/validate.sh
+Coda 1.5.2
+Coda 后端源码与登记补丁一致
+bun test v1.4.3 (26aa4e1a9)
+
+scripts/check-versions.test.ts:
+(pass) checks the package's own lockfile entry, rather than the first dependency [1.11ms]
+
+scripts/backend-source.test.ts:
+(pass) clean checkouts materialize the registered series; unknown edits are preserved [223.26ms]
+
+ 2 pass
+ 0 fail
+ 12 expect() calls
+Ran 2 tests across 2 files. [259.00ms]
+$ bun run --cwd frontend test
+$ vitest run
+
+ RUN  v5.0.0 /Users/santa/Documents/GitHub/coda/frontend
+
+
+ Test Files  47 passed (47)
+      Tests  263 passed (263)
+   Start at  22:53:26
+   Duration  2.28s (environment 82%, transform 12%, tests 3%, import 3%)
+
+Environment  jsdom was created 47 times · 21.05s total, 82% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
+
+$ bun run typecheck && vite build
+$ tsc --noEmit
+vite v6.4.3 building for production...
+transforming...
+✓ 141 modules transformed.
+rendering chunks...
+[plugin vite:reporter]
+(!) /Users/santa/Documents/GitHub/coda/frontend/src/lib/api.ts is dynamically imported by /Users/santa/Documents/GitHub/coda/frontend/src/lib/persist.ts but also statically imported by /Users/santa/Documents/GitHub/coda/frontend/src/components/TerminalDock.tsx, /Users/santa/Documents/GitHub/coda/frontend/src/components/TerminalPanel.tsx, /Users/santa/Documents/GitHub/coda/frontend/src/lib/terminal-client.ts, /Users/santa/Documents/GitHub/coda/frontend/src/lib/terminals.ts, /Users/santa/Documents/GitHub/coda/frontend/src/store/app.tsx, /Users/santa/Documents/GitHub/coda/frontend/src/store/project-slice.ts, /Users/santa/Documents/GitHub/coda/frontend/src/store/runtime-slice.ts, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/assets/logo-DZ8dY8JP.svg                                 0.51 kB │ gzip:   0.32 kB
+dist/index.html                                               0.84 kB │ gzip:   0.49 kB
+dist/assets/fontawesome-webfont-CQDK8MU3.ttf                165.55 kB
+dist/assets/ghostty-vt-PH6eNY6t.wasm                        967.56 kB │ gzip: 299.47 kB
+dist/assets/index-BXrTmRmJ.css                               45.94 kB │ gzip:   9.20 kB
+dist/assets/__vite-browser-external-2447137e-BIHI7g3E.js      0.03 kB │ gzip:   0.05 kB
+dist/assets/image-DfyZ6glJ.js                                 0.62 kB │ gzip:   0.33 kB
+dist/assets/app-MjlSaCEa.js                                   1.44 kB │ gzip:   0.59 kB
+dist/assets/index-CoSg4tzX.js                                 1.45 kB │ gzip:   0.50 kB
+dist/assets/index-BLXxwCHw.js                                 2.03 kB │ gzip:   0.89 kB
+dist/assets/core-BUhCcD2K.js                                  2.70 kB │ gzip:   1.11 kB
+dist/assets/path-BSurzihs.js                                  3.77 kB │ gzip:   0.92 kB
+dist/assets/index-DZsdQ2mS.js                                 4.27 kB │ gzip:   1.58 kB
+dist/assets/TerminalPanel-x8MlUD4K.js                         5.01 kB │ gzip:   2.38 kB
+dist/assets/window-DzOF7Cz0.js                               15.05 kB │ gzip:   3.76 kB
+dist/assets/index-CxebbkTs.js                               439.94 kB │ gzip: 140.91 kB
+dist/assets/ghostty-web-C9zYmjrK.js                       1,381.79 kB │ gzip: 424.51 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 776ms
+   Compiling coda v1.5.2 (/Users/santa/Documents/GitHub/coda/frontend/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.25s
+   Compiling coda v1.5.2 (/Users/santa/Documents/GitHub/coda/frontend/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.67s
+     Running unittests src/lib.rs (target/debug/deps/coda_lib-5485ba5af781f4a7)
+
+running 11 tests
+test settings::tests::settings_writer_child ... ok
+test tests::background_matches_the_shell_colors ... ok
+test paths::tests::defaults_to_dot_coda_in_the_user_home ... ok
+test paths::tests::uses_explicit_coda_home ... ok
+test tests::reads_light_theme_and_ignores_anything_else ... ok
+test terminal_record::tests::backend_record_roundtrip_preserves_unowned_fields ... ok
+test settings::tests::never_overwrites_a_corrupt_file ... ok
+test backend::tests::healthcheck_accepts_a_fragmented_http_response ... ok
+test settings::tests::preserves_unknown_fields_and_removes_retired_settings ... ok
+test paths::tests::copies_legacy_settings_and_sidecar_files_once ... ok
+test settings::tests::independent_processes_preserve_all_field_updates ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running unittests src/main.rs (target/debug/deps/coda-84f21913e1b69082)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coda_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+$ tsgo --noEmit
+$ tsgo --noEmit
+bun test v1.4.3 (26aa4e1a9)
+
+test/flag-coda.test.ts:
+(pass) Coda environment names take precedence while legacy names remain accepted [98.27ms]
+
+ 1 pass
+ 0 fail
+ 4 expect() calls
+Ran 1 test across 1 file. [105.00ms]
+bun test v1.4.3 (26aa4e1a9)
+
+test/effect/runtime-flags.test.ts:
+(pass) RuntimeFlags > Coda names take precedence in the actual runtime configuration layer [3.65ms]
+(pass) RuntimeFlags > layer defaults autoShare to false [0.85ms]
+(pass) RuntimeFlags > layer parses plugin flags from the active ConfigProvider [0.70ms]
+(pass) RuntimeFlags > layer parses OPENCODE_EXPERIMENTAL_LSP_TY [0.58ms]
+(pass) RuntimeFlags > enables native LLM via dedicated flag only [0.94ms]
+(pass) RuntimeFlags > enables WebSockets via dedicated flag only [0.71ms]
+(pass) RuntimeFlags > layer accepts partial test overrides and fills defaults from Config definitions [0.44ms]
+(pass) RuntimeFlags > experimentalIconDiscovery defaults to false [0.32ms]
+(pass) RuntimeFlags > disableExternalSkills defaults to false [0.32ms]
+(pass) RuntimeFlags > disableExternalSkills reads OPENCODE_DISABLE_EXTERNAL_SKILLS [0.39ms]
+(pass) RuntimeFlags > disableLspDownload defaults to false [0.33ms]
+(pass) RuntimeFlags > disableLspDownload reads OPENCODE_DISABLE_LSP_DOWNLOAD [0.34ms]
+(pass) RuntimeFlags > disableClaudeCodePrompt defaults to false [0.33ms]
+(pass) RuntimeFlags > disableClaudeCodePrompt reads OPENCODE_DISABLE_CLAUDE_CODE_PROMPT [0.29ms]
+(pass) RuntimeFlags > disableClaudeCodePrompt inherits OPENCODE_DISABLE_CLAUDE_CODE [0.40ms]
+(pass) RuntimeFlags > experimentalIconDiscovery reads OPENCODE_EXPERIMENTAL_ICON_DISCOVERY [0.49ms]
+(pass) RuntimeFlags > experimentalIconDiscovery inherits OPENCODE_EXPERIMENTAL [0.37ms]
+(pass) RuntimeFlags > specific experimental flags override OPENCODE_EXPERIMENTAL [0.27ms]
+(pass) RuntimeFlags > experimentalOxfmt defaults to false [0.24ms]
+(pass) RuntimeFlags > experimentalOxfmt is enabled by OPENCODE_EXPERIMENTAL_OXFMT [0.25ms]
+(pass) RuntimeFlags > experimentalOxfmt inherits OPENCODE_EXPERIMENTAL [0.24ms]
+(pass) RuntimeFlags > parses bashDefaultTimeoutMs from config: absent [0.22ms]
+(pass) RuntimeFlags > parses bashDefaultTimeoutMs from config: valid positive integer [0.25ms]
+(pass) RuntimeFlags > parses bashDefaultTimeoutMs from config: invalid string [0.36ms]
+(pass) RuntimeFlags > parses bashDefaultTimeoutMs from config: zero [0.22ms]
+(pass) RuntimeFlags > parses bashDefaultTimeoutMs from config: negative [0.20ms]
+(pass) RuntimeFlags > parses bashDefaultTimeoutMs from config: non-integer [0.24ms]
+(pass) RuntimeFlags > parses outputTokenMax from config: absent [0.27ms]
+(pass) RuntimeFlags > parses outputTokenMax from config: valid positive integer [0.21ms]
+(pass) RuntimeFlags > parses outputTokenMax from config: invalid string [0.23ms]
+(pass) RuntimeFlags > parses outputTokenMax from config: zero [0.19ms]
+(pass) RuntimeFlags > parses outputTokenMax from config: negative [0.22ms]
+(pass) RuntimeFlags > parses outputTokenMax from config: non-integer [0.27ms]
+(pass) RuntimeFlags > layer ignores the active ConfigProvider for omitted test overrides [0.37ms]
+(pass) RuntimeFlags > disableClaudeCodeSkills defaults to false [0.29ms]
+(pass) RuntimeFlags > disableClaudeCodeSkills reads OPENCODE_DISABLE_CLAUDE_CODE_SKILLS [0.29ms]
+(pass) RuntimeFlags > disableClaudeCodeSkills inherits OPENCODE_DISABLE_CLAUDE_CODE [0.27ms]
+
+test/terminal/schema.test.ts:
+(pass) the desktop and backend consume the same terminal record fixture [1.01ms]
+(pass) terminal log contracts reject malformed cursor and status fields [0.07ms]
+
+test/terminal/managed.test.ts:
+(pass) quick completion returns without exhausting its wait and retains unicode output [48.20ms]
+(pass) a check interval expiring does not kill the process and duplicate starts reuse the PID [451.04ms]
+(pass) aborting a wait leaves its command running, and cancellation is idempotent [3036.91ms]
+(pass) explicit timeout and non-zero exit remain failures [3138.28ms]
+(pass) incremental output cursors neither drop nor repeat bytes [47.88ms]
+(pass) stale persisted running entries are interrupted without replaying their command [1.31ms]
+(pass) only-stop-AI suppresses continuation without cancelling the command [3023.98ms]
+(pass) cancelling a shell also kills descendants which ignore TERM [3051.66ms]
+(pass) interactive prompts are surfaced without silently terminating the command [3050.21ms]
+(pass) fast commands cannot exit before their output and exit listeners are installed [1334.18ms]
+(pass) disk logs rotate at 100 MiB and stale cursors explicitly report truncation [8444.72ms]
+
+test/tool/shell.test.ts:
+(pass) tool.shell > basic [zsh] [243.49ms]
+(pass) tool.shell > retains output across repeated fast exits [zsh] [94.93ms]
+(pass) tool.shell > falls back from terminal-only configured shell [17.18ms]
+(pass) tool.shell permissions > asks for bash permission with correct pattern [zsh] [11.77ms]
+(pass) tool.shell permissions > asks for bash permission with multiple commands [zsh] [11.39ms]
+(pass) tool.shell permissions > asks for external_directory permission for wildcard external paths [zsh] [25.41ms]
+(pass) tool.shell permissions > asks for external_directory permission when cd to parent [zsh] [6.71ms]
+(pass) tool.shell permissions > asks for external_directory permission when workdir is outside project [zsh] [7.42ms]
+(pass) tool.shell permissions > asks for external_directory permission when file arg is outside project [zsh] [6.77ms]
+(pass) tool.shell permissions > does not ask for external_directory permission when rm inside project [zsh] [12.45ms]
+(pass) tool.shell permissions > includes always patterns for auto-approval [zsh] [15.23ms]
+(pass) tool.shell permissions > does not ask for bash permission when command is cd only [zsh] [10.34ms]
+(pass) tool.shell permissions > matches redirects in permission pattern [zsh] [6.23ms]
+(pass) tool.shell permissions > always pattern has space before wildcard to not include different commands [zsh] [14.01ms]
+(pass) tool.shell abort > preserves output when aborted [42.95ms]
+(pass) tool.shell abort > terminates command on timeout [632.80ms]
+(pass) tool.shell abort > uses RuntimeFlags bashDefaultTimeoutMs when timeout is omitted [649.21ms]
+(pass) tool.shell abort > captures stderr in output [45.73ms]
+(pass) tool.shell abort > returns non-zero exit code [29.75ms]
+(pass) tool.shell abort > streams metadata updates progressively [133.98ms]
+(pass) tool.shell truncation > truncates output exceeding line limit [160.33ms]
+(pass) tool.shell truncation > truncates output exceeding byte limit [112.25ms]
+(pass) tool.shell truncation > does not truncate small output [109.94ms]
+(pass) tool.shell truncation > full output is saved to file when truncated [109.46ms]
+
+test/session/prompt.test.ts:
+(pass) loop exits immediately when last assistant has stop finish [35.85ms]
+(pass) loop exits for a completed parent turn with nonmonotonic message IDs [24.41ms]
+(pass) loop exits without an LLM request for interrupted orphan tool calls [46.59ms]
+(pass) loop calls LLM and returns assistant message [240.93ms]
+(pass) loop includes MCP instructions in model system context [162.70ms]
+(pass) legacy prompt emits message events without session.next events [38.99ms]
+(pass) loop surfaces content-filter finishes as session errors [162.59ms]
+(pass) loop stops provider overflow instead of auto-compacting when disabled [164.71ms]
+(skip) prompt emits v2 prompted and synthetic events (v2 projector disabled)
+(pass) static loop returns assistant text through local provider [164.71ms]
+(pass) static loop consumes queued replies across turns [170.99ms]
+(pass) loop continues when finish is tool-calls [175.11ms]
+(pass) loop continues when finish is unknown [172.89ms]
+(pass) glob tool keeps instance context during prompt runs [174.11ms]
+(pass) loop continues when finish is stop but assistant has tool parts [173.13ms]
+(pass) failed subtask preserves metadata on error tool state [182.30ms]
+(pass) subtask child inherits parent session external_directory allow [172.25ms]
+(pass) prompt tools replace previous prompt tool rules [95.86ms]
+(pass) running subtask preserves metadata after tool-call transition [153.44ms]
+(pass) running task tool preserves metadata after tool-call transition [456.70ms]
+(pass) loop sets status to busy then idle [134.54ms]
+(pass) cancel interrupts loop and resolves with an assistant message [152.28ms]
+(pass) cancel records MessageAbortedError on interrupted process [156.26ms]
+(pass) finalizes assistant when cancelled before processor creation completes [107.48ms]
+(pass) cancel finalizes subtask tool state [84.00ms]
+(pass) cancel propagates from slash command subtask to child session [163.62ms]
+(pass) cancel with queued callers resolves all cleanly [394.48ms]
+(pass) concurrent loop callers get same result [24.98ms]
+(pass) concurrent loop callers all receive same error result [154.44ms]
+(pass) prompt submitted during an active run is included in the next LLM input [185.53ms]
+(pass) assertNotBusy fails with BusyError when loop running [96.25ms]
+(pass) assertNotBusy succeeds when idle [31.50ms]
+(pass) shell rejects with BusyError when loop running [160.38ms]
+(pass) shell captures stdout and stderr in completed tool output [420.06ms]
+(pass) shell completes a fast command on the preferred shell [334.94ms]
+(pass) shell uses configured shell over env shell [90.11ms]
+(pass) shell commands can change directory after startup [81.94ms]
+(pass) shell lists files from the project directory [349.11ms]
+(pass) shell captures stderr from a failing command [349.66ms]
+(pass) shell updates running metadata before process exit [307.43ms]
+(pass) loop waits while shell runs and starts after shell exits [1092.43ms]
+(pass) shell completion resumes queued loop callers [973.63ms]
+(pass) command ! expansion uses configured shell over env shell [162.92ms]
+(pass) cancel interrupts shell and resolves cleanly [182.42ms]
+(pass) cancel persists aborted shell result when shell ignores TERM [3195.45ms]
+(pass) cancel finalizes interrupted bash tool output through normal truncation [573.48ms]
+(pass) cancel interrupts loop queued behind shell [202.74ms]
+(pass) shell rejects when another shell is already running [205.23ms]
+(pass) interrupt propagates abort signal to read tool via file part (text/plain) [149.70ms]
+(pass) interrupt propagates abort signal to read tool via file part (directory) [131.24ms]
+(pass) does not fail the prompt when a file part is missing [185.60ms]
+(pass) keeps stored part order stable when file resolution is async [185.94ms]
+(pass) handles filenames with # character [186.87ms]
+(pass) does not loop empty assistant turns for a simple reply [167.35ms]
+(pass) records aborted errors when prompt is cancelled mid-stream [166.08ms]
+(pass) applies agent variant only when using agent model [124.08ms]
+(pass) unknown agent throws typed error [35.51ms]
+(pass) unknown agent error includes available agent names [28.18ms]
+(pass) unknown command throws typed error with available names [25.16ms]
+(pass) Coda reconciles unfinished todos before ending a turn [177.08ms]
+(pass) Coda bounds plan checks and never completes unverified todos itself [160.22ms]
+(pass) Coda waits for tool results before its single plan check even when a provider reports stop [184.78ms]
+
+test/session/tools.test.ts:
+(pass) preserves running tool start time across metadata updates [0.70ms]
+
+1 tests skipped:
+(skip) prompt emits v2 prompted and synthetic events (v2 projector disabled)
+
+ 136 pass
+ 1 skip
+ 0 fail
+ 528 expect() calls
+Ran 137 tests across 6 files. [44.24s]

@@ -9,6 +9,7 @@ TAURI_CONF="$ROOT/frontend/src-tauri/tauri.conf.json"
 PACKAGE_JSON="$ROOT/frontend/package.json"
 CARGO_TOML="$ROOT/frontend/src-tauri/Cargo.toml"
 VERSION_PATH="frontend/src-tauri/tauri.conf.json"
+CARGO_LOCK="$ROOT/frontend/src-tauri/Cargo.lock"
 
 read_json_version() {
   sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p' "$1" | head -n 1
@@ -53,9 +54,10 @@ fi
 
 pkg_ver="$(read_json_version "$PACKAGE_JSON")"
 cargo_ver="$(read_cargo_version "$CARGO_TOML")"
-if [[ "$pkg_ver" != "$current" || "$cargo_ver" != "$current" ]]; then
-  echo "版本号不一致：tauri.conf.json=$current frontend/package.json=$pkg_ver Cargo.toml=$cargo_ver" >&2
-  echo "发布前必须把这三处改成同一个 x.y.z。" >&2
+lock_ver="$(awk '/^name = "coda"$/ { found=1; next } found && /^version = / { gsub(/"/, "", $3); print $3; exit }' "$CARGO_LOCK")"
+if [[ "$pkg_ver" != "$current" || "$cargo_ver" != "$current" || "$lock_ver" != "$current" ]]; then
+  echo "版本号不一致：tauri.conf.json=$current frontend/package.json=$pkg_ver Cargo.toml=$cargo_ver Cargo.lock=$lock_ver" >&2
+  echo "发布前必须把这四处改成同一个 x.y.z。" >&2
   exit 1
 fi
 

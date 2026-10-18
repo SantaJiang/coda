@@ -1,7 +1,9 @@
 import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import type { Terminal as GhosttyTerminal } from "ghostty-web"
 import wasmURL from "ghostty-web/ghostty-vt.wasm?url"
-import { isTerminalRunning, terminalLog, terminalStreamURL, type TerminalInfo, type TerminalLog } from "../lib/api"
+import { isTerminalRunning } from "../lib/api"
+import type { TerminalInfo, TerminalLog } from "../lib/terminal-contracts"
+import { defaultTerminalClient, type TerminalClient } from "../lib/terminal-client"
 import { terminalStatusLabel, type Terminals } from "../lib/terminals"
 import { useTheme } from "../store/theme"
 
@@ -41,6 +43,7 @@ export default function TerminalPanel(props: { terminals: Terminals; directory: 
           return (
             <>
               <TerminalOutput
+                client={t.client}
                 directory={props.directory}
                 sessionID={props.sessionID}
                 info={info()}
@@ -60,6 +63,7 @@ export default function TerminalPanel(props: { terminals: Terminals; directory: 
 }
 
 export function TerminalOutput(props: {
+  client?: TerminalClient
   directory: string
   sessionID: string
   info: TerminalInfo
@@ -112,50 +116,12 @@ export function TerminalOutput(props: {
     baseCursor = frame.baseCursor
     if (following()) terminal.scrollToBottom()
   }
+  const client = props.client ?? defaultTerminalClient
   const connect = () => {
-    const abort = new AbortController()
-    disconnect = () => abort.abort()
-    void (async () => {
-      while (!abort.signal.aborted && !disposed) {
-        try {
-          const response = await fetch(terminalStreamURL(props.directory, props.sessionID, props.info.id, cursor), {
-            signal: abort.signal,
-          })
-          if (!response.ok || !response.body) throw new Error(`终端连接失败 (${response.status})`)
-          setError("")
-          const reader = response.body.getReader(),
-            text = new TextDecoder()
-          let buffer = ""
-          while (!disposed && !abort.signal.aborted) {
-            const part = await reader.read()
-            if (abort.signal.aborted || disposed) return
-            if (part.done) break
-            buffer += text.decode(part.value, { stream: true })
-            const frames = buffer.split("\n\n")
-            buffer = frames.pop() ?? ""
-            for (const frame of frames) {
-              const line = frame.split("\n").find((line) => line.startsWith("data: "))
-              if (!line) continue
-              const value = JSON.parse(line.slice(6)) as TerminalLog
-              write(value)
-              if (value.ended) return
-            }
-          }
-        } catch (e) {
-          if (abort.signal.aborted || disposed) return
-          setError(e instanceof Error ? e.message : "终端断开，正在重新连接")
-        }
-        await new Promise<void>((resolve) => {
-          const finish = () => {
-            window.clearTimeout(timer)
-            abort.signal.removeEventListener("abort", finish)
-            resolve()
-          }
-          const timer = window.setTimeout(finish, 1500)
-          abort.signal.addEventListener("abort", finish, { once: true })
-        })
-      }
-    })()
+    disconnect?.()
+    disconnect = client.subscribe(props.directory, props.sessionID, props.info.id, cursor,
+      (frame) => { if (!disposed) write(frame) },
+      (message) => { if (!disposed) setError(message) })
   }
   const loadEarlier = async () => {
     if (!terminal || loading()) return
@@ -172,7 +138,7 @@ export function TerminalOutput(props: {
       const replayEnd = Math.min(end, start + 2 * 1024 * 1024)
       while (cursor < replayEnd && !disposed)
         write(
-          await terminalLog(
+          await client.log(
             props.directory,
             props.sessionID,
             props.info.id,
@@ -241,7 +207,7 @@ export function TerminalOutput(props: {
           observer.disconnect()
           scroll.dispose()
         }
-        const initial = await terminalLog(props.directory, props.sessionID, props.info.id)
+        const initial = await client.log(props.directory, props.sessionID, props.info.id)
         if (disposed) return
         earliest = initial.start
         setEarlier(initial.start > initial.baseCursor)

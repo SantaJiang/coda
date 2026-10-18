@@ -19,7 +19,7 @@ fi
 
 CODA_HOME="${CODA_HOME:-$HOME/.coda}"
 export CODA_HOME
-export OPENCODE_CLIENT="${OPENCODE_CLIENT:-coda}"
+export CODA_CLIENT="${CODA_CLIENT:-coda}"
 
 copy_if_missing() {
   local src="$1"
@@ -176,6 +176,8 @@ clean_stale_rust_target() {
   fi
 }
 
+bun "$ROOT/scripts/backend-source.ts" --apply
+
 echo "==> 安装前端依赖"
 bun install --cwd "$FRONTEND"
 clean_stale_rust_target
@@ -200,12 +202,12 @@ fi
 echo "==> 启动 Coda 后端  http://127.0.0.1:$PORT  (${BACKEND_VERSION})"
 (
   cd "$BACKEND_ROOT"
-  CODA_PORT="$PORT" CODA_HOME="$CODA_HOME" OPENCODE_CLIENT="${OPENCODE_CLIENT}" \
-    OPENCODE_DB="$CODA_HOME/data/opencode-local.db" OPENCODE_DISABLE_AUTOUPDATE=1 \
+  CODA_PORT="$PORT" CODA_HOME="$CODA_HOME" CODA_CLIENT="${CODA_CLIENT}" \
+    CODA_DB="$CODA_HOME/data/opencode-local.db" CODA_DISABLE_AUTOUPDATE=1 \
     bun --cwd "$PKG_DIR" --conditions=browser \
       --define OPENCODE_VERSION="'${BACKEND_VERSION}'" \
       --define OPENCODE_CHANNEL="'local'" \
-      --user-agent="opencode/${BACKEND_VERSION}" \
+      --user-agent="coda/${BACKEND_VERSION}" \
       src/index.ts serve --port "$PORT" --hostname 127.0.0.1
 ) >"$BACKEND_LOG" 2>&1 &
 echo $! >"$BACKEND_PID_FILE"

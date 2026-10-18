@@ -1,3 +1,4 @@
+use crate::terminal_record::{Status as TerminalStatus, TerminalRecord};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -225,21 +226,24 @@ pub fn window_event(window: &tauri::Window, event: &WindowEvent) {
     }
 }
 
-fn terminal_records() -> Vec<(std::path::PathBuf, serde_json::Value)> {
+fn terminal_records() -> Vec<(std::path::PathBuf, TerminalRecord)> {
     fs::read_dir(crate::paths::coda_home().join("terminals"))
         .into_iter()
         .flatten()
         .flatten()
         .filter_map(|entry| {
             let dir = entry.path();
-            let value: serde_json::Value =
+            let value: TerminalRecord =
                 serde_json::from_str(&fs::read_to_string(dir.join("info.json")).ok()?).ok()?;
-            (value["ownerID"].as_str() == Some(owner())).then_some((dir, value))
+            (value.owner_id == owner()).then_some((dir, value))
         })
         .collect()
 }
-fn is_running(value: &serde_json::Value) -> bool {
-    matches!(value["status"].as_str(), Some("starting" | "running"))
+fn is_running(value: &TerminalRecord) -> bool {
+    matches!(
+        value.status,
+        TerminalStatus::Starting | TerminalStatus::Running
+    )
 }
 fn has_running_terminals() -> bool {
     terminal_records()
@@ -247,8 +251,8 @@ fn has_running_terminals() -> bool {
         .any(|(_, value)| is_running(value))
 }
 
-fn cancel_terminal(value: &serde_json::Value) {
-    let Some(pid) = value["pid"].as_u64() else {
+fn cancel_terminal(value: &TerminalRecord) {
+    let Some(pid) = value.pid else {
         return;
     };
     #[cfg(unix)]
@@ -268,21 +272,20 @@ fn cancel_terminal(value: &serde_json::Value) {
 
 pub fn backend_died(pid: u32) {
     for (dir, mut value) in terminal_records() {
-        if value["backendPID"].as_u64() != Some(pid as u64) || !is_running(&value) {
+        if value.backend_pid != Some(pid) || !is_running(&value) {
             continue;
         }
         cancel_terminal(&value);
         #[cfg(unix)]
-        if let Some(child) = value["pid"].as_u64() {
+        if let Some(child) = value.pid {
             let _ = std::process::Command::new("kill")
                 .args(["-KILL", "--", &format!("-{child}")])
                 .status();
         }
-        value["status"] = serde_json::json!("interrupted");
-        value["endedAt"] = serde_json::json!(now());
-        value["reason"] = serde_json::json!(
-            "Interrupted: backend restarted; inspect project state before retrying"
-        );
+        value.status = TerminalStatus::Interrupted;
+        value.ended_at = Some(u64::try_from(now()).unwrap_or(u64::MAX));
+        value.reason =
+            Some("Interrupted: backend restarted; inspect project state before retrying".into());
         let tmp = dir.join("info.desktop.tmp");
         if fs::write(&tmp, value.to_string()).is_ok() {
             let _ = fs::rename(tmp, dir.join("info.json"));
@@ -356,12 +359,12 @@ fn begin_exit(app: &tauri::AppHandle) {
         // The backend may have exited before persisting PTY callbacks. Finish every
         // task captured by this shutdown and force-clean its remaining descendants.
         for (dir, original) in records {
-            let mut value: serde_json::Value = fs::read_to_string(dir.join("info.json"))
+            let mut value: TerminalRecord = fs::read_to_string(dir.join("info.json"))
                 .ok()
                 .and_then(|text| serde_json::from_str(&text).ok())
                 .unwrap_or(original);
             #[cfg(unix)]
-            if let Some(pid) = value["pid"].as_u64() {
+            if let Some(pid) = value.pid {
                 let _ = std::process::Command::new("kill")
                     .args(["-KILL", "--", &format!("-{pid}")])
                     .status();
@@ -369,9 +372,9 @@ fn begin_exit(app: &tauri::AppHandle) {
             if !is_running(&value) {
                 continue;
             }
-            value["status"] = serde_json::json!("cancelled");
-            value["endedAt"] = serde_json::json!(now());
-            value["reason"] = serde_json::json!("Cancelled: Coda exited");
+            value.status = TerminalStatus::Cancelled;
+            value.ended_at = Some(u64::try_from(now()).unwrap_or(u64::MAX));
+            value.reason = Some("Cancelled: Coda exited".into());
             let tmp = dir.join("info.desktop.tmp");
             if fs::write(&tmp, value.to_string()).is_ok() {
                 let _ = fs::rename(tmp, dir.join("info.json"));

@@ -1,5 +1,9 @@
+import { defaultTerminalClient, type TerminalClient } from "../lib/terminal-client"
 import { createContext, useContext, type ParentProps } from "solid-js"
 import type { ChromeApi, ModelApi, ProjectApi, RuntimeApi } from "./contracts"
+
+const TerminalContext = createContext<TerminalClient>(defaultTerminalClient)
+export const useTerminalClient = () => useContext(TerminalContext)
 
 const ProjectContext = createContext<ProjectApi>()
 const ModelContext = createContext<ModelApi>()
@@ -8,6 +12,7 @@ const ChromeContext = createContext<ChromeApi>()
 
 export function StoreProviders(
   props: ParentProps<{
+    terminals?: TerminalClient
     projects: ProjectApi
     models: ModelApi
     runtime: RuntimeApi
@@ -15,13 +20,15 @@ export function StoreProviders(
   }>,
 ) {
   return (
-    <ProjectContext.Provider value={props.projects}>
-      <ModelContext.Provider value={props.models}>
-        <RuntimeContext.Provider value={props.runtime}>
-          <ChromeContext.Provider value={props.chrome}>{props.children}</ChromeContext.Provider>
-        </RuntimeContext.Provider>
-      </ModelContext.Provider>
-    </ProjectContext.Provider>
+    <TerminalContext.Provider value={props.terminals ?? defaultTerminalClient}>
+      <ProjectContext.Provider value={props.projects}>
+        <ModelContext.Provider value={props.models}>
+          <RuntimeContext.Provider value={props.runtime}>
+            <ChromeContext.Provider value={props.chrome}>{props.children}</ChromeContext.Provider>
+          </RuntimeContext.Provider>
+        </ModelContext.Provider>
+      </ProjectContext.Provider>
+    </TerminalContext.Provider>
   )
 }
 

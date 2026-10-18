@@ -1,3 +1,5 @@
+import { isMacPlatform } from "./platform-detect"
+export { isMacPlatform } from "./platform-detect"
 import { STORAGE_KEYS } from "./config"
 import { flushShared, setSharedValue, sharedValue } from "./shared"
 
@@ -5,17 +7,8 @@ export type SendShortcut = "enter" | "mod-enter"
 
 const VALUES = new Set<SendShortcut>(["enter", "mod-enter"])
 
-export function isMacPlatform() {
-  if (typeof navigator === "undefined") return false
-  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform) || /Mac OS X/i.test(navigator.userAgent)
-}
-
 export function modifierLabel() {
   return isMacPlatform() ? "Cmd" : "Ctrl"
-}
-
-export function sendShortcutLabel(shortcut: SendShortcut) {
-  return shortcut === "enter" ? "Enter" : `${modifierLabel()}+Enter`
 }
 
 export function isSendHotkey(event: KeyboardEvent, shortcut: SendShortcut) {

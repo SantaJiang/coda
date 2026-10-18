@@ -1,3 +1,4 @@
+import { useTerminalClient } from "../store/ctx"
 import { TerminalDock } from "./TerminalDock"
 import { useTerminals } from "../lib/terminals"
 import { Show, Suspense, lazy, onCleanup } from "solid-js"
@@ -20,7 +21,7 @@ export function SessionPage() {
   const projects = useProjects()
   const runtime = useRuntime()
   const chrome = useChrome()
-  const terminals = useTerminals(() => projects.selectedProject()?.path, () => projects.selectedSession()?.id)
+  const terminals = useTerminals(() => projects.selectedProject()?.path, () => projects.selectedSession()?.id, useTerminalClient())
   const planAvailable = () => runtime.hasPlan() && !chrome.planPanelDismissed()
   const showTerminal = () => terminals.view().open && terminals.view().tab === "terminal" && terminals.visible().length > 0
   const showAside = () => showTerminal() || (terminals.view().open && terminals.view().tab === "plan" && runtime.hasPlan()) || planAvailable()

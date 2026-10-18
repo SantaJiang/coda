@@ -4,6 +4,7 @@ version = "1.5.2"
 description = "Coda — a streamlined desktop agent client"
 authors = ["coda"]
 edition = "2021"
+rust-version = "1.89"
 
 [lib]
 name = "coda_lib"

@@ -1,8 +1,5 @@
-import { isMacPlatform } from "./settings"
-
-export function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
-}
+import { isMacPlatform, isTauri } from "./platform-detect"
+export { isTauri } from "./platform-detect"
 
 export function isWindowsPlatform() {
   if (typeof navigator === "undefined") return false

@@ -1,0 +1,18 @@
+{
+  "recordedAt": "2026-10-18T14:55:52.827904+00:00",
+  "backendRevision": "c05cc1f9714b0585ab7bb2787e546673c185dcd3",
+  "parentBeforeCommit": "ec0bc1c3d6f07a51535a8fea3af1065268665a91",
+  "checks": {
+    "fullValidationExit": 0,
+    "frontendTestsPassed": 263,
+    "rustTestsPassed": 11,
+    "backendTestsPassed": 136,
+    "backendTestsSkipped": 1,
+    "toolingTestsPassed": 2,
+    "toolingAssertions": 14,
+    "backendCommittedSourceMatchesPatchSeries": true,
+    "cleanCommittedBackendCheckoutVerified": true
+  },
+  "scope": "All reviewed parent changes and backend changes, including architecture hardening, terminal behavior and final reference-based compose icon",
+  "pushPerformed": false
+}

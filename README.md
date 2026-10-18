@@ -1,6 +1,6 @@
 # Coda
 
-精简桌面 Agent 客户端。仓库按两个子模块组织：
+精简桌面 Agent 客户端。仓库按客户端与后端两个目录组织：
 
 | 目录 | 说明 |
 |---|---|
@@ -42,7 +42,7 @@ bun run test
 
 ## 打包
 
-当前版本 **1.0.0**。本地：
+发布版本以 `frontend/src-tauri/tauri.conf.json` 为准，四处版本由 `bun scripts/check-versions.ts` 校验。本地：
 
 ```bash
 ./scripts/pack.sh
@@ -62,3 +62,13 @@ bun run test
 | `~/.coda/logs/` | 后端日志 |
 
 首次启动会把旧的 `~/Library/Application Support/ai.coda.app/settings.json`、`~/.config/opencode` 和 `~/.local/share/opencode` **复制**过来，不删除原文件。
+
+## 开发质量检查
+
+```bash
+bun run validate
+```
+
+依次检查四处版本、后端补丁一致性、构建脚本回归、前端测试/类型/构建、Rust 格式/检查/测试，以及受影响后端链路。后端测试使用临时数据目录。GitHub 打包仍按约定不运行测试。
+
+后端固定提交及额外补丁顺序记录在 `patches/backend/manifest.json`。开发启动和正式构建使用同一个准备步骤；干净检出会应用已登记补丁，未知本地修改会报错并保留。同步上游后须更新基线、重建补丁并验证；不依赖开发者工作区才能得到完整 sidecar。

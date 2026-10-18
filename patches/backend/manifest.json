@@ -1,0 +1,9 @@
+{
+  "base": "15e63b8d7c45ec78f9c5849e2f2c32b6a9a22f2a",
+  "revision": "c05cc1f9714b0585ab7bb2787e546673c185dcd3",
+  "patches": [
+    "managed-terminals.patch",
+    "desktop-contracts.patch",
+    "shell-output-drain.patch"
+  ]
+}

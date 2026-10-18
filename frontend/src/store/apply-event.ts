@@ -276,6 +276,8 @@ export function applyClientEvent(draft: AppState, parsed: ParsedEvent): EventEff
   const props = (parsed.event.properties ?? parsed.event.data ?? {}) as Record<string, unknown>
   const nested = (props.part ?? props.info ?? props.permission ?? props.question ?? props.request) as { sessionID?: string } | undefined
   const sessionID = (props.sessionID as string | undefined) ?? nested?.sessionID
+  const ownerID = sessionID ?? (props.info as { id?: string } | undefined)?.id
+  if (ownerID && draft.removedSessions[ownerID]) return effects
   if (sessionID) draft.eventRevision[sessionID] = (draft.eventRevision[sessionID] ?? 0) + 1
   handler(draft, {
     props,

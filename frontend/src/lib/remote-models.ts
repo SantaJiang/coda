@@ -1,13 +1,11 @@
+import { isTauri } from "./platform-detect"
+
 export type RemoteModel = {
   id: string
   name: string
 }
 
 const SKIP = /embedding|whisper|tts|dall-e|moderation|tts-|audio|transcribe|realtime|image-edit|sora/i
-
-function isTauri() {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
-}
 
 export function modelsEndpoint(baseURL: string) {
   return `${baseURL.trim().replace(/\/+$/, "")}/models`

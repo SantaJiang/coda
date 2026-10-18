@@ -4,6 +4,8 @@ use std::time::Duration;
 mod backend;
 mod lifecycle;
 mod paths;
+mod settings;
+mod terminal_record;
 
 #[tauri::command]
 fn path_exists(path: String) -> bool {
@@ -16,24 +18,24 @@ fn settings_read() -> Option<String> {
 }
 
 #[tauri::command]
+fn settings_patch(
+    patch: serde_json::Value,
+    only_missing: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    settings::patch_at(
+        &paths::settings_path(),
+        patch,
+        only_missing.unwrap_or(false),
+    )
+}
+
+// Retain the old command for callers upgrading from an earlier frontend.
+#[tauri::command]
 fn settings_write(content: String) -> bool {
-    let path = paths::settings_path();
-    let Some(dir) = path.parent() else {
-        return false;
-    };
-    if std::fs::create_dir_all(dir).is_err() {
-        return false;
-    }
-    let tmp = dir.join("settings.json.tmp");
-    if std::fs::write(&tmp, content).is_err() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
-    }
-    std::fs::rename(&tmp, path).is_ok()
+    serde_json::from_str(&content)
+        .ok()
+        .and_then(|patch| settings::patch_at(&paths::settings_path(), patch, false).ok())
+        .is_some()
 }
 
 const MAX_USER_FILE_BYTES: u64 = 2 * 1024 * 1024;
@@ -115,6 +117,7 @@ pub fn run() {
             path_exists,
             settings_read,
             settings_write,
+            settings_patch,
             user_file_read,
             user_file_write
         ])

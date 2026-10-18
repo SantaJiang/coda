@@ -13,13 +13,13 @@ import {
   resolveSelectedKey,
   saveConfiguredModels,
   saveSelectedModelKey,
-  toBackendPatch,
   variantsByKey,
   type ConfiguredModel,
   type ModelForm,
 } from "../lib/models"
 import { popoverPatch, type AppState } from "./state"
 import type { ModelApi } from "./contracts"
+import { createBackendConfigSync } from "./backend-config"
 import { selectedProjectOf, type StoreHandle } from "./handle"
 
 export function selectableModelsOf(state: AppState) {
@@ -35,7 +35,7 @@ export function persistSelection(handle: StoreHandle, key: string | null) {
   saveSelectedModelKey(key)
 }
 
-export function createModelSlice(handle: StoreHandle): ModelApi {
+export function createModelSlice(handle: StoreHandle, config = createBackendConfigSync(handle)): ModelApi {
   const { state, setState, client } = handle
 
   const selectableModels = () => selectableModelsOf(state)
@@ -48,9 +48,7 @@ export function createModelSlice(handle: StoreHandle): ModelApi {
     setState("configuredModels", models)
     persistSelection(handle, nextKey)
     saveConfiguredModels(models)
-    const patch = toBackendPatch(models, nextKey)
-    if (!patch) return
-    await client.patchGlobalConfig(patch)
+    await config.sync()
   }
 
   let discoveredGen = 0

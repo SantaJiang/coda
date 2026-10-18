@@ -74,11 +74,14 @@ export type AppState = {
   settlingBySession: Record<string, boolean>
   eventRevision: Record<string, number>
   seenEventIDs: string[]
+  sessionEpoch: Record<string, number>
+  removedSessions: Record<string, boolean>
   removedMessages: Record<string, string>
   removedParts: Record<string, { messageID: string; sessionID: string }>
   outgoing: Record<string, OutgoingPrompt>
   timelineViews: Record<string, TimelineViewState>
   drafts: Record<string, SessionDraft>
+  backendError: string | null
   error: string | null
   configuredModels: ConfiguredModel[]
   selectedModelKey: string | null
@@ -129,11 +132,14 @@ export const initialState: AppState = {
   settlingBySession: {},
   eventRevision: {},
   seenEventIDs: [],
+  sessionEpoch: {},
+  removedSessions: {},
   removedMessages: {},
   removedParts: {},
   outgoing: {},
   timelineViews: {},
   drafts: {},
+  backendError: null,
   error: null,
   configuredModels: [],
   selectedModelKey: null,

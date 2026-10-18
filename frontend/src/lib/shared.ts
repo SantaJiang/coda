@@ -24,6 +24,9 @@ const WRITE_DEBOUNCE_MS = 150
 let memory: SharedSettings | null = null
 let hydrated = false
 let retiredDetected = false
+let writeError: string | null = null
+let retryCount = 0
+export const sharedWriteError = () => writeError
 let writeTimer: ReturnType<typeof setTimeout> | undefined
 // 本地已改、还没写进文件的 key。刷新时不用文件值覆盖它们，
 // 写入时只把这些 key 合并进文件，避免整份覆盖掉另一个实例的改动。
@@ -65,13 +68,10 @@ export async function hydrateShared(seed: () => SharedSettings) {
   memory = result.memory
   hydrated = true
   dirty.clear()
-  if (result.shouldWrite && memory) {
-    for (const key of Object.keys(memory) as Array<keyof SharedSettings>) dirty.add(key)
-  }
   installWindowHandlers()
   if ((result.shouldWrite || retiredDetected) && memory) {
     for (const key of Object.keys(memory) as Array<keyof SharedSettings>) dirty.add(key)
-    await writeSettingsFile()
+    await writeSettingsFile(true)
   }
 }
 
@@ -100,7 +100,7 @@ export async function refreshShared() {
   for (const listener of [...listeners]) listener(patch)
 }
 
-async function invokeSettings<T>(cmd: "settings_read" | "settings_write", args?: Record<string, unknown>) {
+async function invokeSettings<T>(cmd: "settings_read" | "settings_patch", args?: Record<string, unknown>) {
   const { invoke } = await import("@tauri-apps/api/core")
   return (await invoke(cmd, args)) as T
 }
@@ -111,7 +111,9 @@ async function readSettingsFile(): Promise<SharedSettings | null> {
     if (!raw) return null
     const parsed = JSON.parse(raw) as unknown
     if (parsed && typeof parsed === "object" && "keepBackendAlive" in parsed) retiredDetected = true
-    return parsed && typeof parsed === "object" ? stripRetiredSettings(parsed as SharedSettings) : null
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? stripRetiredSettings(parsed as SharedSettings)
+      : null
   } catch {
     return null
   }
@@ -120,7 +122,11 @@ async function readSettingsFile(): Promise<SharedSettings | null> {
 // 已下线的字段：不再读写 pinned 模型。读文件时统一剔除，
 // 避免老 settings.json 里的残留键被合并回内存又写回文件。
 export function stripRetiredSettings(settings: SharedSettings) {
-  const { pinnedModelKeys: _retired, keepBackendAlive: _background, ...rest } = settings as SharedSettings & { pinnedModelKeys?: string[]; keepBackendAlive?: boolean }
+  const {
+    pinnedModelKeys: _retired,
+    keepBackendAlive: _background,
+    ...rest
+  } = settings as SharedSettings & { pinnedModelKeys?: string[]; keepBackendAlive?: boolean }
   return rest
 }
 
@@ -132,20 +138,10 @@ function scheduleWrite() {
   }, WRITE_DEBOUNCE_MS)
 }
 
-export function mergeForWrite(file: SharedSettings | null, current: SharedSettings, keys: Array<keyof SharedSettings>) {
-  if (!file) return { ...current }
-  const merged: SharedSettings = { ...file }
-  for (const key of keys) {
-    if (key in current) Object.assign(merged, { [key]: current[key] })
-    else delete merged[key]
-  }
-  return merged
-}
-
 let writeQueue: Promise<void> = Promise.resolve()
 
-function writeSettingsFile() {
-  const run = writeQueue.then(() => performWrite())
+function writeSettingsFile(onlyMissing = false) {
+  const run = writeQueue.then(() => performWrite(onlyMissing))
   writeQueue = run.then(
     () => undefined,
     () => undefined,
@@ -153,26 +149,45 @@ function writeSettingsFile() {
   return run
 }
 
-async function performWrite() {
+async function performWrite(onlyMissing = false) {
   if (!memory || dirty.size === 0) return
   const snapshot = memory
   const keys = [...dirty]
-  const file = await readSettingsFile()
-  if (!memory || memory !== snapshot) return performWrite()
-  const merged = mergeForWrite(file, memory, keys)
+  const patch = Object.fromEntries(keys.map((key) => [key, snapshot[key]]))
   try {
-    const ok = await invokeSettings<boolean>("settings_write", { content: JSON.stringify(merged, null, 2) })
-    if (ok === false) return
+    const merged = await invokeSettings<SharedSettings>("settings_patch", { patch, onlyMissing })
+    retryCount = 0
+    if (writeError) {
+      writeError = null
+      window.dispatchEvent(new CustomEvent("coda:settings-error", { detail: "" }))
+    }
     if (memory === snapshot) {
+      const external: SharedSettings = {}
+      for (const key of Object.keys(merged) as Array<keyof SharedSettings>) {
+        if (!keys.includes(key) && JSON.stringify(snapshot[key]) !== JSON.stringify(merged[key]))
+          Object.assign(external, { [key]: merged[key] })
+      }
       memory = merged
       for (const key of keys) dirty.delete(key)
+      if (Object.keys(external).length) for (const listener of [...listeners]) listener(external)
       return
     }
     for (const key of keys) {
       if (memory[key] === snapshot[key]) dirty.delete(key)
     }
-  } catch {
-    // ignore when the Tauri bridge is unavailable (browser mode)
+  } catch (error) {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      writeError = error instanceof Error ? error.message : String(error)
+      window.dispatchEvent(new CustomEvent("coda:settings-error", { detail: writeError }))
+      if (!writeTimer)
+        writeTimer = setTimeout(
+          () => {
+            writeTimer = undefined
+            void writeSettingsFile()
+          },
+          Math.min(30_000, 1000 * 2 ** Math.min(retryCount++, 5)),
+        )
+    }
   }
 }
 

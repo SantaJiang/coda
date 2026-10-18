@@ -21,6 +21,7 @@
     "allow-path-exists",
     "allow-settings-read",
     "allow-settings-write",
+    "allow-settings-patch",
     "allow-user-file-read",
     "allow-user-file-write",
     {

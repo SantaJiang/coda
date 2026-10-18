@@ -1,0 +1,182 @@
+{
+  "date": "2026-10-18",
+  "parentCommit": "ec0bc1c3d6f07a51535a8fea3af1065268665a91",
+  "backendCommit": "15e63b8d7c45ec78f9c5849e2f2c32b6a9a22f2a",
+  "parentInitialStatus": " m backend",
+  "backendStatus": "M packages/opencode/src/index.ts\n M packages/opencode/src/server/routes/instance/httpapi/api.ts\n M packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts\n M packages/opencode/src/server/routes/instance/httpapi/server.ts\n M packages/opencode/src/session/prompt.ts\n M packages/opencode/src/session/tools.ts\n M packages/opencode/src/tool/registry.ts\n M packages/opencode/src/tool/shell.ts\n M packages/opencode/src/tool/shell/prompt.ts\n M packages/opencode/test/session/prompt.test.ts\n?? packages/opencode/src/server/routes/instance/httpapi/groups/terminal.ts\n?? packages/opencode/src/server/routes/instance/httpapi/handlers/terminal.ts\n?? packages/opencode/src/terminal/\n?? packages/opencode/test/terminal/",
+  "backendFileHashes": {
+    "packages/opencode/src/index.ts": "5700668936afb1f40d78a03ff0c74d31b418dc3985bde0071a1f5d4582647089",
+    "packages/opencode/src/server/routes/instance/httpapi/api.ts": "1142525335ce96a0642deac95b1f84106624e25e6eb451ac2dd00803248cd1d0",
+    "packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts": "e086f165c18922904aa587226cc0db5ccfeb156632e39fc701463b903e2e514f",
+    "packages/opencode/src/server/routes/instance/httpapi/server.ts": "e737c76802147c351224fad93c4bf385d266c1c397631bc8b42ef0fc828a2233",
+    "packages/opencode/src/session/prompt.ts": "a6be764f58e0242b93a750fbd9dd6f48adec3127a1214c85845e5dbf071caee9",
+    "packages/opencode/src/session/tools.ts": "26a5f25658eed3c3271fe0627304a25dbc23ed5280d40efe7eea0f9300aed3a8",
+    "packages/opencode/src/tool/registry.ts": "609e0241f127ea3bd023d41a22fe952d7b06c9f5fcda008f1c3b691d7ace46fc",
+    "packages/opencode/src/tool/shell.ts": "152f4c5b3e23409ce63b2442e6d30618968dafe5cd41737f7eca6c3456e0e393",
+    "packages/opencode/src/tool/shell/prompt.ts": "f3f9570806a6f6ac6ae21c3a9f4d4b0248aa02833de8aaba47a96ac2a72e43bc",
+    "packages/opencode/test/session/prompt.test.ts": "d79adafb934cf83722d6c695b585971618c7cbcdd31dc7e0755eee588af16ab2",
+    "packages/opencode/src/server/routes/instance/httpapi/groups/terminal.ts": "ad69ecf629f5cb68965a390c7d8e0c3c5c77c116162d1028ddfcaf77fb83a776",
+    "packages/opencode/src/server/routes/instance/httpapi/handlers/terminal.ts": "984e4a69ee69d4671515d81beb0055d39846cefea9469d31ab36f2394fac793b",
+    "packages/opencode/src/terminal/client.ts": "568dd828bce0a15cb8248d9713dd66cecd0fc9304d58a9f19f93cf9c1e4980b9",
+    "packages/opencode/src/terminal/desktop.ts": "26f31387f41900b8304efd4d6777a7dde14b61685206f1a85e0a25ed545a6ce2",
+    "packages/opencode/src/terminal/recovery.ts": "dfd180274c5a339f784f612dd9fec33301bb7d79dae88c91b2a32dece527e11c",
+    "packages/opencode/src/terminal/store.ts": "f01dbfb2715685317aa3c6ec5444f87a34eb81fd8b0dcc3fe06f64b6aaf5d845",
+    "packages/opencode/src/terminal/tools.ts": "c6699fa7a28bb86ee1e78d1c7d421f0c8b0e02fc9ab8d33fa16e7e7100781e5a",
+    "packages/opencode/test/terminal/managed.test.ts": "dc9de4f0d65556d4b4787f1dfb8963c437e9ae16b998f956470cc7c7d220562d"
+  },
+  "versions": {
+    "bun": "1.4.3",
+    "node": "v24.20.0",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)",
+    "host": "macOS arm64"
+  },
+  "checks": [
+    {
+      "command": "bun run test",
+      "cwd": ".",
+      "exit": 0,
+      "files": 44,
+      "passed": 254
+    },
+    {
+      "command": "./node_modules/.bin/tsc --noEmit",
+      "cwd": "frontend",
+      "exit": 0
+    },
+    {
+      "command": "bun run build",
+      "cwd": "frontend",
+      "exit": 0,
+      "warning": "ghostty-web chunk 1381.79 kB; 424.51 kB gzip; already lazy-loaded"
+    },
+    {
+      "command": "bun run typecheck",
+      "cwd": "backend/packages/opencode",
+      "exit": 0
+    },
+    {
+      "command": "bun test --timeout 30000 test/terminal/managed.test.ts test/tool/shell.test.ts test/session/prompt.test.ts test/session/tools.test.ts",
+      "cwd": "backend/packages/opencode",
+      "environment": "isolated CODA_HOME; existing preload isolates XDG and database",
+      "exit": 0,
+      "passed": 96,
+      "skipped": 1,
+      "skipReason": "v2 projector disabled"
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "cwd": "frontend/src-tauri",
+      "exit": 0
+    },
+    {
+      "command": "cargo check --locked",
+      "cwd": "frontend/src-tauri",
+      "exit": 0
+    },
+    {
+      "command": "cargo test --locked",
+      "cwd": "frontend/src-tauri",
+      "exit": 0,
+      "passed": 5
+    },
+    {
+      "command": "git diff --check",
+      "cwd": "parent and backend",
+      "exit": 0
+    }
+  ],
+  "sourceGraph": {
+    "sourceFiles": 125,
+    "productionFiles": 81,
+    "testFiles": 44,
+    "explicitRuntimeImportCycles": [],
+    "typeOnlyUnreachableFiles": [
+      "src/lib/types.ts",
+      "src/store/contracts.ts",
+      "src/store/ports.ts"
+    ],
+    "method": "TypeScript AST and module resolution; explicitly type-only imports excluded from runtime graph; dynamic literal imports included; manual verification of namespace and generated uses required"
+  },
+  "patchRoundtrip": {
+    "steps": [
+      {
+        "patch": "managed-terminals.patch",
+        "reverse": true,
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "patch": "coda-model-config-prompt.patch",
+        "reverse": true,
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "patch": "prompt-failure-surface.patch",
+        "reverse": true,
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "patch": "session-permission-refresh-per-step.patch",
+        "reverse": true,
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "patch": "coda-home.patch",
+        "reverse": true,
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "patch": "coda-home.patch",
+        "reverse": false,
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "patch": "session-permission-refresh-per-step.patch",
+        "reverse": false,
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "patch": "prompt-failure-surface.patch",
+        "reverse": false,
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "patch": "coda-model-config-prompt.patch",
+        "reverse": false,
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "patch": "managed-terminals.patch",
+        "reverse": false,
+        "exit": 0,
+        "output": ""
+      }
+    ],
+    "matches": true
+  },
+  "patchPreparation": {
+    "baseHasTerminalImplementation": false,
+    "managedPatchForwardAppliesToGitlink": true,
+    "gitlinkPlusManagedPatchMatches25InspectedFiles": true,
+    "note": "Overlapping patches must be checked as an ordered series; individual reverse check failures do not prove patch drift."
+  },
+  "reproductions": {
+    "passed": 3,
+    "meaning": "These tests assert observed incorrect baseline behavior. Passing reproductions are evidence of the issues, not evidence that they are fixed."
+  },
+  "notExecuted": [
+    "full backend monorepo suite",
+    "full installer/sidecar release build",
+    "live GUI end-to-end interactions",
+    "Windows and Linux runtime checks",
+    "remote mirror reachability"
+  ]
+}

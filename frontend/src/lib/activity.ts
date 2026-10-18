@@ -2,10 +2,6 @@ import { LONG_TERMINAL_MS } from "./terminal-policy"
 import type { AssistantMessage, Message, Part, ReasoningPart, ToolPart } from "./types"
 import { basename } from "./path"
 
-export type ActivityBlock =
-  | { kind: "work"; key: string; parts: Part[] }
-  | { kind: "answer"; key: string; parts: Part[] }
-
 export type ActivityDiff = {
   added: number
   removed: number
@@ -19,39 +15,9 @@ export type ChangedFile = {
   patch?: string
 }
 
-export function groupActivityBlocks(parts: Part[]): ActivityBlock[] {
-  const blocks: ActivityBlock[] = []
-  for (const part of parts) {
-    const kind = part.type === "tool" || part.type === "reasoning" ? "work" : "answer"
-    const last = blocks[blocks.length - 1]
-    if (last && last.kind === kind) last.parts.push(part)
-    else blocks.push({ kind, key: `${kind}:${part.id}`, parts: [part] })
-  }
-  return blocks
-}
-
-export function splitProcessAndAnswer(blocks: ActivityBlock[]) {
-  let lastWork = -1
-  for (let index = 0; index < blocks.length; index++) {
-    if (blocks[index].kind === "work") lastWork = index
-  }
-  if (lastWork < 0) return { process: [] as ActivityBlock[], answer: blocks }
-  return {
-    process: blocks.slice(0, lastWork + 1),
-    answer: blocks.slice(lastWork + 1),
-  }
-}
-
 function asTool(part: Part): ToolPart | undefined {
   if (part.type !== "tool") return undefined
   return part as ToolPart
-}
-
-export function isWorkLive(parts: Part[]) {
-  return parts.some((part) => {
-    const tool = asTool(part)
-    return tool?.state.status === "pending" || tool?.state.status === "running"
-  })
 }
 
 function toolPath(part: ToolPart) {
@@ -493,20 +459,6 @@ function stepLocation(value: unknown) {
   return truncate(looksLikePath(raw) ? basename(raw) || raw : raw, 48)
 }
 
-export function stepLabel(part: Part) {
-  const value = stepPresentation(part)
-  return [value.action, value.detail, value.context].filter(Boolean).join(" ")
-}
-
-export function stepBody(part: Part) {
-  if (part.type === "reasoning") return (part as ReasoningPart).text ?? ""
-  if (part.type !== "tool") return ""
-  const tool = part as ToolPart
-  if (tool.state.status === "completed") return tool.state.output ?? ""
-  if (tool.state.status === "error") return tool.state.error ?? ""
-  return JSON.stringify(tool.state.input ?? {}, null, 2)
-}
-
 function toMs(value: number) {
   if (value > 1e12) return value
   if (value > 1e9) return value * 1000
@@ -535,10 +487,6 @@ export function workDurationMs(assistants: Message[], parts: Part[]) {
   const from = Math.min(...start)
   const to = end.length ? Math.max(...end) : from
   return Math.max(0, to - from)
-}
-
-export function formatWorkedFor(ms: number) {
-  return `Worked for ${formatDuration(ms)}`
 }
 
 export function formatDuration(ms: number) {

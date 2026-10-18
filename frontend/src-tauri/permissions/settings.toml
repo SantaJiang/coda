@@ -7,3 +7,8 @@ commands.allow = ["settings_read"]
 identifier = "allow-settings-write"
 description = "Allows writing the shared Coda settings file."
 commands.allow = ["settings_write"]
+
+[[permission]]
+identifier = "allow-settings-patch"
+description = "Allows atomic field updates to the shared Coda settings file."
+commands.allow = ["settings_patch"]

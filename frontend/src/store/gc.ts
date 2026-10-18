@@ -1,9 +1,20 @@
 import type { AppState } from "./state"
 import type { Message, PermissionRequest, QuestionRequest } from "../lib/types"
 
-export function purgeSession(draft: AppState, sessionID: string) {
+// Capture ownership before an await; a purge invalidates the pending operation.
+export function sessionLifetime(state: AppState, sessionID: string) {
+  const epoch = state.sessionEpoch[sessionID] ?? 0
+  return () => !state.removedSessions[sessionID] && (state.sessionEpoch[sessionID] ?? 0) === epoch
+}
+
+export function purgeSession(draft: AppState, sessionID: string, deleted = true) {
+  draft.sessionEpoch[sessionID] = (draft.sessionEpoch[sessionID] ?? 0) + 1
+  if (deleted) draft.removedSessions[sessionID] = true
   const messages: Message[] = draft.messages[sessionID] ?? []
-  for (const message of messages) { delete draft.parts[message.id]; delete draft.stoppedTurns[message.id] }
+  for (const message of messages) {
+    delete draft.parts[message.id]
+    delete draft.stoppedTurns[message.id]
+  }
   delete draft.messages[sessionID]
   delete draft.todos[sessionID]
   delete draft.status[sessionID]
@@ -18,8 +29,10 @@ export function purgeSession(draft: AppState, sessionID: string) {
   delete draft.settlingBySession[sessionID]
   delete draft.eventRevision[sessionID]
   delete draft.timelineViews[sessionID]
-  for (const [id, owner] of Object.entries(draft.removedMessages)) if (owner === sessionID) delete draft.removedMessages[id]
-  for (const [id, owner] of Object.entries(draft.removedParts)) if (owner.sessionID === sessionID) delete draft.removedParts[id]
+  for (const [id, owner] of Object.entries(draft.removedMessages))
+    if (owner === sessionID) delete draft.removedMessages[id]
+  for (const [id, owner] of Object.entries(draft.removedParts))
+    if (owner.sessionID === sessionID) delete draft.removedParts[id]
   for (const [id, item] of Object.entries(draft.outgoing)) if (item.sessionID === sessionID) delete draft.outgoing[id]
   delete draft.drafts[`session:${sessionID}`]
   delete draft.planModeBySession[sessionID]

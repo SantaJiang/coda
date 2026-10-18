@@ -1,0 +1,315 @@
+diff --git a/packages/core/src/flag/flag.ts b/packages/core/src/flag/flag.ts
+index 3f97777..a4fddde 100644
+--- a/packages/core/src/flag/flag.ts
++++ b/packages/core/src/flag/flag.ts
+@@ -1,7 +1,7 @@
+ import { Config } from "effect"
+ 
+ export function truthy(key: string) {
+-  const value = process.env[key]?.toLowerCase()
++  const value = (process.env[key.replace(/^OPENCODE_/, "CODA_")] ?? process.env[key])?.toLowerCase()
+   return value === "true" || value === "1"
+ }
+ 
+@@ -18,8 +18,8 @@ export const Flag = {
+ 
+   OPENCODE_AUTO_HEAP_SNAPSHOT: truthy("OPENCODE_AUTO_HEAP_SNAPSHOT"),
+   OPENCODE_GIT_BASH_PATH: process.env["OPENCODE_GIT_BASH_PATH"],
+-  OPENCODE_CONFIG: process.env["OPENCODE_CONFIG"] || process.env["CODA_CONFIG"],
+-  OPENCODE_CONFIG_CONTENT: process.env["OPENCODE_CONFIG_CONTENT"] || process.env["CODA_CONFIG_CONTENT"],
++  OPENCODE_CONFIG: process.env["CODA_CONFIG"] || process.env["OPENCODE_CONFIG"],
++  OPENCODE_CONFIG_CONTENT: process.env["CODA_CONFIG_CONTENT"] || process.env["OPENCODE_CONFIG_CONTENT"],
+   OPENCODE_DISABLE_AUTOUPDATE: truthy("OPENCODE_DISABLE_AUTOUPDATE"),
+   OPENCODE_ALWAYS_NOTIFY_UPDATE: truthy("OPENCODE_ALWAYS_NOTIFY_UPDATE"),
+   OPENCODE_DISABLE_PRUNE: truthy("OPENCODE_DISABLE_PRUNE"),
+@@ -29,8 +29,8 @@ export const Flag = {
+   OPENCODE_DISABLE_MODELS_FETCH: truthy("OPENCODE_DISABLE_MODELS_FETCH"),
+   OPENCODE_DISABLE_MOUSE: truthy("OPENCODE_DISABLE_MOUSE"),
+   OPENCODE_FAKE_VCS: process.env["OPENCODE_FAKE_VCS"],
+-  OPENCODE_SERVER_PASSWORD: process.env["OPENCODE_SERVER_PASSWORD"] || process.env["CODA_SERVER_PASSWORD"],
+-  OPENCODE_SERVER_USERNAME: process.env["OPENCODE_SERVER_USERNAME"] || process.env["CODA_SERVER_USERNAME"],
++  OPENCODE_SERVER_PASSWORD: process.env["CODA_SERVER_PASSWORD"] || process.env["OPENCODE_SERVER_PASSWORD"],
++  OPENCODE_SERVER_USERNAME: process.env["CODA_SERVER_USERNAME"] || process.env["OPENCODE_SERVER_USERNAME"],
+   OPENCODE_DISABLE_FFF: fff === undefined ? process.platform === "win32" : truthy("OPENCODE_DISABLE_FFF"),
+ 
+   // Experimental
+@@ -44,7 +44,7 @@ export const Flag = {
+     copy === undefined ? process.platform === "win32" : truthy("OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"),
+   OPENCODE_MODELS_URL: process.env["OPENCODE_MODELS_URL"],
+   OPENCODE_MODELS_PATH: process.env["OPENCODE_MODELS_PATH"],
+-  OPENCODE_DB: process.env["OPENCODE_DB"],
++  OPENCODE_DB: process.env["CODA_DB"] ?? process.env["OPENCODE_DB"],
+ 
+   OPENCODE_WORKSPACE_ID: process.env["OPENCODE_WORKSPACE_ID"],
+   OPENCODE_EXPERIMENTAL_WORKSPACES: enabledByExperimental("OPENCODE_EXPERIMENTAL_WORKSPACES"),
+@@ -61,7 +61,7 @@ export const Flag = {
+     return process.env["OPENCODE_TUI_CONFIG"]
+   },
+   get OPENCODE_CONFIG_DIR() {
+-    return process.env["OPENCODE_CONFIG_DIR"] || process.env["CODA_CONFIG_DIR"]
++    return process.env["CODA_CONFIG_DIR"] || process.env["OPENCODE_CONFIG_DIR"]
+   },
+   get OPENCODE_PURE() {
+     return truthy("OPENCODE_PURE")
+@@ -73,6 +73,6 @@ export const Flag = {
+     return process.env["OPENCODE_PLUGIN_META_FILE"]
+   },
+   get OPENCODE_CLIENT() {
+-    return process.env["OPENCODE_CLIENT"] ?? "cli"
++    return process.env["CODA_CLIENT"] ?? process.env["OPENCODE_CLIENT"] ?? "cli"
+   },
+ }
+diff --git a/packages/core/src/global.ts b/packages/core/src/global.ts
+index 10e97fb..b52c1a7 100644
+--- a/packages/core/src/global.ts
++++ b/packages/core/src/global.ts
+@@ -12,7 +12,7 @@ const app = "opencode"
+ function resolveCodaHome() {
+   const fromEnv = process.env.CODA_HOME?.trim()
+   if (fromEnv) return fromEnv
+-  if ((process.env.OPENCODE_CLIENT ?? "cli") === "coda") return path.join(os.homedir(), ".coda")
++  if ((process.env.CODA_CLIENT ?? process.env.OPENCODE_CLIENT ?? "cli") === "coda") return path.join(os.homedir(), ".coda")
+ }
+ 
+ const codaHome = resolveCodaHome()
+diff --git a/packages/core/src/models-dev.ts b/packages/core/src/models-dev.ts
+index e577935..9794d80 100644
+--- a/packages/core/src/models-dev.ts
++++ b/packages/core/src/models-dev.ts
+@@ -20,7 +20,7 @@ const InterleavedField = Schema.Union([
+   Schema.String,
+ ])
+ 
+-const USER_AGENT = `opencode/${InstallationChannel}/${InstallationVersion}/${Flag.OPENCODE_CLIENT}`
++const USER_AGENT = `${Flag.OPENCODE_CLIENT === "coda" ? "coda" : "opencode"}/${InstallationChannel}/${InstallationVersion}/${Flag.OPENCODE_CLIENT}`
+ 
+ const CostTier = Schema.Struct({
+   input: Schema.Finite,
+diff --git a/packages/core/test/flag-coda.test.ts b/packages/core/test/flag-coda.test.ts
+new file mode 100644
+index 0000000..b1e83b3
+--- /dev/null
++++ b/packages/core/test/flag-coda.test.ts
+@@ -0,0 +1,13 @@
++import { expect, test } from "bun:test"
++
++test("Coda environment names take precedence while legacy names remain accepted", async () => {
++  const script = `const { Flag } = await import("./src/flag/flag.ts"); console.log(JSON.stringify({ client: Flag.OPENCODE_CLIENT, db: Flag.OPENCODE_DB, disabled: Flag.OPENCODE_DISABLE_AUTOUPDATE, config: Flag.OPENCODE_CONFIG }))`
++  const run = async (env: Record<string, string>) => {
++    const child = Bun.spawn([process.execPath, "-e", script], { cwd: import.meta.dir + "/..", env: { PATH: process.env.PATH, ...env }, stdout: "pipe", stderr: "pipe" })
++    const text = await new Response(child.stdout).text()
++    expect(await child.exited).toBe(0)
++    return JSON.parse(text)
++  }
++  expect(await run({ CODA_CLIENT: "coda", OPENCODE_CLIENT: "legacy", CODA_DB: ":memory:", OPENCODE_DB: "legacy.db", CODA_DISABLE_AUTOUPDATE: "true", CODA_CONFIG: "coda.json", OPENCODE_CONFIG: "legacy.json" })).toEqual({ client: "coda", db: ":memory:", disabled: true, config: "coda.json" })
++  expect(await run({ OPENCODE_CLIENT: "legacy", OPENCODE_DB: "legacy.db", OPENCODE_DISABLE_AUTOUPDATE: "1", OPENCODE_CONFIG: "legacy.json" })).toEqual({ client: "legacy", db: "legacy.db", disabled: true, config: "legacy.json" })
++})
+diff --git a/packages/opencode/src/effect/runtime-flags.ts b/packages/opencode/src/effect/runtime-flags.ts
+index 65e02f0..735ea76 100644
+--- a/packages/opencode/src/effect/runtime-flags.ts
++++ b/packages/opencode/src/effect/runtime-flags.ts
+@@ -1,15 +1,18 @@
+ import { Config, ConfigProvider, Context, Effect, Layer, Option } from "effect"
+ import { ConfigService } from "@/effect/config-service"
+ 
+-const bool = (name: string) => Config.boolean(name).pipe(Config.withDefault(false))
++const named = <A>(name: string, read: (key: string) => Config.Config<A>) =>
++  read(name.replace(/^OPENCODE_/, "CODA_")).pipe(Config.orElse(() => read(name)))
++const boolean = (name: string) => named(name, Config.boolean)
++const bool = (name: string) => boolean(name).pipe(Config.withDefault(false))
+ const positiveInteger = (name: string) =>
+-  Config.number(name).pipe(
++  named(name, Config.number).pipe(
+     Config.map((value) => (Number.isInteger(value) && value > 0 ? value : undefined)),
+     Config.orElse(() => Config.succeed(undefined)),
+   )
+ const experimental = bool("OPENCODE_EXPERIMENTAL")
+ const enabledByExperimental = (name: string) =>
+-  Config.all({ experimental, enabled: Config.boolean(name).pipe(Config.option) }).pipe(
++  Config.all({ experimental, enabled: boolean(name).pipe(Config.option) }).pipe(
+     Config.map((flags) => Option.getOrElse(flags.enabled, () => flags.experimental)),
+   )
+ 
+@@ -53,7 +56,7 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
+   bashDefaultTimeoutMs: positiveInteger("OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
+   experimentalNativeLlm: bool("OPENCODE_EXPERIMENTAL_NATIVE_LLM"),
+   experimentalWebSockets: bool("OPENCODE_EXPERIMENTAL_WEBSOCKETS"),
+-  client: Config.string("OPENCODE_CLIENT").pipe(Config.withDefault("cli")),
++  client: named("OPENCODE_CLIENT", Config.string).pipe(Config.withDefault("cli")),
+ }) {}
+ 
+ export type Info = Context.Service.Shape<typeof Service>
+diff --git a/packages/opencode/src/index.ts b/packages/opencode/src/index.ts
+index f3eff02..2b0dcad 100644
+--- a/packages/opencode/src/index.ts
++++ b/packages/opencode/src/index.ts
+@@ -47,7 +47,7 @@ function show(out: string) {
+ 
+ const cli = yargs(args)
+   .parserConfiguration({ "populate--": true })
+-  .scriptName("opencode")
++  .scriptName("coda")
+   .wrap(100)
+   .help("help", "show help")
+   .alias("help", "h")
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/groups/terminal.ts b/packages/opencode/src/server/routes/instance/httpapi/groups/terminal.ts
+index 4b5f139..05441f2 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/groups/terminal.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/groups/terminal.ts
+@@ -1,5 +1,6 @@
++import { Info, Log, List } from "@/terminal/schema"
+ import { Schema } from "effect"
+-import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiError } from "effect/unstable/httpapi"
++import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiError, HttpApiSchema } from "effect/unstable/httpapi"
+ import { Authorization } from "../middleware/authorization"
+ import { InstanceContextMiddleware } from "../middleware/instance-context"
+ import { WorkspaceRoutingMiddleware, WorkspaceRoutingQueryFields } from "../middleware/workspace-routing"
+@@ -14,7 +15,7 @@ export const TerminalApi = HttpApi.make("coda-terminal").add(
+         params: { sessionID: SessionID },
+         query,
+         error: [HttpApiError.BadRequest, HttpApiError.NotFound],
+-        success: Schema.Unknown,
++        success: List,
+       }),
+       HttpApiEndpoint.get("logs", "/session/:sessionID/terminals/:terminalID/log", {
+         params,
+@@ -30,7 +31,7 @@ export const TerminalApi = HttpApi.make("coda-terminal").add(
+           ),
+         }),
+         error: [HttpApiError.BadRequest, HttpApiError.NotFound],
+-        success: Schema.Unknown,
++        success: Log,
+       }),
+       HttpApiEndpoint.get("stream", "/session/:sessionID/terminals/:terminalID/stream", {
+         params,
+@@ -39,14 +40,14 @@ export const TerminalApi = HttpApi.make("coda-terminal").add(
+           cursor: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
+         }),
+         error: [HttpApiError.BadRequest, HttpApiError.NotFound],
+-        success: Schema.String,
++        success: Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/event-stream" })),
+       }),
+       HttpApiEndpoint.post("control", "/session/:sessionID/terminals/:terminalID/control", {
+         params,
+         query,
+         payload: Schema.Struct({ action: Schema.Literals(["cancel", "hide", "show", "resume"]) }),
+         error: [HttpApiError.BadRequest, HttpApiError.NotFound],
+-        success: Schema.Unknown,
++        success: Schema.Union([Schema.Boolean, Info]),
+       }),
+     )
+     .middleware(InstanceContextMiddleware)
+diff --git a/packages/opencode/src/terminal/schema.ts b/packages/opencode/src/terminal/schema.ts
+new file mode 100644
+index 0000000..f2a353e
+--- /dev/null
++++ b/packages/opencode/src/terminal/schema.ts
+@@ -0,0 +1,23 @@
++import { Schema } from "effect"
++
++export const Status = Schema.Literals(["starting", "running", "completed", "failed", "cancelled", "interrupted"])
++const Cursor = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
++export const Info = Schema.Struct({
++  id: Schema.String, sessionID: Schema.String, rootSessionID: Schema.String,
++  command: Schema.String, cwd: Schema.String, startedAt: Schema.Number, lastOutputAt: Schema.Number,
++  status: Status, cursor: Cursor, baseCursor: Cursor,
++  directory: Schema.optional(Schema.String), ownerID: Schema.optional(Schema.String),
++  pid: Schema.optional(Schema.Number), backendPID: Schema.optional(Schema.Number),
++  messageID: Schema.optional(Schema.String), turnID: Schema.optional(Schema.String),
++  rootTurnID: Schema.optional(Schema.String), callID: Schema.optional(Schema.String), shell: Schema.optional(Schema.String),
++  endedAt: Schema.optional(Schema.Number), exitCode: Schema.optional(Schema.Number), reason: Schema.optional(Schema.String),
++  recoverable: Schema.optional(Schema.Boolean), needsInput: Schema.optional(Schema.Boolean),
++  consumed: Schema.optional(Schema.Boolean), suppressed: Schema.optional(Schema.Boolean), hidden: Schema.optional(Schema.Boolean),
++  nextCheckAt: Schema.optional(Schema.Number), error: Schema.optional(Schema.String),
++  segments: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String, start: Cursor, size: Cursor }))),
++})
++export const Log = Schema.Struct({
++  data: Schema.String, start: Cursor, cursor: Cursor, baseCursor: Cursor, endCursor: Cursor,
++  truncated: Schema.Boolean, status: Status, ended: Schema.optional(Schema.Boolean),
++})
++export const List = Schema.Struct({ backendID: Schema.String, items: Schema.Array(Info) })
+diff --git a/packages/opencode/test/effect/runtime-flags.test.ts b/packages/opencode/test/effect/runtime-flags.test.ts
+index ca5ca1d..aba2b44 100644
+--- a/packages/opencode/test/effect/runtime-flags.test.ts
++++ b/packages/opencode/test/effect/runtime-flags.test.ts
+@@ -10,6 +10,30 @@ const fromConfig = (input: Record<string, unknown>) =>
+ const readFlags = RuntimeFlags.Service.useSync((flags) => flags)
+ 
+ describe("RuntimeFlags", () => {
++  it.effect("Coda names take precedence in the actual runtime configuration layer", () =>
++    Effect.gen(function* () {
++      const flags = yield* readFlags.pipe(
++        Effect.provide(
++          fromConfig({
++            CODA_CLIENT: "coda",
++            OPENCODE_CLIENT: "cli",
++            CODA_DISABLE_DEFAULT_PLUGINS: "false",
++            OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
++            CODA_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "2345",
++            OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "1234",
++            CODA_EXPERIMENTAL: "true",
++            CODA_EXPERIMENTAL_LSP_TOOL: "false",
++          }),
++        ),
++      )
++      expect(flags.client).toBe("coda")
++      expect(flags.disableDefaultPlugins).toBe(false)
++      expect(flags.outputTokenMax).toBe(2345)
++      expect(flags.experimentalReferences).toBe(true)
++      expect(flags.experimentalLspTool).toBe(false)
++    }),
++  )
++
+   it.effect("layer defaults autoShare to false", () =>
+     Effect.gen(function* () {
+       const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
+diff --git a/packages/opencode/test/terminal/schema.test.ts b/packages/opencode/test/terminal/schema.test.ts
+new file mode 100644
+index 0000000..c1f26a6
+--- /dev/null
++++ b/packages/opencode/test/terminal/schema.test.ts
+@@ -0,0 +1,19 @@
++import { expect, test } from "bun:test"
++import { Schema } from "effect"
++import { Info, Log } from "../../src/terminal/schema"
++import path from "node:path"
++
++test("the desktop and backend consume the same terminal record fixture", async () => {
++  const fixture = await Bun.file(path.resolve(import.meta.dir, "../../../../../config/contracts/terminal-record.json")).json()
++  const info = Schema.decodeUnknownSync(Info)(fixture)
++  expect(info).toMatchObject({ ownerID: "fixture-owner", backendPID: 23456, status: "completed", cursor: 7 })
++  expect(() => Schema.decodeUnknownSync(Info)({ ...fixture, status: "unknown" })).toThrow()
++  expect(() => Schema.decodeUnknownSync(Info)({ ...fixture, cursor: -1 })).toThrow()
++})
++
++test("terminal log contracts reject malformed cursor and status fields", () => {
++  const log = { data: "Zml4dHVyZQ==", start: 0, cursor: 7, baseCursor: 0, endCursor: 7, truncated: false, status: "completed" as const }
++  expect(Schema.decodeUnknownSync(Log)(log)).toEqual(log)
++  expect(() => Schema.decodeUnknownSync(Log)({ ...log, cursor: 0.5 })).toThrow()
++  expect(() => Schema.decodeUnknownSync(Log)({ ...log, status: "unknown" })).toThrow()
++})
+diff --git a/packages/script/src/index.ts b/packages/script/src/index.ts
+index d148ce0..faed291 100644
+--- a/packages/script/src/index.ts
++++ b/packages/script/src/index.ts
+@@ -18,10 +18,10 @@ if (!semver.satisfies(process.versions.bun, expectedBunVersionRange)) {
+ }
+ 
+ const env = {
+-  OPENCODE_CHANNEL: process.env["OPENCODE_CHANNEL"],
+-  OPENCODE_BUMP: process.env["OPENCODE_BUMP"],
+-  OPENCODE_VERSION: process.env["OPENCODE_VERSION"],
+-  OPENCODE_RELEASE: process.env["OPENCODE_RELEASE"],
++  OPENCODE_CHANNEL: process.env["CODA_CHANNEL"] ?? process.env["OPENCODE_CHANNEL"],
++  OPENCODE_BUMP: process.env["CODA_BUMP"] ?? process.env["OPENCODE_BUMP"],
++  OPENCODE_VERSION: process.env["CODA_VERSION"] ?? process.env["OPENCODE_VERSION"],
++  OPENCODE_RELEASE: process.env["CODA_RELEASE"] ?? process.env["OPENCODE_RELEASE"],
+ }
+ const CHANNEL = await (async () => {
+   if (env.OPENCODE_CHANNEL) return env.OPENCODE_CHANNEL
+@@ -74,4 +74,4 @@ export const Script = {
+     return team
+   },
+ }
+-console.log(`opencode script`, JSON.stringify(Script, null, 2))
++console.log(`Coda backend build`, JSON.stringify(Script, null, 2))

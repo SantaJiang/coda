@@ -31,8 +31,13 @@ pub fn supervise(app: AppHandle) {
         if let Some(pid) = dead {
             if !crate::lifecycle::exiting() {
                 crate::lifecycle::backend_died(pid);
+                if let Ok(mut slot) = OWNED.lock() {
+                    slot.take();
+                }
                 ensure_running(&app);
             }
+        } else if OWNED.lock().map(|slot| slot.is_none()).unwrap_or(false) {
+            ensure_running(&app);
         }
     }
 }
@@ -97,10 +102,10 @@ fn spawn(app: &AppHandle, port: &str) -> Result<(), String> {
         .env("CODA_PORT", port)
         .env("CODA_HOME", &home)
         .env("CODA_DESKTOP_OWNER", crate::lifecycle::owner())
-        .env("OPENCODE_DISABLE_AUTOUPDATE", "1")
-        .env("OPENCODE_CLIENT", "coda")
-        .env("OPENCODE_CHANNEL", "local")
-        .env("OPENCODE_DB", paths::local_db_path())
+        .env("CODA_DISABLE_AUTOUPDATE", "1")
+        .env("CODA_CLIENT", "coda")
+        .env("CODA_CHANNEL", "local")
+        .env("CODA_DB", paths::local_db_path())
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err));
@@ -172,11 +177,11 @@ fn healthy(port: &str) -> bool {
     {
         return false;
     }
-    let mut buf = [0u8; 256];
-    let Ok(n) = stream.read(&mut buf) else {
+    let mut buf = Vec::new();
+    if stream.take(8192).read_to_end(&mut buf).is_err() {
         return false;
-    };
-    let text = String::from_utf8_lossy(&buf[..n]);
+    }
+    let text = String::from_utf8_lossy(&buf);
     let ok = text.starts_with("HTTP/1.1 200") || text.starts_with("HTTP/1.0 200");
     ok && (text.contains("\"healthy\":true") || text.contains("\"healthy\": true"))
 }
@@ -193,4 +198,27 @@ fn detach_session(cmd: &mut Command) {
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::TcpListener;
+    #[test]
+    fn healthcheck_accepts_a_fragmented_http_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 16\r\nConnection: close\r\n\r\n")
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(10));
+            stream.write_all(br#"{"healthy":true}"#).unwrap();
+        });
+        assert!(healthy(&port.to_string()));
+        server.join().unwrap();
+    }
 }

@@ -1,0 +1,54 @@
+Coda 后端源码与登记补丁一致
+==> 安装后端依赖
+bun install v1.4.3 (26aa4e1a9)
+Resolving dependencies
+Resolved, downloaded and extracted [19]
+
+$ bun run --cwd packages/core fix-node-pty
+$ bun run script/fix-node-pty.ts
+$ husky
+HUSKY=0 skip install
+Checked 2414 installs across 2698 packages (no changes) [98.00ms]
+==> 编译内置后端 (当前平台 aarch64-apple-darwin)
+==> sidecar 版本 1.19.3（channel=local）
+Coda backend build {
+  "channel": "local",
+  "version": "1.19.3",
+  "preview": true,
+  "release": false,
+  "team": [
+    "adamdotdevin",
+    "arvsrn",
+    "Brendonovich",
+    "fwang",
+    "Hona",
+    "iamdavidhill",
+    "jayair",
+    "jlongster",
+    "kitlangton",
+    "kommander",
+    "ludvigrask",
+    "MrMushrooooom",
+    "neriousy",
+    "nexxeln",
+    "R44VC0RP",
+    "rekram1-node",
+    "thdxr",
+    "simonklee",
+    "Slickstef11",
+    "usrnk1",
+    "vimtor",
+    "StarpTech",
+    "vaprdev",
+    "actions-user",
+    "opencode",
+    "opencode-agent[bot]"
+  ]
+}
+Loaded models.dev snapshot
+building opencode-darwin-arm64
+dist/opencode-darwin-arm64/bin/opencode: replacing existing signature
+Running smoke test: dist/opencode-darwin-arm64/bin/opencode --version
+Smoke test passed: 1.19.3
+/Users/santa/Documents/GitHub/coda/frontend/src-tauri/binaries/coda-backend-aarch64-apple-darwin: replacing existing signature
+==> sidecar：/Users/santa/Documents/GitHub/coda/frontend/src-tauri/binaries/coda-backend-aarch64-apple-darwin

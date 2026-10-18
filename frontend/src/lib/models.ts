@@ -237,11 +237,6 @@ export function createConfiguredModel(form: ModelForm): ConfiguredModel {
   }
 }
 
-export function updateConfiguredModel(model: ConfiguredModel, form: ModelForm): ConfiguredModel {
-  const next = createConfiguredModel(form)
-  return { ...next, id: model.id }
-}
-
 export function validateFetchForm(form: Pick<ModelForm, "baseURL" | "apiKey"> & { providerID?: string }) {
   if (!form.baseURL.trim()) return "请填写接口地址"
   if (!form.apiKey.trim() && !isApiKeyOptional(form.baseURL, form.providerID)) return "请填写 API Key"

@@ -2,11 +2,7 @@ import { produce } from "solid-js/store"
 import { draftKey } from "../lib/draft"
 import { isEmptyDraftContent, isLocalDraft } from "../lib/draft-session"
 import { PLAN_AGENT, DEFAULT_AGENT } from "../lib/config"
-import {
-  attachmentFromBrowserFile,
-  attachmentFromPath,
-  type ComposerAttachment,
-} from "../lib/attachments"
+import { attachmentFromBrowserFile, attachmentFromPath, type ComposerAttachment } from "../lib/attachments"
 import { rulesetForProject } from "../lib/permissions"
 import {
   isLocalProject,
@@ -20,6 +16,7 @@ import { isSessionBusy, sessionDotKind } from "../lib/session-status"
 import { uid } from "../lib/uid"
 import { emptyTimelineView } from "../lib/conversation"
 import { isUnreachableError } from "../lib/api"
+import { sessionLifetime } from "./gc"
 import { reconcileSession } from "./session-reconcile"
 import { moveOutgoingSession, outgoingDelivery, stageOutgoing } from "./outgoing"
 import { upsertById } from "../lib/upsert"
@@ -111,7 +108,13 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     const session = selectedSession()
     const sending = Boolean(state.sendingBySession[sendingKey(session?.id, state.selectedProjectId)])
     if (!session) return sending
-    return isSessionBusy(state.status[session.id], Boolean(state.sendingBySession[session.id]) || Boolean(state.settlingBySession[session.id]) || Boolean(state.stoppingBySession[session.id]) || sending)
+    return isSessionBusy(
+      state.status[session.id],
+      Boolean(state.sendingBySession[session.id]) ||
+        Boolean(state.settlingBySession[session.id]) ||
+        Boolean(state.stoppingBySession[session.id]) ||
+        sending,
+    )
   }
 
   const blocked = () => {
@@ -127,26 +130,43 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     (sessionID ? state.queuedBySession[sessionID] : undefined) ?? []
 
   const promptSession = async (
-    session: { id: string }, project: Project,
-    payload: { text: string; files: ComposerAttachment[]; model: { providerID: string; modelID: string }; agent: string; variant?: string | null },
+    session: { id: string },
+    project: Project,
+    payload: {
+      text: string
+      files: ComposerAttachment[]
+      model: { providerID: string; modelID: string }
+      agent: string
+      variant?: string | null
+    },
     previous?: OutgoingPrompt,
   ) => {
+    const current = sessionLifetime(state, session.id)
+    if (!current()) return
     const item = previous ?? stageOutgoing(handle, { ...payload, project, sessionID: session.id })
     try {
       await applySessionPermission(handle, project.path, session.id)
+      if (!current()) return
       setState("status", session.id, { type: "busy" })
       setState("sessionErrors", session.id, false)
       setState("sessionErrorText", session.id, "")
       await client.promptAsync(project.path, session.id, {
-        ...payload, variant: payload.variant ?? undefined,
-        messageID: item.messageID, partIDs: item.partIDs,
+        ...payload,
+        variant: payload.variant ?? undefined,
+        messageID: item.messageID,
+        partIDs: item.partIDs,
       })
-      outgoingDelivery(handle, item)
+      if (current()) outgoingDelivery(handle, item)
     } catch (error) {
       // An SSE acknowledgement can arrive even if the HTTP response was lost.
       if (!state.outgoing[item.messageID]) return
       if (state.status[session.id]?.type === "busy") setState("status", session.id, { type: "idle" })
-      outgoingDelivery(handle, item, isUnreachableError(error) ? "uncertain" : "failed", error instanceof Error ? error.message : "发送失败")
+      outgoingDelivery(
+        handle,
+        item,
+        isUnreachableError(error) ? "uncertain" : "failed",
+        error instanceof Error ? error.message : "发送失败",
+      )
       throw error
     }
   }
@@ -160,7 +180,11 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     return project
   }
 
-  const setSending = (key: string, value: boolean) => setState("sendingBySession", key, value)
+  const setSending = (key: string, value: boolean) => {
+    if (state.removedSessions[key]) return
+    if (!value && state.sendingBySession[key] === undefined) return
+    setState("sendingBySession", key, value)
+  }
 
   const queuedProject = (sessionID: string, item: QueuedMessage) =>
     (item.directory ? projectByPath(state, item.directory) : undefined) ??
@@ -169,6 +193,8 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
 
   const queueMessageIDs = new Map<string, string>()
   const dispatchQueued = async (sessionID: string, item: QueuedMessage) => {
+    const current = sessionLifetime(state, sessionID)
+    if (!current()) return true
     if (!item.text.trim() && item.attachments.length === 0) return true
     const project = queuedProject(sessionID, item)
     if (!project) return false
@@ -178,7 +204,8 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     try {
       const previousID = queueMessageIDs.get(item.id)
       const previous = previousID ? state.outgoing[previousID] : undefined
-      if (previousID && !previous && (state.messages[sessionID] ?? []).some((message) => message.id === previousID)) return true
+      if (previousID && !previous && (state.messages[sessionID] ?? []).some((message) => message.id === previousID))
+        return true
       const payload = {
         text: item.text,
         files: item.attachments,
@@ -188,13 +215,18 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       }
       if (previous) {
         const existing = await client.listMessages(usable.path, sessionID)
-        if (existing?.some((message) => message.info.id === previous.messageID)) { outgoingDelivery(handle, previous); return true }
+        if (!current()) return true
+        if (existing?.some((message) => message.info.id === previous.messageID)) {
+          outgoingDelivery(handle, previous)
+          return true
+        }
       }
       const staged = stageOutgoing(handle, { ...payload, project: usable, sessionID }, previous)
       queueMessageIDs.set(item.id, staged.messageID)
       await promptSession({ id: sessionID }, usable, payload, staged)
       return true
     } catch (error) {
+      if (!current()) return true
       reportError(handle, error, "发送排队消息失败", project.path)
       return false
     } finally {
@@ -203,7 +235,11 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
   }
 
   const canFlush = (sessionID: string) =>
-    !state.settlingBySession[sessionID] && !state.stoppingBySession[sessionID] && state.connection !== "disconnected" && shouldFlushQueue({
+    !state.removedSessions[sessionID] &&
+    !state.settlingBySession[sessionID] &&
+    !state.stoppingBySession[sessionID] &&
+    state.connection !== "disconnected" &&
+    shouldFlushQueue({
       sending: Boolean(state.sendingBySession[sessionID]),
       status: state.status[sessionID],
       permissions: state.permissions,
@@ -238,15 +274,23 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
 
   const settling = new Map<string, Promise<void>>()
   const settleSession = (sessionID: string): Promise<void> => {
+    if (state.removedSessions[sessionID]) return Promise.resolve()
     const existing = settling.get(sessionID)
     if (existing) return existing
-    const project = projectOwningSession(state, sessionID) ?? (queuedFor(sessionID)[0] ? queuedProject(sessionID, queuedFor(sessionID)[0]) : undefined)
+    const project =
+      projectOwningSession(state, sessionID) ??
+      (queuedFor(sessionID)[0] ? queuedProject(sessionID, queuedFor(sessionID)[0]) : undefined)
     if (!project) return Promise.resolve()
     setState("settlingBySession", sessionID, true)
     setState("syncErrors", sessionID, "")
+    const current = sessionLifetime(state, sessionID)
     const task = reconcileSession(handle, sessionID, project.path)
-      .then(() => flushQueue(sessionID))
-      .catch((error) => { setState("syncErrors", sessionID, error instanceof Error ? error.message : "同步回复失败") })
+      .then(() => {
+        if (current()) return flushQueue(sessionID)
+      })
+      .catch((error) => {
+        if (current()) setState("syncErrors", sessionID, error instanceof Error ? error.message : "同步回复失败")
+      })
       .finally(() => settling.delete(sessionID))
     settling.set(sessionID, task)
     return task
@@ -303,7 +347,14 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     let source = selectedSession()
     if (!source) source = reuseOrCreateEmptyDraft(handle, usable, true)
     const sourceID = source.id
-    const payload = { text: content, files, model, agent: previous?.agent ?? currentAgent(), variant: previous?.variant ?? state.selectedVariant }
+    let current = sessionLifetime(state, sourceID)
+    const payload = {
+      text: content,
+      files,
+      model,
+      agent: previous?.agent ?? currentAgent(),
+      variant: previous?.variant ?? state.selectedVariant,
+    }
     const item = stageOutgoing(handle, { ...payload, project: usable, sessionID: sourceID }, previous)
     if (!previous) clearSentDraft(sourceID)
     let key = sendingKey(sourceID, project.id)
@@ -320,6 +371,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
           currentAgent(),
           rulesetForProject(usable, state.permissionMode),
         )
+        if (!current()) return
         if (local) {
           moveOutgoingSession(handle, local.id, session.id)
           item.sessionID = session.id
@@ -327,6 +379,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
           adoptDraftIntoBackendSession(handle, local.id)
           setState("drafts", `session:${session.id}`, bundle)
         }
+        current = sessionLifetime(state, session.id)
         setState("sessionsByProject", usable.path, (list = []) => upsertById(list, session!))
         setState("planModeBySession", session.id, plan)
         if (state.selectedSessionId === sourceID) {
@@ -339,6 +392,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       }
       if (previous && !local) {
         const existing = await client.listMessages(usable.path, session.id)
+        if (!current()) return
         if (existing?.some((message) => message.info.id === item.messageID)) {
           outgoingDelivery(handle, item)
           await settleSession(session.id)
@@ -347,10 +401,16 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       }
       await promptSession(session, usable, payload, item)
     } catch (error) {
-      if (state.outgoing[item.messageID]) outgoingDelivery(handle, item, isUnreachableError(error) ? "uncertain" : "failed", error instanceof Error ? error.message : "发送失败")
+      if (state.outgoing[item.messageID])
+        outgoingDelivery(
+          handle,
+          item,
+          isUnreachableError(error) ? "uncertain" : "failed",
+          error instanceof Error ? error.message : "发送失败",
+        )
     } finally {
       setSending(key, false)
-      if (!key.startsWith("__draft:")) void flushQueue(key)
+      if (current() && !key.startsWith("__draft:")) void flushQueue(key)
     }
   }
 
@@ -375,19 +435,22 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     flushQueue,
     send: sendMessage,
     retrySend: (messageID) => sendMessage(undefined, messageID),
-    resync: () => state.selectedSessionId ? settleSession(state.selectedSessionId) : Promise.resolve(),
+    resync: () => (state.selectedSessionId ? settleSession(state.selectedSessionId) : Promise.resolve()),
     abort: async () => {
       const session = selectedSession()
       const project = selectedProject()
       if (!session || !project || isLocalDraft(session)) return
+      const current = sessionLifetime(state, session.id)
       if (state.stoppingBySession[session.id]) return
       setState("stoppingBySession", session.id, true)
       refs.skipQueueFlush[session.id] = true
       delete refs.sendAfterIdle[session.id]
       try {
         await client.abortSession(project.path, session.id)
+        if (!current()) return
         await settleSession(session.id)
       } catch (error) {
+        if (!current()) return
         setState("stoppingBySession", session.id, false)
         refs.skipQueueFlush[session.id] = false
         reportError(handle, error, "停止失败")
@@ -397,10 +460,12 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const session = selectedSession()
       const project = selectedProject()
       if (!session || !project || busy() || isLocalDraft(session)) return
+      const current = sessionLifetime(state, session.id)
       const usable = ensureProjectDirectory(project)
       if (!usable) return
       try {
         const updated = await client.revertSession(usable.path, session.id, messageID)
+        if (!current()) return
         const directory = directoryFor(state, session, usable)
         setState("sessionsByProject", directory, (list = []) => upsertById(list, { ...updated, directory }))
         const draft = revertDraftFromParts(state.parts[messageID] ?? [])
@@ -409,6 +474,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
           attachments: draft.attachments,
         })
       } catch (error) {
+        if (!current()) return
         reportError(handle, error, "回滚失败")
       }
     },
@@ -416,6 +482,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const session = selectedSession()
       const project = selectedProject()
       if (!session || !project || isLocalDraft(session)) return
+      const current = sessionLifetime(state, session.id)
       const list = queuedFor(session.id)
       const item = list.find((entry) => entry.id === id)
       if (!item) return
@@ -446,12 +513,17 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       setState("stoppingBySession", session.id, true)
       try {
         await client.abortSession(project.path, session.id)
+        if (!current()) return
         await settleSession(session.id)
       } catch (error) {
+        if (!current()) return
         setState("stoppingBySession", session.id, false)
         if (refs.sendAfterIdle[session.id]?.id === item.id) {
           delete refs.sendAfterIdle[session.id]
-          setState("queuedBySession", session.id, [item, ...queuedFor(session.id).filter((entry) => entry.id !== item.id)])
+          setState("queuedBySession", session.id, [
+            item,
+            ...queuedFor(session.id).filter((entry) => entry.id !== item.id),
+          ])
         }
         reportError(handle, error, "停止失败")
       }

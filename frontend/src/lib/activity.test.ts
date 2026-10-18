@@ -1,3 +1,4 @@
+import { conversationBlocks } from "./conversation"
 import { describe, expect, it } from "vitest"
 import {
   activityDiff,
@@ -5,8 +6,6 @@ import {
   activityStatus,
   activitySummary,
   formatDuration,
-  groupActivityBlocks,
-  stepLabel,
   stepPresentation,
 } from "./activity"
 import type { Part, ToolPart } from "./types"
@@ -67,33 +66,33 @@ describe("activity presentation", () => {
       { id: "t1", sessionID: "s1", messageID: "a1", type: "text", text: "progress" },
       tool("r2", "grep"),
     ]
-    expect(groupActivityBlocks(parts).map((block) => block.key)).toEqual(["work:r1", "answer:t1", "work:r2"])
+    expect(conversationBlocks(parts.map((part) => ({ kind: "part", key: part.id, part }))).map((block) => block.key)).toEqual(["work:r1", "content:t1", "work:r2"])
   })
 
   it("shows accurate read ranges and search locations", () => {
-    expect(stepLabel(tool("r1", "read", { filePath: "/repo/a.ts", offset: 20, limit: 10 }))).toBe(
-      "Read a.ts L20-29",
+    expect(stepPresentation(tool("r1", "read", { filePath: "/repo/a.ts", offset: 20, limit: 10 }))).toEqual(
+      { action: "Read", detail: "a.ts L20-29" },
     )
     expect(
-      stepLabel(
+      stepPresentation(
         tool("r2", "read", { filePath: "/repo/a.ts", offset: 20, limit: 10 }, {
           metadata: { display: { lineStart: 20, lineEnd: 24 } },
         }),
       ),
-    ).toBe("Read a.ts L20-24")
-    expect(stepLabel(tool("g1", "glob", { pattern: "**/*.ts", path: "/repo/src" }))).toBe(
-      "Searched files **/*.ts in src",
+    ).toEqual({ action: "Read", detail: "a.ts L20-24" })
+    expect(stepPresentation(tool("g1", "glob", { pattern: "**/*.ts", path: "/repo/src" }))).toEqual(
+      { action: "Searched files", detail: "**/*.ts", context: "in src" },
     )
-    expect(stepLabel(tool("g2", "glob", { pattern: "**/*.ts", target_directory: "/repo/src" }))).toBe(
-      "Searched files **/*.ts in src",
+    expect(stepPresentation(tool("g2", "glob", { pattern: "**/*.ts", target_directory: "/repo/src" }))).toEqual(
+      { action: "Searched files", detail: "**/*.ts", context: "in src" },
     )
   })
 
   it("surfaces failed steps and completed questions", () => {
     const failed = tool("r1", "read", { filePath: "/repo/missing.ts" }, { status: "error", error: "missing" })
     expect(activityFailureCount([failed])).toBe(1)
-    expect(stepLabel(tool("q1", "question", { questions: [{ header: "图标范围" }] }))).toBe(
-      "Asked 图标范围",
+    expect(stepPresentation(tool("q1", "question", { questions: [{ header: "图标范围" }] }))).toEqual(
+      { action: "Asked", detail: "图标范围" },
     )
   })
 
@@ -133,7 +132,7 @@ describe("activity presentation", () => {
       text: "done",
       time: { start: 1_000, end: 1_000 },
     }
-    expect(stepLabel(reasoning)).toBe("Thought 1s")
+    expect(stepPresentation(reasoning)).toEqual({ action: "Thought", detail: "1s" })
   })
 
   it("returns to thinking when reasoning starts after a completed tool", () => {
