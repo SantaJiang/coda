@@ -341,7 +341,7 @@ a,
 }
 
 .tree-empty.nested {
-  padding-left: 36px;
+  padding-left: 12px;
 }
 
 .tree-root,
@@ -469,7 +469,7 @@ a,
   box-sizing: border-box;
   height: 31px;
   min-height: 31px;
-  padding: 0 12px 0 36px;
+  padding: 0 12px;
   border: none;
   border-radius: 10px;
   background: transparent;
@@ -2901,6 +2901,13 @@ button.ctx-pill:hover {
 
 /* Conversation streaming: one status per turn, stable activity rows. */
 .timeline-region { position: relative; flex: 1 1 0; min-height: 0; display: flex; }
+.composer.drag-over { outline: 2px solid var(--accent); outline-offset: 2px; }
+.attachment-notice { padding: 4px 12px 8px; color: var(--text-faint); font-size: 12px; }
+.attachment-notice.warning { color: var(--warning, #c79762); }
+.attachment-preview { width: 112px; height: 64px; object-fit: contain; border-radius: 5px; margin-bottom: 5px; }
+.model-input-settings { margin-top: 6px; color: var(--text-faint); font-size: 12px; }
+.model-input-options { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+.model-input-options label { display: flex; gap: 4px; align-items: center; }
 .timeline-region > .timeline { width: 100%; overflow-anchor: none; }
 .turn-status { color: var(--text-muted); font-size: 12px; margin-bottom: 10px; }
 .turn-status.live { color: var(--text); }

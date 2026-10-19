@@ -3,6 +3,7 @@ import { createStore, produce } from "solid-js/store"
 import { initialState, type AppState } from "./state"
 import { reconcileSession } from "./session-reconcile"
 import { applyClientEvent } from "./apply-event"
+import { hasDesktopActivity } from "./desktop-activity"
 import type { AgentClient } from "./ports"
 import type { MessageWithParts, Part } from "../lib/types"
 
@@ -15,6 +16,52 @@ function setup(overrides: Partial<AgentClient> = {}) {
   return { state, setState, handle: { state, setState, client } }
 }
 describe("idle boundary synchronization", () => {
+  it("does not resurrect requests that were both asked and answered while a snapshot was loading", async () => {
+    const permissions = deferred<Awaited<ReturnType<AgentClient["listPermissions"]>>>()
+    const questions = deferred<Awaited<ReturnType<AgentClient["listQuestions"]>>>()
+    const { state, setState, handle } = setup({ listPermissions: vi.fn(() => permissions.promise), listQuestions: vi.fn(() => questions.promise) })
+    const pending = reconcileSession(handle, "s1", "/tmp/app")
+    const permission = { id: "late-permission", sessionID: "s1", permission: "edit", patterns: [] }
+    const question = { id: "late-question", sessionID: "s1", questions: [] }
+    setState(produce((draft) => {
+      for (const event of [
+        { type: "permission.asked", properties: permission },
+        { type: "permission.replied", properties: { sessionID: "s1", requestID: permission.id } },
+        { type: "question.asked", properties: question },
+        { type: "question.replied", properties: { sessionID: "s1", requestID: question.id } },
+      ]) applyClientEvent(draft, { event })
+    }))
+    permissions.resolve([permission])
+    questions.resolve([question])
+    await pending
+    expect(Object.keys(state.permissions)).toEqual([])
+    expect(Object.keys(state.questions)).toEqual([])
+    expect(hasDesktopActivity(state)).toBe(false)
+  })
+  it("records an explicit stop against the visible turn after automatic compaction continuation", async () => {
+    const { state, setState, handle } = setup({ listMessages: vi.fn().mockResolvedValue([
+      { info: { id: "u1", sessionID: "s1", role: "user", time: { created: 1 } }, parts: [part("question", "用户问题")] },
+      { info: { id: "continue", sessionID: "s1", role: "user", time: { created: 4 } }, parts: [{ id: "follow", type: "text", messageID: "continue", sessionID: "s1", text: "Continue", synthetic: true }] },
+    ]) })
+    setState("stoppingBySession", "s1", true)
+    await reconcileSession(handle, "s1", "/tmp/app")
+    expect(state.stoppedTurnBySession.s1).toBe("u1")
+    expect(state.stoppedTurns.u1).toBe(true)
+    expect(state.stoppedTurns.continue).toBeUndefined()
+  })
+  it("accepts authoritative idle despite late content from a disposed instance", async () => {
+    const snapshot = deferred<MessageWithParts[]>()
+    const { state, setState, handle } = setup({ listMessages: vi.fn(() => snapshot.promise) })
+    setState("status", "s1", { type: "busy" })
+    const loading = reconcileSession(handle, "s1", "/tmp/app")
+    setState(produce((draft) => {
+      applyClientEvent(draft, { event: { type: "message.part.delta", properties: { messageID: "a1", partID: "p1", sessionID: "s1", delta: " late output" } } })
+    }))
+    snapshot.resolve([{ info: message, parts: [part("p1", "already complete")] }])
+    await loading
+    expect(state.status.s1.type).toBe("idle")
+    expect(state.parts.a1[0]).toMatchObject({ text: "already complete late output" })
+  })
   it("preserves new SSE status, longer prose and removal tombstones while loading", async () => {
     const snapshot = deferred<MessageWithParts[]>()
     const { state, setState, handle } = setup({ listMessages: vi.fn(() => snapshot.promise) })

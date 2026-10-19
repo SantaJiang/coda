@@ -1,0 +1,396 @@
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/handlers/global.ts b/packages/opencode/src/server/routes/instance/httpapi/handlers/global.ts
+index 6147a88894..26c8d0fceb 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/handlers/global.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/handlers/global.ts
+@@ -1,6 +1,5 @@
+ import { Config } from "@/config/config"
+ import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
+-import { EffectBridge } from "@/effect/bridge"
+ import { EventV2 } from "@opencode-ai/core/event"
+ import { Installation } from "@/installation"
+ import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+@@ -62,7 +61,6 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
+   Effect.gen(function* () {
+     const config = yield* Config.Service
+     const installation = yield* Installation.Service
+-    const bridge = yield* EffectBridge.make()
+ 
+     const health = Effect.fn("GlobalHttpApi.health")(function* () {
+       return { healthy: true as const, version: InstallationVersion, home: Global.Path.home }
+@@ -78,7 +76,9 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
+ 
+     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
+       const result = yield* config.updateGlobal(ctx.payload)
+-      if (result.changed) bridge.fork(disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }))
++      // Finish invalidation before acknowledging the config write. A detached
++      // disposal can otherwise cancel a prompt submitted after this response.
++      if (result.changed) yield* disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true })
+       return result.info
+     })
+ 
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
+index a4e79d827f..1f7f05cc37 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
+@@ -236,7 +236,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
+     const abort = Effect.fn("SessionHttpApi.abort")(function* (ctx: { params: { sessionID: SessionID } }) {
+       const directory = (yield* InstanceState.context).directory
+       const messages = yield* session.messages({ sessionID: ctx.params.sessionID }).pipe(Effect.orDie)
+-      const turnID = messages.findLast((message) => message.info.role === "user")?.info.id
++      const turnID = TerminalStore.currentTurn(messages)
+       const run = TerminalStore.run(ctx.params.sessionID)
+       if (run) TerminalStore.saveRun({ ...run, active: false, suppressed: true })
+       for (const task of TerminalStore.list(directory, ctx.params.sessionID))
+diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
+index e9506783f0..deffe0bbb4 100644
+--- a/packages/opencode/src/session/prompt.ts
++++ b/packages/opencode/src/session/prompt.ts
+@@ -1100,19 +1100,21 @@ const layer = Layer.effect(
+           session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+           if (flags.client === "coda") TerminalStore.owner()
+ 
+-          let msgs = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
++          const history = yield* MessageV2.stream(sessionID).pipe(
+             Effect.provideService(Database.Service, database),
+           )
++          let msgs = MessageV2.filterCompacted(history)
+ 
+           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
+ 
+           if (todoReminder && todoReminder.turnID !== lastUser?.id) todoReminder = undefined
+           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
++          const turnID = TerminalStore.currentTurn(history) ?? lastUser.id
+           if (flags.client === "coda")
+             TerminalStore.saveRun({
+               sessionID,
+               ownerID: TerminalStore.owner().id,
+-              turnID: lastUser.id,
++              turnID,
+               backendID: TerminalClient.backendID,
+               active: true,
+             })
+@@ -1120,7 +1122,7 @@ const layer = Layer.effect(
+           const terminalTasks =
+             flags.client === "coda"
+               ? TerminalStore.list(ctx.directory, sessionID).filter(
+-                  (task) => task.sessionID === sessionID && task.turnID === lastUser.id && !task.suppressed,
++                  (task) => task.sessionID === sessionID && task.turnID === turnID && !task.suppressed,
+                 )
+               : []
+           // A persisted tool result is the acknowledgement; do not consume a result merely because a process exited.
+@@ -1273,12 +1275,13 @@ const layer = Layer.effect(
+             while (terminalRoot.parentID) terminalRoot = yield* sessions.get(terminalRoot.parentID).pipe(Effect.orDie)
+             const rootHistory =
+               terminalRoot.id === sessionID
+-                ? msgs
++                ? history
+                 : yield* sessions.messages({ sessionID: terminalRoot.id }).pipe(Effect.orDie)
+-            const rootTurn = rootHistory.findLast((message) => message.info.role === "user")?.info.id
++            const rootTurn = TerminalStore.currentTurn(rootHistory)
+             const tools = yield* SessionTools.resolve({
+               rootSessionID: terminalRoot.id,
+               rootTurnID: rootTurn,
++              turnID,
+               agent,
+               session,
+               model,
+@@ -1456,7 +1459,8 @@ const layer = Layer.effect(
+         const checkpoint = TerminalStore.run(input.sessionID)
+         if (checkpoint?.suppressed) {
+           const history = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
+-          if (history.findLast((message) => message.info.role === "user")?.info.id === checkpoint.turnID)
++          // Also honor checkpoints written before canonical desktop turn IDs.
++          if (TerminalStore.currentTurn(history) === checkpoint.turnID || MessageV2.latest(history).user?.id === checkpoint.turnID)
+             return yield* lastAssistant(input.sessionID)
+         }
+       }
+diff --git a/packages/opencode/src/session/retry.ts b/packages/opencode/src/session/retry.ts
+index 284c0f0ade..d5b889b3ee 100644
+--- a/packages/opencode/src/session/retry.ts
++++ b/packages/opencode/src/session/retry.ts
+@@ -27,7 +27,7 @@ export const RETRY_INITIAL_DELAY = 2000
+ export const RETRY_BACKOFF_FACTOR = 2
+ export const RETRY_JITTER_FACTOR = 0.25
+ export const RETRY_MAX_DELAY_NO_HEADERS = 30_000 // 30 seconds
+-export const RETRY_MAX_DELAY = 2_147_483_647 // max 32-bit signed integer for setTimeout
++export const RETRY_MAX_DELAY = 60_000 // Bound provider retry hints to one minute per attempt.
+ export const RETRY_MAX_RETRIES = 5
+ 
+ const RETRYABLE_MESSAGE_PATTERNS = [
+@@ -50,16 +50,16 @@ export function delay(attempt: number, error?: SessionV1.APIError, random = Math
+     if (headers) {
+       const retryAfterMs = headers["retry-after-ms"]
+       if (retryAfterMs) {
+-        const parsedMs = Number.parseFloat(retryAfterMs)
+-        if (!Number.isNaN(parsedMs)) {
++        const parsedMs = Number(retryAfterMs)
++        if (Number.isFinite(parsedMs) && parsedMs >= 0) {
+           return cap(parsedMs)
+         }
+       }
+ 
+       const retryAfter = headers["retry-after"]
+       if (retryAfter) {
+-        const parsedSeconds = Number.parseFloat(retryAfter)
+-        if (!Number.isNaN(parsedSeconds)) {
++        const parsedSeconds = Number(retryAfter)
++        if (Number.isFinite(parsedSeconds) && parsedSeconds >= 0) {
+           // convert seconds to milliseconds
+           return cap(Math.ceil(parsedSeconds * 1000))
+         }
+diff --git a/packages/opencode/src/session/tools.ts b/packages/opencode/src/session/tools.ts
+index 28d2948835..e78083e1ee 100644
+--- a/packages/opencode/src/session/tools.ts
++++ b/packages/opencode/src/session/tools.ts
+@@ -48,6 +48,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
+   promptOps: TaskPromptOps
+   rootSessionID?: string
+   rootTurnID?: string
++  turnID?: string
+ }) {
+   const tools: Record<string, AITool> = {}
+   const run = yield* EffectBridge.make()
+@@ -66,6 +67,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
+     extra: {
+       rootSessionID: input.rootSessionID ?? input.session.id,
+       rootTurnID: input.rootTurnID,
++      turnID: input.turnID,
+       model: input.model,
+       bypassAgentCheck: input.bypassAgentCheck,
+       promptOps: input.promptOps,
+diff --git a/packages/opencode/src/terminal/client.ts b/packages/opencode/src/terminal/client.ts
+index 55cb5291f2..de83bde61a 100644
+--- a/packages/opencode/src/terminal/client.ts
++++ b/packages/opencode/src/terminal/client.ts
+@@ -196,7 +196,8 @@ export async function start(
+       rows: 32,
+       name: "xterm-256color",
+       env: Object.fromEntries(
+-        Object.entries(env).filter((item): item is [string, string] => typeof item[1] === "string"),
++        Object.entries({ ...env, TERM: "xterm-256color", PAGER: "cat", GIT_PAGER: "cat" })
++          .filter((item): item is [string, string] => typeof item[1] === "string"),
+       ),
+     })
+     let settle!: () => void
+diff --git a/packages/opencode/src/terminal/recovery.ts b/packages/opencode/src/terminal/recovery.ts
+index f241614879..c4f0205390 100644
+--- a/packages/opencode/src/terminal/recovery.ts
++++ b/packages/opencode/src/terminal/recovery.ts
+@@ -39,8 +39,7 @@ export function resume(
+       const checkpoint = Store.run(key)
+       if (current.suppressed || checkpoint?.suppressed || (current.consumed && !checkpoint?.active)) return
+       const messages = yield* sessions.messages({ sessionID: SessionID.make(key) }).pipe(Effect.orDie)
+-      const user = messages.findLast((message) => message.info.role === "user")
+-      if (!user || user.info.id !== info.turnID || info.ownerID !== Store.owner().id) {
++      if (Store.currentTurn(messages) !== info.turnID || info.ownerID !== Store.owner().id) {
+         Store.update(info.id, { suppressed: true })
+         return
+       }
+diff --git a/packages/opencode/src/terminal/store.ts b/packages/opencode/src/terminal/store.ts
+index 747ab9055d..aa4b6932ef 100644
+--- a/packages/opencode/src/terminal/store.ts
++++ b/packages/opencode/src/terminal/store.ts
+@@ -3,6 +3,21 @@ import path from "node:path"
+ import os from "node:os"
+ import { createHash, randomUUID } from "node:crypto"
+ 
++/** Internal compaction/continuation messages do not start a new desktop task. */
++export function currentTurn(messages: Iterable<{
++  info: { id: string; role: string; time: { created: number } }
++  parts: readonly { type: string; synthetic?: boolean }[]
++}>) {
++  let latest: { id: string; time: { created: number } } | undefined
++  for (const message of messages) {
++    if (message.info.role !== "user" || message.parts.some((part) => part.type === "compaction")) continue
++    if (message.parts.length && message.parts.every((part) => part.type === "text" && part.synthetic)) continue
++    const info = message.info
++    if (!latest || info.time.created > latest.time.created || (info.time.created === latest.time.created && info.id > latest.id)) latest = info
++  }
++  return latest?.id
++}
++
+ export type Status = "starting" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+ export type Info = {
+   id: string
+diff --git a/packages/opencode/src/terminal/tools.ts b/packages/opencode/src/terminal/tools.ts
+index db39f7810a..29dea255e6 100644
+--- a/packages/opencode/src/terminal/tools.ts
++++ b/packages/opencode/src/terminal/tools.ts
+@@ -55,7 +55,7 @@ export function execute(
+         rootTurnID: typeof ctx.extra?.rootTurnID === "string" ? ctx.extra.rootTurnID : undefined,
+         sessionID: ctx.sessionID,
+         messageID: ctx.messageID,
+-        turnID: ctx.messages.findLast((item) => item.info.role === "user")?.info.id ?? ctx.messageID,
++        turnID: typeof ctx.extra?.turnID === "string" ? ctx.extra.turnID : Store.currentTurn(ctx.messages) ?? ctx.messageID,
+         callID: ctx.callID ?? ctx.messageID,
+       }),
+     )
+diff --git a/packages/opencode/test/session/prompt.test.ts b/packages/opencode/test/session/prompt.test.ts
+index d56e12f49f..445d9044d0 100644
+--- a/packages/opencode/test/session/prompt.test.ts
++++ b/packages/opencode/test/session/prompt.test.ts
+@@ -54,6 +54,7 @@ import { TestInstance } from "../fixture/fixture"
+ import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
+ import { reply, TestLLMServer } from "../lib/llm-server"
+ import { RuntimeFlags } from "@/effect/runtime-flags"
++import { list, run } from "@/terminal/store"
+ import { ProviderV2 } from "@opencode-ai/core/provider"
+ import { ModelV2 } from "@opencode-ai/core/model"
+ import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
+@@ -2498,6 +2499,34 @@ function withCodaOwner<A, E, R>(fx: Effect.Effect<A, E, R>) {
+   })
+ }
+ 
++coda.instance("Coda preserves terminal ownership through real automatic compaction", () =>
++  withCodaOwner(
++    Effect.gen(function* () {
++      if (process.platform === "win32") return
++      const { directory } = yield* TestInstance
++      const { llm } = yield* useServerConfig(providerCfg)
++      const prompt = yield* SessionPrompt.Service
++      const sessions = yield* Session.Service
++      const compaction = yield* SessionCompaction.Service
++      const chat = yield* sessions.create({ title: "Pinned", permission: [{ permission: "*", pattern: "*", action: "allow" }] })
++      const original = yield* prompt.prompt({ sessionID: chat.id, agent: "build", noReply: true, parts: [{ type: "text", text: "Verify the command output." }] })
++      yield* compaction.create({ sessionID: chat.id, agent: "build", model: ref, auto: true })
++      yield* llm.text("The user asked to verify the command output. Continue by running the check.")
++      yield* llm.tool("bash", { command: "printf compaction-owned", workdir: directory })
++      yield* llm.text("Command output verified.")
++      yield* prompt.loop({ sessionID: chat.id })
++      const tasks = list(directory, chat.id)
++      expect(tasks).toHaveLength(1)
++      expect(tasks[0].turnID).toBe(original.info.id)
++      expect(tasks[0].rootTurnID).toBe(original.info.id)
++      expect(tasks[0].status).toBe("completed")
++      expect(run(chat.id)?.turnID).toBe(original.info.id)
++      expect(run(chat.id)?.active).toBe(false)
++      expect(yield* llm.hits).toHaveLength(3)
++    }),
++  ),
++)
++
+ coda.instance("Coda reconciles unfinished todos before ending a turn", () =>
+   withCodaOwner(
+     Effect.gen(function* () {
+diff --git a/packages/opencode/test/session/retry.test.ts b/packages/opencode/test/session/retry.test.ts
+index 20c8678cf0..8fb94311a9 100644
+--- a/packages/opencode/test/session/retry.test.ts
++++ b/packages/opencode/test/session/retry.test.ts
+@@ -81,17 +81,21 @@ describe("session.retry.delay", () => {
+     expect(SessionRetry.delay(1, error, 0)).toBe(2000)
+   })
+ 
+-  test("uses retry-after values even when exceeding 10 minutes with headers", () => {
++  test("bounds provider retry hints to one minute", () => {
+     const error = apiError({ "retry-after": "50" })
+     expect(SessionRetry.delay(1, error)).toBe(50000)
+ 
+     const longError = apiError({ "retry-after-ms": "700000" })
+-    expect(SessionRetry.delay(1, longError)).toBe(700000)
++    expect(SessionRetry.delay(1, longError)).toBe(60000)
++    expect(SessionRetry.delay(1, apiError({ "retry-after": "22428" }))).toBe(60000)
+   })
+ 
+-  test("caps oversized header delays to the runtime timer limit", () => {
++  test("caps oversized header delays and ignores malformed millisecond hints", () => {
+     const error = apiError({ "retry-after-ms": "999999999999" })
+     expect(SessionRetry.delay(1, error)).toBe(SessionRetry.RETRY_MAX_DELAY)
++    for (const value of ["-1", "Infinity", "100ms"]) {
++      expect(SessionRetry.delay(1, apiError({ "retry-after-ms": value }), 0)).toBe(2000)
++    }
+   })
+ 
+   it.instance("policy updates retry status and increments attempts", () =>
+diff --git a/packages/opencode/test/terminal/managed.test.ts b/packages/opencode/test/terminal/managed.test.ts
+index ec69359e37..f88f0b276f 100644
+--- a/packages/opencode/test/terminal/managed.test.ts
++++ b/packages/opencode/test/terminal/managed.test.ts
+@@ -45,6 +45,17 @@ const command = (command: string, key: string, timeout?: number) =>
+   })
+ const output = (info: Store.Info) => Buffer.from(Store.log(info, 0).data, "base64").toString("utf8")
+ 
++test("terminal ownership follows the real user across compaction and model-order history", () => {
++  const user = (id: string, created: number, parts: { type: string; synthetic?: boolean }[]) => ({ info: { id, role: "user", time: { created } }, parts })
++  const question = user("question", 1, [{ type: "text" }])
++  const compact = user("compact", 2, [{ type: "compaction" }])
++  const follow = user("follow", 3, [{ type: "text", synthetic: true }])
++  expect(Store.currentTurn([question, compact, follow])).toBe("question")
++  expect(Store.currentTurn([follow, compact, question])).toBe("question")
++  expect(Store.currentTurn([compact, question, follow])).toBe("question")
++  expect(Store.currentTurn([follow, user("next", 4, [{ type: "file" }]), question])).toBe("next")
++})
++
+ test("quick completion returns without exhausting its wait and retains unicode output", async () => {
+   if (process.platform === "win32") return
+   const info = await command("printf '你好 terminal\\n'", "quick")
+@@ -54,6 +65,26 @@ test("quick completion returns without exhausting its wait and retains unicode o
+   expect(done.status).toBe("completed")
+   expect(output(done)).toContain("你好 terminal")
+ })
++test("managed commands have a usable TERM and disable interactive pagers", async () => {
++  if (process.platform === "win32") return
++  const info = await command('printf "%s|%s|%s" "$TERM" "$PAGER" "$GIT_PAGER"', "pager-env")
++  const done = await Client.wait(info.id, 3000)
++  expect(done.status).toBe("completed")
++  expect(output(done)).toContain("xterm-256color|cat|cat")
++})
++test("git log completes unattended in a managed PTY even when Git enables a pager", async () => {
++  if (process.platform === "win32") return
++  const init = await command(
++    'git init --quiet pager-fixture && git -C pager-fixture -c user.name=Coda -c user.email=coda@example.test -c commit.gpgsign=false commit --allow-empty --quiet -m pager-check',
++    "pager-fixture",
++  )
++  expect((await Client.wait(init.id, 5000)).status).toBe("completed")
++  const info = await command('cd pager-fixture && ls -la && echo "---" && git -c core.pager=less log --oneline -5', "git-pager")
++  const done = await Client.wait(info.id, 3000)
++  expect(done.status).toBe("completed")
++  expect(output(done)).toContain("pager-check")
++  expect(output(done)).not.toContain("Press RETURN")
++})
+ test("a check interval expiring does not kill the process and duplicate starts reuse the PID", async () => {
+   if (process.platform === "win32") return
+   const info = await command("printf first; sleep 0.4; printf second", "long")
+diff --git a/packages/opencode/test/server/coda-config-disposal.test.ts b/packages/opencode/test/server/coda-config-disposal.test.ts
+new file mode 100644
+index 0000000000..d0bc1184ee
+--- /dev/null
++++ b/packages/opencode/test/server/coda-config-disposal.test.ts
+@@ -0,0 +1,38 @@
++import { expect, test } from "bun:test"
++import { Server } from "../../src/server/server"
++import { InstanceRuntime } from "../../src/project/instance-runtime"
++import { registerDisposer } from "../../src/effect/instance-registry"
++import { tmpdir, disposeAllInstances } from "../fixture/fixture"
++
++test("config acknowledgement waits for instance disposal before accepting the next prompt", async () => {
++  await using temporary = await tmpdir()
++  await InstanceRuntime.load({ directory: temporary.path })
++  let release!: () => void
++  let entered!: () => void
++  const disposing = new Promise<void>((resolve) => { entered = resolve })
++  const gate = new Promise<void>((resolve) => { release = resolve })
++  const off = registerDisposer(async (directory) => {
++    if (directory !== temporary.path) return
++    entered()
++    await gate
++  })
++  let acknowledged = false
++  const request = Promise.resolve(Server.Default().app.request("/global/config", {
++    method: "PATCH",
++    headers: { "content-type": "application/json" },
++    body: JSON.stringify({ username: `coda-config-${Date.now()}` }),
++  })).then((response) => { acknowledged = true; return response })
++  try {
++    await disposing
++    // Allow a detached HTTP response to settle while disposal remains blocked.
++    await new Promise((resolve) => setTimeout(resolve, 50))
++    expect(acknowledged).toBe(false)
++    release()
++    expect((await request).status).toBe(200)
++    expect(acknowledged).toBe(true)
++  } finally {
++    release()
++    off()
++    await disposeAllInstances()
++  }
++})

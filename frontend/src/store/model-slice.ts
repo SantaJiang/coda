@@ -18,12 +18,13 @@ import {
   type ModelForm,
 } from "../lib/models"
 import { popoverPatch, type AppState } from "./state"
+import { parseInputMedia, type InputMedia } from "../lib/model-input"
 import type { ModelApi } from "./contracts"
 import { createBackendConfigSync } from "./backend-config"
 import { selectedProjectOf, type StoreHandle } from "./handle"
 
 export function selectableModelsOf(state: AppState) {
-  return mergeSelectables(state.configuredModels, menuDiscoveredModels(state.discoveredModels))
+  return mergeSelectables(state.configuredModels, state.discoveredModels).filter((model) => model.source === "coda" || model.providerID === "opencode")
 }
 
 export function selectedModelOf(state: AppState) {
@@ -106,7 +107,7 @@ export function createModelSlice(handle: StoreHandle, config = createBackendConf
     closeModelMenu: () => setState("modelMenuOpen", false),
     openModelSettings: () => setState({ modelMenuOpen: false, modelSettingsOpen: true, modelSettingsError: null }),
     closeModelSettings: () => setState({ modelSettingsOpen: false, modelSettingsError: null }),
-    saveConfiguredProvider: async (form: ModelForm, modelIDs: string[], modelNames?: Record<string, string>) => {
+    saveConfiguredProvider: async (form: ModelForm, modelIDs: string[], modelNames?: Record<string, string>, modelInputs?: Record<string, InputMedia[]>) => {
       setState("modelSettingsError", null)
       const unique = [...new Set(modelIDs.map((item) => item.trim()).filter(Boolean))]
       if (unique.length === 0) {
@@ -125,6 +126,7 @@ export function createModelSlice(handle: StoreHandle, config = createBackendConf
           providerName: form.providerName.trim() || sample.providerName,
           modelID,
           name: label,
+          inputModalities: modelInputs?.[modelID] ?? form.inputModalities ?? existing.get(`${providerID}/${modelID}`)?.inputModalities,
         })
         const prev = existing.get(`${providerID}/${modelID}`)
         return prev ? { ...created, id: prev.id, name: prev.name === prev.modelID ? created.name : prev.name } : created
@@ -153,6 +155,15 @@ export function createModelSlice(handle: StoreHandle, config = createBackendConf
         await applyConfiguredModels(state.configuredModels.filter((item) => item.id !== id))
       } catch (error) {
         setState("modelSettingsError", error instanceof Error ? error.message : "删除后同步失败")
+      }
+    },
+    setModelInput: async (id, input) => {
+      setState("modelSettingsError", null)
+      try {
+        await applyConfiguredModels(state.configuredModels.map((model) => model.id === id ? { ...model, inputModalities: parseInputMedia(input) } : model))
+        await refreshDiscovered()
+      } catch (error) {
+        setState("modelSettingsError", error instanceof Error ? error.message : "更新附件能力失败")
       }
     },
     refreshDiscovered,

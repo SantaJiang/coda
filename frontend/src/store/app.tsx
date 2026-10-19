@@ -29,6 +29,8 @@ import {
   saveProjectSessions,
 } from "../lib/persist"
 import { applyClientEvent } from "./apply-event"
+import { sessionLifetime } from "./gc"
+import { resolveRequest } from "./requests"
 import { trackDesktopActivity } from "./desktop-activity"
 import { createChromeSlice } from "./chrome-slice"
 import { StoreProviders } from "./ctx"
@@ -63,7 +65,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     setState("backendError", message ? `模型配置同步失败：${message}` : null),
   )
   const models = createModelSlice(handle, config)
-  const runtime = createRuntimeSlice(handle, { skipQueueFlush, sendAfterIdle, flushing: {} })
+  const runtime = createRuntimeSlice(handle, { skipQueueFlush, sendAfterIdle, flushing: {}, beforePrompt: config.sync })
   const chrome = createChromeSlice(handle)
 
   let lastSseConnected: boolean | null = null
@@ -222,7 +224,11 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
           }),
         )
         for (const item of autoReplies) {
-          void client.replyPermission(item.directory, item.id, item.reply).catch((error) => {
+          const current = sessionLifetime(state, item.permission.sessionID)
+          void client.replyPermission(item.directory, item.id, item.reply).then(() => {
+            if (current()) setState(produce((draft) => resolveRequest(draft, "permission", item.id, item.permission.sessionID)))
+          }).catch((error) => {
+            if (!current() || state.resolvedRequests[`permission:${item.id}`] !== undefined) return
             setState(
               produce((draft) => {
                 draft.permissions[item.id] = item.permission

@@ -24,6 +24,7 @@
     "allow-settings-patch",
     "allow-user-file-read",
     "allow-user-file-write",
+    "allow-attachments",
     {
       "identifier": "http:default",
       "allow": [

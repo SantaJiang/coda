@@ -11,7 +11,9 @@ import {
   validateFetchForm,
   validateProviderForm,
   type SelectableModel,
+  discoveredFromProviderList,
 } from "./models"
+import { parseModelConfigFile, serializeModelConfig } from "./model-config-file"
 
 function discovered(providerID: string, modelID: string, name = modelID): SelectableModel {
   return {
@@ -25,6 +27,21 @@ function discovered(providerID: string, modelID: string, name = modelID): Select
 }
 
 describe("toBackendPatch", () => {
+  it("round-trips explicit input capabilities and propagates them to backend and model discovery", () => {
+    const [model] = parseModelConfigFile(JSON.stringify({ models: [{ providerID: "fixture", providerName: "Fixture", modelID: "vision", baseURL: "https://example.com/v1", apiKey: "fixture", inputModalities: ["image", "pdf"] }] }))
+    expect(parseModelConfigFile(serializeModelConfig([model]))[0].inputModalities).toEqual(["image", "pdf"])
+    expect(toBackendPatch([model], "fixture/vision")?.provider?.fixture.models?.vision.modalities).toEqual({ input: ["text", "image", "pdf"], output: ["text"] })
+    const discovered = discoveredFromProviderList({ all: [{ id: "fixture", name: "Fixture", models: { vision: { capabilities: { input: { text: true, image: false, pdf: false } }, api: { npm: "@ai-sdk/google" } } } }], connected: ["fixture"], default: {} })
+    const merged = mergeSelectables([model], discovered)[0]
+    expect(merged.input?.image).toBe(true)
+    // Configured endpoints deliberately use the compatible adapter.
+    expect(merged.adapter).toBe("@ai-sdk/openai-compatible")
+    expect(discovered[0].adapter).toBe("@ai-sdk/google")
+    const [imported] = parseModelConfigFile(JSON.stringify({ provider: { fixture: { options: { baseURL: "https://example.com/v1", apiKey: "fixture" }, models: { voice: { modalities: { input: ["text", "audio"] } } } } } }))
+    expect(imported.inputModalities).toEqual(["audio"])
+    const [disabled] = parseModelConfigFile(serializeModelConfig([{ ...model, inputModalities: [] }]))
+    expect(toBackendPatch([disabled], "fixture/vision")?.provider?.fixture.models?.vision.modalities?.input).toEqual(["text"])
+  })
   it("marks configured models as attachment-capable and does not invent token limits", () => {
     const patch = toBackendPatch(
       [

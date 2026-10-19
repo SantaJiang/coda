@@ -20,6 +20,7 @@ import type {
 import type { ParsedEvent } from "../lib/events"
 import type { AppState } from "./state"
 import { purgeSession } from "./gc"
+import { resolveRequest } from "./requests"
 
 export type AutoReply = {
   id: string
@@ -95,6 +96,40 @@ const upsertSession: EventHandler = (draft, { props, directory }) => {
 }
 
 const handlers: Record<string, EventHandler> = {
+  "server.instance.disposed": (draft, { props, directory, effects }) => {
+    const path = (props.directory as string | undefined) ?? directory
+    if (!path) return
+    const sessions = Object.entries(draft.sessionsByProject)
+      .filter(([directory]) => samePath(directory, path))
+      .flatMap(([, sessions]) => sessions)
+    for (const session of sessions) {
+      draft.eventRevision[session.id] = (draft.eventRevision[session.id] ?? 0) + 1
+      for (const request of Object.values(draft.permissions))
+        if (request.sessionID === session.id) resolveRequest(draft, "permission", request.id, session.id)
+      for (const request of Object.values(draft.questions))
+        if (request.sessionID === session.id) resolveRequest(draft, "question", request.id, session.id)
+      draft.settlingBySession[session.id] = true
+      effects.idleSessions.push(session.id)
+    }
+  },
+  "global.disposed": (draft, { effects }) => {
+    const known = new Set(Object.values(draft.sessionsByProject).flatMap((sessions) => sessions.map((session) => session.id)))
+    for (const id of Object.keys(draft.status)) {
+      draft.eventRevision[id] = (draft.eventRevision[id] ?? 0) + 1
+      // Child sessions have no project-list entry or optimistic frontend send.
+      // All their runners have exited, and there is no detail loader for them.
+      if (!known.has(id)) {
+        draft.status[id] = { type: "idle" }
+        delete draft.settlingBySession[id]
+        continue
+      }
+      draft.settlingBySession[id] = true
+      effects.idleSessions.push(id)
+    }
+    // Requests belonged to the disposed instances and can no longer be answered.
+    for (const item of Object.values(draft.permissions)) resolveRequest(draft, "permission", item.id, item.sessionID)
+    for (const item of Object.values(draft.questions)) resolveRequest(draft, "question", item.id, item.sessionID)
+  },
   "session.created": upsertSession,
   "session.updated": upsertSession,
   "session.deleted": (draft, { props, directory }) => {
@@ -183,6 +218,7 @@ const handlers: Record<string, EventHandler> = {
     const sessionID = props.sessionID as string
     const status = props.status as SessionStatus
     if (sessionID && status) {
+      draft.statusRevision[sessionID] = (draft.statusRevision[sessionID] ?? 0) + 1
       draft.status[sessionID] = status
       if (status.type === "idle") {
         draft.settlingBySession[sessionID] = true
@@ -194,6 +230,7 @@ const handlers: Record<string, EventHandler> = {
   "session.idle": (draft, { props, effects }) => {
     const sessionID = props.sessionID as string
     if (!sessionID) return
+    draft.statusRevision[sessionID] = (draft.statusRevision[sessionID] ?? 0) + 1
     draft.status[sessionID] = { type: "idle" }
     draft.settlingBySession[sessionID] = true
     effects.idleSessions.push(sessionID)
@@ -206,6 +243,7 @@ const handlers: Record<string, EventHandler> = {
   "permission.asked": (draft, { props, directory, effects }) => {
     const permission = asPermission(props)
     if (!permission?.id) return
+    if (draft.resolvedRequests[`permission:${permission.id}`] !== undefined) return
     const reply = autoReplyForMode(draft.permissionMode, permission.permission)
     const path =
       directory ||
@@ -220,19 +258,19 @@ const handlers: Record<string, EventHandler> = {
   },
   "permission.replied": (draft, { props }) => {
     const requestID = (props.requestID as string) ?? (props.id as string)
-    if (requestID) delete draft.permissions[requestID]
+    if (requestID) resolveRequest(draft, "permission", requestID, (props.sessionID as string) ?? draft.permissions[requestID]?.sessionID ?? "")
   },
   "question.asked": (draft, { props }) => {
     const question = asQuestion(props)
-    if (question?.id) draft.questions[question.id] = question
+    if (question?.id && draft.resolvedRequests[`question:${question.id}`] === undefined) draft.questions[question.id] = question
   },
   "question.replied": (draft, { props }) => {
     const requestID = (props.requestID as string) ?? (props.id as string)
-    if (requestID) delete draft.questions[requestID]
+    if (requestID) resolveRequest(draft, "question", requestID, (props.sessionID as string) ?? draft.questions[requestID]?.sessionID ?? "")
   },
   "question.rejected": (draft, { props }) => {
     const requestID = (props.requestID as string) ?? (props.id as string)
-    if (requestID) delete draft.questions[requestID]
+    if (requestID) resolveRequest(draft, "question", requestID, (props.sessionID as string) ?? draft.questions[requestID]?.sessionID ?? "")
   },
   "session.error": (draft, { props }) => {
     const sessionID = props.sessionID as string | undefined

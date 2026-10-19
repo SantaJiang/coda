@@ -10,6 +10,24 @@ const done = (id = "a1", parentID = "u1", created = 2) => assistant(id, parentID
 const project = (messages: Message[], parts: Record<string, Part[]> = {}, status: SessionStatus = { type: "idle" }, context = {}) => conversationTurns(messages, parts, { status, ...context })
 
 describe("conversation event sequences", () => {
+  it("attaches synthetic post-compaction continuation to the original turn while it is running", () => {
+    const messages = [user(), done(), user("c1", 4), assistant("summary", "c1", 5, { summary: true, time: { created: 5, completed: 6 } }), user("continue", 7), assistant("a2", "continue", 8)]
+    const parts: Record<string, Part[]> = {
+      u1: [text("question", "用户问题", "u1")],
+      c1: [{ id: "compact", type: "compaction", sessionID: "s1", messageID: "c1" }],
+      continue: [{ id: "followup", type: "text", text: "Continue if you have next steps", messageID: "continue", sessionID: "s1", synthetic: true }],
+      a2: [text("answer", "继续处理", "a2")],
+    }
+    const turns = project(messages, parts, { type: "busy" })
+    expect(turns).toHaveLength(1)
+    expect(turns[0].id).toBe("u1")
+    expect(turns[0].phase).toBe("running")
+    expect(turns[0].assistants.map((message) => message.id)).toEqual(["a1", "a2"])
+    expect(turns[0].entries[turns[0].entries.length - 1]).toMatchObject({ key: "a2:answer" })
+    const finished = project([...messages.slice(0, -1), done("a2", "continue", 8)], parts)[0]
+    expect(finished.phase).toBe("done")
+    expect(finished.answer).toHaveLength(1)
+  })
   it("keeps a completed model step active until the session ends", () => {
     const messages = [user(), assistant("a1", "u1", 2, { finish: "tool-calls", time: { created: 2, completed: 3 } })]
     const turn = project(messages, { a1: [text("p1", "先读文件"), tool()] }, { type: "busy" })[0]

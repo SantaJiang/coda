@@ -1,4 +1,6 @@
-import { Show, createEffect, onCleanup, onMount } from "solid-js"
+import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { isTauri } from "../lib/platform-detect"
+import { attachmentModelError } from "../lib/model-input"
 import { isNewlineHotkey, isSendHotkey } from "../lib/settings"
 import { useChrome, useModels, useProjects, useRuntime } from "../store/app"
 import { isLocalProject } from "../lib/persist"
@@ -18,6 +20,9 @@ export function Composer() {
   const chrome = useChrome()
   let area: HTMLTextAreaElement | undefined
   let composing = false
+  let root!: HTMLDivElement
+  const [dragging, setDragging] = createSignal(false)
+  const attachmentError = () => attachmentModelError(runtime.attachments(), models.selectedModel()?.input, models.selectedModel()?.adapter)
 
   const placeholder = () => {
     if (!projects.selectedProject()) return "先添加一个项目文件夹"
@@ -37,7 +42,8 @@ export function Composer() {
     !projects.selectedProject()?.missing &&
     !runtime.blocked() &&
     !runtime.stopping() &&
-    (hasDraft() || runtime.busy())
+    ((runtime.busy() && !hasDraft()) ||
+      (!runtime.attachmentsLoading() && !attachmentError() && hasDraft()))
 
   const resize = () => {
     if (!area) return
@@ -85,7 +91,51 @@ export function Composer() {
     }
     document.addEventListener("keydown", onKey)
     onCleanup(() => document.removeEventListener("keydown", onKey))
+    if (isTauri()) {
+      let disposed = false
+      let unlisten: (() => void) | undefined
+      void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) => getCurrentWebview().onDragDropEvent(({ payload }) => {
+        if (payload.type === "leave") { setDragging(false); return }
+        const rect = root.getBoundingClientRect()
+        const x = payload.position.x / window.devicePixelRatio, y = payload.position.y / window.devicePixelRatio
+        const inside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+        setDragging(payload.type !== "drop" && inside)
+        if (payload.type === "drop" && inside) void runtime.importAttachments({ paths: payload.paths })
+      })).then((off) => { if (disposed) off(); else unlisten = off }).catch(() => undefined)
+      onCleanup(() => { disposed = true; unlisten?.() })
+    }
   })
+
+  const onPaste = async (event: ClipboardEvent & { currentTarget: HTMLTextAreaElement }) => {
+    const data = event.clipboardData
+    if (!data) return
+    const files = Array.from(data.files)
+    if (!files.length) for (const item of Array.from(data.items)) {
+      if (item.kind !== "file") continue
+      const file = item.getAsFile()
+      if (file) files.push(file)
+    }
+    if (files.length) {
+      event.preventDefault()
+      await runtime.importAttachments({ files })
+      return
+    }
+    if (!isTauri()) return
+    // WebKit can expose no File objects for a native image or Finder file copy.
+    event.preventDefault()
+    const node = event.currentTarget
+    const text = data.getData("text/plain")
+    const value = node.value, start = node.selectionStart, end = node.selectionEnd
+    const importing = runtime.importAttachments({ clipboard: true, includeImage: !text })
+    const sessionID = projects.selectedSessionId()
+    const consumed = await importing
+    if (consumed || !text || area !== node || projects.selectedSessionId() !== sessionID) return
+    if (node.value === value) node.setSelectionRange(start, end)
+    const inserted = document.activeElement === node && typeof document.execCommand === "function" && document.execCommand("insertText", false, text)
+    if (!inserted) node.setRangeText(text, node.selectionStart, node.selectionEnd, "end")
+    runtime.setComposer(node.value)
+    resize()
+  }
 
   const insertNewline = () => {
     if (!area) return
@@ -118,8 +168,19 @@ export function Composer() {
   }
 
   return (
-    <div class="composer">
+    <div class="composer" ref={root} classList={{ "drag-over": dragging() }}
+      onDragOver={(event) => { if (event.dataTransfer?.types.includes("Files")) { event.preventDefault(); setDragging(true) } }}
+      onDragLeave={(event) => { if (!root.contains(event.relatedTarget as Node | null)) setDragging(false) }}
+      onDrop={(event) => {
+        setDragging(false)
+        const files = Array.from(event.dataTransfer?.files ?? [])
+        if (!files.length) return
+        event.preventDefault()
+        void runtime.importAttachments({ files })
+      }}>
       <AttachmentStrip />
+      <Show when={runtime.attachmentsLoading()}><div class="attachment-notice" role="status">正在读取附件…</div></Show>
+      <Show when={attachmentError()}><div class="attachment-notice warning" role="status">{attachmentError()} <button type="button" class="text-btn" onClick={() => models.openModelSettings()}>配置模型</button></div></Show>
       <textarea
         ref={area}
         rows={1}
@@ -131,6 +192,7 @@ export function Composer() {
         }}
         onCompositionEnd={onCompositionEnd}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
       />
       <div class="composer-bar">
         <div class="composer-left">

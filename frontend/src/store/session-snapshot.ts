@@ -13,6 +13,7 @@ type SnapshotState = Pick<
   | "todos"
   | "permissions"
   | "questions"
+  | "resolvedRequests"
   | "outgoing"
   | "sessionErrors"
   | "sessionErrorText"
@@ -24,6 +25,7 @@ type SnapshotState = Pick<
   | "removedSessions"
   | "sessionEpoch"
   | "eventRevision"
+  | "statusRevision"
   | "removedMessages"
   | "removedParts"
 >
@@ -111,6 +113,8 @@ export function captureSessionSnapshot(state: SnapshotState, sessionID: string) 
     todosBefore: JSON.stringify(state.todos[sessionID] ?? []),
     snapshotBefore: sessionSnapshotKey(state.status[sessionID], beforeMessages, state.parts),
     revisionBefore: state.eventRevision[sessionID] ?? 0,
+    statusRevisionBefore: state.statusRevision[sessionID] ?? 0,
+    statusBefore: statusKey(state.status[sessionID]),
   }
 }
 
@@ -176,10 +180,14 @@ export function applySessionSnapshot(
   if (todos.ok && todoListUnchanged && JSON.stringify(draft.todos[sessionID] ?? []) === todosBefore)
     draft.todos[sessionID] = todos.value ?? []
   const fromMessages = deriveStatusFromMessages(nextMessages)
+  // Streaming content can arrive during an idle snapshot without representing
+  // a newer run. Only a newer lifecycle transition should protect old busy state.
+  const statusUnchanged = (draft.statusRevision[sessionID] ?? 0) === before.statusRevisionBefore
+    && statusKey(draft.status[sessionID]) === before.statusBefore
   const lastRole = nextMessages[nextMessages.length - 1]?.role
   const derived =
     opts.mode === "idle"
-      ? stateUnchanged && statuses.ok
+      ? statusUnchanged && statuses.ok
         ? (statuses.value?.[sessionID] ?? { type: "idle" as const })
         : draft.status[sessionID]
       : stateUnchanged
@@ -212,7 +220,7 @@ export function applySessionSnapshot(
   }
   if (permissions.ok) {
     const removed = new Set([...beforePermissionIds].filter((id) => !draft.permissions[id]))
-    const incoming = (permissions.value ?? []).filter((item) => item.sessionID === sessionID && !removed.has(item.id))
+    const incoming = (permissions.value ?? []).filter((item) => item.sessionID === sessionID && !removed.has(item.id) && draft.resolvedRequests[`permission:${item.id}`] === undefined)
     const incomingIds = new Set(incoming.map((item) => item.id))
     for (const id of beforePermissionIds) {
       if (draft.permissions[id] && !incomingIds.has(id)) delete draft.permissions[id]
@@ -221,7 +229,7 @@ export function applySessionSnapshot(
   }
   if (questions.ok) {
     const removed = new Set([...beforeQuestionIds].filter((id) => !draft.questions[id]))
-    const incoming = (questions.value ?? []).filter((item) => item.sessionID === sessionID && !removed.has(item.id))
+    const incoming = (questions.value ?? []).filter((item) => item.sessionID === sessionID && !removed.has(item.id) && draft.resolvedRequests[`question:${item.id}`] === undefined)
     const incomingIds = new Set(incoming.map((item) => item.id))
     for (const id of beforeQuestionIds) {
       if (draft.questions[id] && !incomingIds.has(id)) delete draft.questions[id]
@@ -233,8 +241,12 @@ export function applySessionSnapshot(
       const user = [...(draft.messages[sessionID] ?? [])]
         .reverse()
         .find(
-          (message) =>
-            message.role === "user" && !(draft.parts[message.id] ?? []).some((part) => part.type === "compaction"),
+          (message) => {
+            const parts = draft.parts[message.id] ?? []
+            return message.role === "user"
+              && !parts.some((part) => part.type === "compaction")
+              && !(parts.length && parts.every((part) => part.type === "text" && part.synthetic))
+          },
         )
       if (user) {
         draft.stoppedTurnBySession[sessionID] = user.id

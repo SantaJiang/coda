@@ -2,7 +2,8 @@ import { produce } from "solid-js/store"
 import { draftKey } from "../lib/draft"
 import { isEmptyDraftContent, isLocalDraft } from "../lib/draft-session"
 import { PLAN_AGENT, DEFAULT_AGENT } from "../lib/config"
-import { attachmentFromBrowserFile, attachmentFromPath, type ComposerAttachment } from "../lib/attachments"
+import { attachmentFromBrowserFile, preparePathAttachment, clipboardAttachments, type ComposerAttachment } from "../lib/attachments"
+import { attachmentModelError, inputFromMedia } from "../lib/model-input"
 import { rulesetForProject } from "../lib/permissions"
 import {
   isLocalProject,
@@ -39,10 +40,12 @@ import {
 import { directoryFor, projectByPath, sendingKey } from "./lookup"
 import { selectedModelOf } from "./model-slice"
 import { applySessionPermission } from "./permission-sync"
+import { resolveRequest } from "./requests"
 import { shouldFlushQueue, takeDeferredSend, withSessionLock } from "./queue"
 import { emptySessionDraft, type QueuedMessage, type OutgoingPrompt, type SessionDraft } from "./state"
 
 export type QueueRefs = {
+  beforePrompt?: () => Promise<void>
   skipQueueFlush: Record<string, boolean>
   sendAfterIdle: Record<string, QueuedMessage | undefined>
   flushing: Record<string, boolean>
@@ -53,9 +56,29 @@ export type RuntimeSlice = RuntimeApi & {
   settleSession: (sessionID: string) => Promise<void>
 }
 
+type PendingSend = { sessionID: string; cancelled: boolean; submitted: boolean; current: () => boolean }
+
 export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): RuntimeSlice {
   const { state, setState, client } = handle
   const replying = new Set<string>()
+  const pendingImports = new Set<{ sessionID: string; current: () => boolean }>()
+  const pendingSends = new Set<PendingSend>()
+  const beginSend = (sessionID: string): PendingSend => {
+    const pending = { sessionID, cancelled: false, submitted: false, current: sessionLifetime(state, sessionID) }
+    pendingSends.add(pending)
+    return pending
+  }
+  const finishSend = (pending: PendingSend) => {
+    pendingSends.delete(pending)
+    if (pending.cancelled && !pending.submitted && pending.current())
+      setState("stoppingBySession", pending.sessionID, false)
+  }
+  const cancelUnsubmitted = (item: OutgoingPrompt) => {
+    if (!state.outgoing[item.messageID]) return
+    outgoingDelivery(handle, item, "failed", "已停止，消息尚未发送")
+    setState("stoppedTurnBySession", item.sessionID, item.messageID)
+    setState("stoppedTurns", item.messageID, true)
+  }
 
   const selectedProject = () => selectedProjectOf(state)
   const selectedSession = () => selectedSessionOf(state)
@@ -95,13 +118,62 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
 
   const setAttachments = (next: ComposerAttachment[]) => writeDraft({ attachments: next })
 
-  const mergeAttachments = (extra: ComposerAttachment[]) => {
-    const next = [...attachments()]
-    for (const item of extra) {
-      if (next.some((entry) => entry.url === item.url)) continue
-      next.push(item)
+  const importIntoDraft = async (read: () => Promise<{ files?: File[]; paths?: string[] }>) => {
+    const project = selectedProject()
+    if (!project || project.missing || blocked()) return false
+    // Establish a stable draft before awaiting a dialog, clipboard, or disk read.
+    const session = selectedSession() ?? reuseOrCreateEmptyDraft(handle, project, true)
+    const target = { sessionID: session.id, current: sessionLifetime(state, session.id) }
+    const key = () => `session:${target.sessionID}`
+    pendingImports.add(target)
+    setState("attachmentImports", key(), (value = 0) => value + 1)
+    let found = false
+    try {
+      const input = await read()
+      found = Boolean(input.files?.length || input.paths?.length)
+      if (!found || !target.current()) return found
+      // Read one file at a time so a multi-file paste cannot multiply peak memory.
+      const results: PromiseSettledResult<ComposerAttachment>[] = []
+      const reads = [
+        ...(input.files ?? []).map((file) => () => attachmentFromBrowserFile(file)),
+        ...(input.paths ?? []).map((path) => () => preparePathAttachment(path)),
+      ]
+      for (const readFile of reads) {
+        if (!target.current()) return found
+        try { results.push({ status: "fulfilled", value: await readFile() }) }
+        catch (reason) { results.push({ status: "rejected", reason: importError(reason) }) }
+      }
+      if (!target.current()) return found
+      const next = [...(state.drafts[key()]?.attachments ?? [])]
+      const errors: string[] = []
+      for (const result of results) {
+        if (result.status === "rejected") { errors.push(result.reason instanceof Error ? result.reason.message : "添加附件失败"); continue }
+        if (!next.some((item) => item.url === result.value.url)) next.push(result.value)
+      }
+      setState("drafts", key(), { composer: state.drafts[key()]?.composer ?? "", attachments: next })
+      if (isLocalDraft(session) && target.sessionID === session.id) {
+        syncDraftSessionMeta(handle, project.path, session.id, state.drafts[key()]?.composer ?? "")
+        persistDraftSessions(handle)
+      }
+      if (errors.length) setState("error", errors.join("；"))
+      return found
+    } catch (error) {
+      if (target.current()) reportError(handle, importError(error), "添加附件失败")
+      return found
+    } finally {
+      pendingImports.delete(target)
+      if (target.current()) setState("attachmentImports", key(), (value = 1) => Math.max(0, value - 1))
     }
-    setAttachments(next)
+  }
+
+  const importError = (error: unknown) => error instanceof Error ? error : new Error(typeof error === "string" ? error : "添加附件失败")
+
+  const modelAttachmentError = (files: ComposerAttachment[], model: { providerID: string; modelID: string }) => {
+    const selected = state.configuredModels.find((item) => item.providerID === model.providerID && item.modelID === model.modelID)
+    const discovered = state.discoveredModels.find((item) => item.providerID === model.providerID && item.modelID === model.modelID)
+    const capability = selected?.inputModalities ? inputFromMedia(selected.inputModalities) : discovered?.input
+    const adapter = selected ? undefined : discovered?.adapter
+    return attachmentModelError(files, capability, adapter)
   }
 
   const busy = () => {
@@ -139,17 +211,26 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       agent: string
       variant?: string | null
     },
+    pending: PendingSend,
     previous?: OutgoingPrompt,
   ) => {
     const current = sessionLifetime(state, session.id)
     if (!current()) return
     const item = previous ?? stageOutgoing(handle, { ...payload, project, sessionID: session.id })
     try {
+      await refs.beforePrompt?.()
+      if (!current()) return
+      if (pending.cancelled) { cancelUnsubmitted(item); return }
+      const attachmentError = modelAttachmentError(payload.files, payload.model)
+      if (attachmentError) throw new Error(attachmentError)
       await applySessionPermission(handle, project.path, session.id)
       if (!current()) return
+      if (pending.cancelled) { cancelUnsubmitted(item); return }
       setState("status", session.id, { type: "busy" })
+      setState("statusRevision", session.id, (value = 0) => value + 1)
       setState("sessionErrors", session.id, false)
       setState("sessionErrorText", session.id, "")
+      pending.submitted = true
       await client.promptAsync(project.path, session.id, {
         ...payload,
         variant: payload.variant ?? undefined,
@@ -157,10 +238,27 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
         partIDs: item.partIDs,
       })
       if (current()) outgoingDelivery(handle, item)
+      // An abort may have reached the server before this HTTP request did.
+      // Keep the send lock until the late acceptance has also been stopped.
+      if (pending.cancelled && current()) {
+        setState("stoppingBySession", session.id, true)
+        try {
+          await client.abortSession(project.path, session.id)
+          if (current()) await settleSession(session.id)
+        } catch (error) {
+          if (current()) {
+            setState("stoppingBySession", session.id, false)
+            reportError(handle, error, "停止失败")
+          }
+        }
+      }
     } catch (error) {
       // An SSE acknowledgement can arrive even if the HTTP response was lost.
       if (!state.outgoing[item.messageID]) return
-      if (state.status[session.id]?.type === "busy") setState("status", session.id, { type: "idle" })
+      if (state.status[session.id]?.type === "busy") {
+        setState("status", session.id, { type: "idle" })
+        setState("statusRevision", session.id, (value = 0) => value + 1)
+      }
       outgoingDelivery(
         handle,
         item,
@@ -201,11 +299,14 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     const usable = ensureProjectDirectory(project)
     if (!usable) return false
     setSending(sessionID, true)
+    const pending = beginSend(sessionID)
     try {
       const previousID = queueMessageIDs.get(item.id)
       const previous = previousID ? state.outgoing[previousID] : undefined
-      if (previousID && !previous && (state.messages[sessionID] ?? []).some((message) => message.id === previousID))
+      if (previousID && !previous && (state.messages[sessionID] ?? []).some((message) => message.id === previousID)) {
+        await settleSession(sessionID)
         return true
+      }
       const payload = {
         text: item.text,
         files: item.attachments,
@@ -218,19 +319,23 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
         if (!current()) return true
         if (existing?.some((message) => message.info.id === previous.messageID)) {
           outgoingDelivery(handle, previous)
+          await settleSession(sessionID)
           return true
         }
       }
+      if (pending.cancelled) return false
       const staged = stageOutgoing(handle, { ...payload, project: usable, sessionID }, previous)
       queueMessageIDs.set(item.id, staged.messageID)
-      await promptSession({ id: sessionID }, usable, payload, staged)
-      return true
+      await promptSession({ id: sessionID }, usable, payload, pending, staged)
+      if (!current()) return true
+      return !pending.cancelled || pending.submitted
     } catch (error) {
       if (!current()) return true
       reportError(handle, error, "发送排队消息失败", project.path)
       return false
     } finally {
-      setSending(sessionID, false)
+      finishSend(pending)
+      if (current()) setSending(sessionID, false)
     }
   }
 
@@ -238,6 +343,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     !state.removedSessions[sessionID] &&
     !state.settlingBySession[sessionID] &&
     !state.stoppingBySession[sessionID] &&
+    !state.syncErrors[sessionID] &&
     state.connection !== "disconnected" &&
     shouldFlushQueue({
       sending: Boolean(state.sendingBySession[sessionID]),
@@ -284,14 +390,27 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     setState("settlingBySession", sessionID, true)
     setState("syncErrors", sessionID, "")
     const current = sessionLifetime(state, sessionID)
-    const task = reconcileSession(handle, sessionID, project.path)
-      .then(() => {
-        if (current()) return flushQueue(sessionID)
-      })
+    const readUntilIdleSettles = async () => {
+      let revision: number
+      do {
+        revision = state.statusRevision[sessionID] ?? 0
+        setState("settlingBySession", sessionID, true)
+        await reconcileSession(handle, sessionID, project.path)
+      } while (current() && state.status[sessionID]?.type === "idle" && (state.statusRevision[sessionID] ?? 0) !== revision)
+    }
+    const task = readUntilIdleSettles()
+      .then(() => true)
       .catch((error) => {
         if (current()) setState("syncErrors", sessionID, error instanceof Error ? error.message : "同步回复失败")
+        return false
       })
-      .finally(() => settling.delete(sessionID))
+      .finally(() => {
+        settling.delete(sessionID)
+        if (current()) setState("settlingBySession", sessionID, false)
+      })
+      .then((ok) => {
+        if (ok && current()) return flushQueue(sessionID)
+      })
     settling.set(sessionID, task)
     return task
   }
@@ -313,6 +432,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       return
     }
     if (!content && files.length === 0) return
+    if (state.attachmentImports[activeDraftKey()]) return
     if (blocked()) return
 
     const model = previous?.model ?? selectedModelOf(state)
@@ -321,6 +441,9 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       setState({ modelMenuOpen: false, modelSettingsOpen: true, modelSettingsError: null })
       return
     }
+
+    const attachmentError = modelAttachmentError(files, model)
+    if (attachmentError) { setState("error", attachmentError); return }
 
     const usable = ensureProjectDirectory(project)
     if (!usable) return
@@ -359,6 +482,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     if (!previous) clearSentDraft(sourceID)
     let key = sendingKey(sourceID, project.id)
     setSending(key, true)
+    const pending = beginSend(sourceID)
     setState("error", null)
     try {
       let session = source
@@ -376,10 +500,21 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
           moveOutgoingSession(handle, local.id, session.id)
           item.sessionID = session.id
           const bundle = state.drafts[`session:${local.id}`] ?? emptySessionDraft()
+          // The draft's identity changed; in-flight reads still belong to this chat.
+          let importing = 0
+          for (const target of pendingImports) {
+            if (target.sessionID !== local.id || !target.current()) continue
+            target.sessionID = session.id
+            target.current = sessionLifetime(state, session.id)
+            importing++
+          }
+          if (importing) setState("attachmentImports", `session:${session.id}`, (value = 0) => value + importing)
           adoptDraftIntoBackendSession(handle, local.id)
           setState("drafts", `session:${session.id}`, bundle)
         }
         current = sessionLifetime(state, session.id)
+        pending.sessionID = session.id
+        pending.current = current
         setState("sessionsByProject", usable.path, (list = []) => upsertById(list, session!))
         setState("planModeBySession", session.id, plan)
         if (state.selectedSessionId === sourceID) {
@@ -399,7 +534,8 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
           return
         }
       }
-      await promptSession(session, usable, payload, item)
+      if (pending.cancelled) { cancelUnsubmitted(item); return }
+      await promptSession(session, usable, payload, pending, item)
     } catch (error) {
       if (state.outgoing[item.messageID])
         outgoingDelivery(
@@ -409,7 +545,8 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
           error instanceof Error ? error.message : "发送失败",
         )
     } finally {
-      setSending(key, false)
+      finishSend(pending)
+      if (current()) setSending(key, false)
       if (current() && !key.startsWith("__draft:")) void flushQueue(key)
     }
   }
@@ -439,12 +576,18 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
     abort: async () => {
       const session = selectedSession()
       const project = selectedProject()
-      if (!session || !project || isLocalDraft(session)) return
+      if (!session || !project) return
+      const pending = [...pendingSends].filter((item) => item.sessionID === session.id)
+      if (isLocalDraft(session) && !pending.length) return
       const current = sessionLifetime(state, session.id)
       if (state.stoppingBySession[session.id]) return
+      for (const item of pending) item.cancelled = true
       setState("stoppingBySession", session.id, true)
       refs.skipQueueFlush[session.id] = true
+      const deferred = refs.sendAfterIdle[session.id]
+      if (deferred) setState("queuedBySession", session.id, [deferred, ...queuedFor(session.id).filter((item) => item.id !== deferred.id)])
       delete refs.sendAfterIdle[session.id]
+      if (isLocalDraft(session)) return
       try {
         await client.abortSession(project.path, session.id)
         if (!current()) return
@@ -510,6 +653,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       )
       refs.skipQueueFlush[session.id] = false
       refs.sendAfterIdle[session.id] = item
+      for (const pending of pendingSends) if (pending.sessionID === session.id) pending.cancelled = true
       setState("stoppingBySession", session.id, true)
       try {
         await client.abortSession(project.path, session.id)
@@ -566,16 +710,18 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const permission = state.permissions[id]
       const project = selectedProject()
       if (!permission || !project) return
+      const current = sessionLifetime(state, permission.sessionID)
       replying.add(lock)
       try {
         await client.replyPermission(project.path, id, reply)
+        if (!current()) return
         setState(
           produce((draft) => {
-            delete draft.permissions[id]
+            resolveRequest(draft, "permission", id, permission.sessionID)
           }),
         )
       } catch (error) {
-        reportError(handle, error, "回复权限失败")
+        if (current()) reportError(handle, error, "回复权限失败")
       } finally {
         replying.delete(lock)
       }
@@ -586,16 +732,18 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const question = state.questions[id]
       const project = selectedProject()
       if (!question || !project) return
+      const current = sessionLifetime(state, question.sessionID)
       replying.add(lock)
       try {
         await client.replyQuestion(project.path, id, answers)
+        if (!current()) return
         setState(
           produce((draft) => {
-            delete draft.questions[id]
+            resolveRequest(draft, "question", id, question.sessionID)
           }),
         )
       } catch (error) {
-        reportError(handle, error, "提交回答失败")
+        if (current()) reportError(handle, error, "提交回答失败")
       } finally {
         replying.delete(lock)
       }
@@ -606,48 +754,38 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const question = state.questions[id]
       const project = selectedProject()
       if (!question || !project) return
+      const current = sessionLifetime(state, question.sessionID)
       replying.add(lock)
       try {
         await client.rejectQuestion(project.path, id)
+        if (!current()) return
         setState(
           produce((draft) => {
-            delete draft.questions[id]
+            resolveRequest(draft, "question", id, question.sessionID)
           }),
         )
       } catch (error) {
-        reportError(handle, error, "跳过问题失败")
+        if (current()) reportError(handle, error, "跳过问题失败")
       } finally {
         replying.delete(lock)
       }
     },
     addFiles: async () => {
       setState("plusMenuOpen", false)
-      const picked = await pickFiles()
-      if (picked === "fallback") {
-        const files = await pickBrowserFiles()
-        if (!files.length) return
-        const extra: ComposerAttachment[] = []
-        for (const file of files) extra.push(await attachmentFromBrowserFile(file))
-        mergeAttachments(extra)
-        return
-      }
-      if (!picked.length) return
-      mergeAttachments(picked.map((path) => attachmentFromPath(path, "file")))
+      await importIntoDraft(async () => {
+        const picked = await pickFiles()
+        return picked === "fallback" ? { files: await pickBrowserFiles() } : { paths: picked }
+      })
     },
     addFolder: async () => {
       setState("plusMenuOpen", false)
-      const picked = await pickAttachmentFolder()
-      if (picked === "fallback") {
-        const files = await pickBrowserFiles({ directory: true })
-        if (!files.length) return
-        const extra: ComposerAttachment[] = []
-        for (const file of files) extra.push(await attachmentFromBrowserFile(file))
-        mergeAttachments(extra)
-        return
-      }
-      if (!picked) return
-      mergeAttachments([attachmentFromPath(picked, "directory")])
+      await importIntoDraft(async () => {
+        const picked = await pickAttachmentFolder()
+        return picked === "fallback" ? { files: await pickBrowserFiles({ directory: true }) } : { paths: picked ? [picked] : [] }
+      })
     },
+    importAttachments: (input) => importIntoDraft(async () => input.clipboard ? { paths: await clipboardAttachments(input.includeImage ?? true) } : input),
+    attachmentsLoading: () => Boolean(state.attachmentImports[activeDraftKey()]),
     removeAttachment: (id) => {
       setAttachments(attachments().filter((item) => item.id !== id))
     },

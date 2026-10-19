@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-attachments"
+description = "Import user-selected or pasted attachments and read clipboard files/images on paste."
+commands.allow = ["attachment_inspect", "attachment_save", "attachment_clipboard", "attachment_convert_image"]

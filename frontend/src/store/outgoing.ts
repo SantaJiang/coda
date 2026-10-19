@@ -17,6 +17,8 @@ export function stageOutgoing(handle: StoreHandle, payload: Omit<OutgoingPrompt,
     draft.messages[item.sessionID] = upsertById(draft.messages[item.sessionID] ?? [], { ...message, time: old?.time ?? message.time })
     draft.parts[item.messageID] = parts
     draft.outgoing[item.messageID] = item
+    delete draft.stoppedTurns[item.messageID]
+    if (draft.stoppedTurnBySession[item.sessionID] === item.messageID) delete draft.stoppedTurnBySession[item.sessionID]
     delete draft.sessionErrorText[item.sessionID]
   }))
   return item

@@ -118,6 +118,10 @@ export function conversationTurns(messages: Message[], partsByMessage: Record<st
       const entry: CompactionEntry = { kind: "compaction", key: `compaction:${message.id}`, status: "running", summary: "" }
       current.events.push({ created: message.time.created, id: message.id, entries: [entry] })
       compactions.set(message.id, { owner: current, entry })
+    } else if (parts.length && parts.every((part) => part.type === "text" && part.synthetic)) {
+      // Automatic post-compaction continuation is still the original user turn.
+      // Index the hidden parent so its assistant is not rendered as an orphan.
+      if (current) byUser.set(message.id, current)
     } else if (!parts.length || parts.some(visibleConversationPart)) {
       current = { id: message.id, user: message, assistants: [], events: [] }
       turns.push(current)
@@ -152,7 +156,8 @@ export function conversationTurns(messages: Message[], partsByMessage: Record<st
     owner.events.push({ created: message.time.created, id: message.id, entries: parts.filter(visibleConversationPart).map((part) => ({ kind: "part", key: `${message.id}:${part.id}`, part })) })
   }
   turns.sort((a, b) => (a.user?.time.created ?? a.events[0]?.created ?? 0) - (b.user?.time.created ?? b.events[0]?.created ?? 0))
-  const latestUserID = [...ordered].reverse().find((message) => message.role === "user" && byUser.has(message.id))?.id
+  const latestParent = [...ordered].reverse().find((message) => message.role === "user" && byUser.has(message.id))
+  const latestUserID = latestParent ? byUser.get(latestParent.id)?.id : undefined
   return turns.map((turn) => {
     const tail = turn.id === (latestUserID ?? turns[turns.length - 1]?.id)
     turn.events.sort((a, b) => a.created - b.created || a.id.localeCompare(b.id))

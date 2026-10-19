@@ -19,6 +19,7 @@ function SessionTimeline(props: { sessionID: string }) {
   let frame: number | undefined
   let disposed = false
   let userScroll = false
+  let draggingScrollbar = false
   let anchor: { key: string; offset: number; turnID?: string } | undefined
   const turns = createMemo(() => conversationTurns(runtime.messages(), runtime.partsByMessage(), {
     status: runtime.status(), sending: runtime.busy() && !runtime.status(), stopping: runtime.stopping(),
@@ -42,7 +43,7 @@ function SessionTimeline(props: { sessionID: string }) {
     if (visible) anchor = { key: visible.dataset.scrollKey ?? visible.dataset.entryKey!, offset: visible.getBoundingClientRect().top - top, turnID: visible.closest<HTMLElement>("[data-turn-id]")?.dataset.turnId }
   }
   const scheduleLayout = () => {
-    if (frame !== undefined) cancelAnimationFrame(frame)
+    if (frame !== undefined) return
     frame = requestAnimationFrame(() => {
       frame = undefined
       if (disposed) return
@@ -69,10 +70,19 @@ function SessionTimeline(props: { sessionID: string }) {
     else scroller.scrollTop = scroller.scrollHeight
     captureAnchor()
     const onSelection = () => { if (selectedText()) pause() }
+    const releaseScrollbar = () => { draggingScrollbar = false }
     document.addEventListener("selectionchange", onSelection)
+    document.addEventListener("pointerup", releaseScrollbar)
+    document.addEventListener("pointercancel", releaseScrollbar)
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(scheduleLayout)
     observer?.observe(inner)
-    onCleanup(() => { observer?.disconnect(); document.removeEventListener("selectionchange", onSelection) })
+    observer?.observe(scroller)
+    onCleanup(() => {
+      observer?.disconnect()
+      document.removeEventListener("selectionchange", onSelection)
+      document.removeEventListener("pointerup", releaseScrollbar)
+      document.removeEventListener("pointercancel", releaseScrollbar)
+    })
   })
   createEffect(on(() => [runtime.messages(), runtime.partsByMessage(), runtime.status(), runtime.settling()], scheduleLayout, { defer: true }))
   createEffect(() => {
@@ -90,11 +100,16 @@ function SessionTimeline(props: { sessionID: string }) {
       onPointerDown={(event) => {
         const target = event.target as Element
         if (target.closest(".work-head, .work-step-head")) { userScroll = false; pause() }
-        else if (event.target === scroller) { userScroll = true; pause() }
+        else if (event.target === scroller) { draggingScrollbar = true; userScroll = true; pause() }
       }}
       onScroll={() => {
-        if (userScroll) { setFollowing(nearBottom() && !selectedText()); userScroll = false }
-        save(); captureAnchor()
+        // Layout shrinkage and our own scrollTop writes also dispatch scroll.
+        // They must not replace the anchor before the next layout correction.
+        if (userScroll || draggingScrollbar) {
+          setFollowing(nearBottom() && !selectedText())
+          userScroll = false
+          save(); captureAnchor()
+        }
       }}>
       <div class="timeline-inner" ref={inner}>
         <Show when={projects.connection() !== "connected"}>

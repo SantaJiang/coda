@@ -31,6 +31,8 @@ export function unwrapEvent(raw: GlobalEvent): ParsedEvent | null {
 }
 
 function emitFrames(buffer: string, final: boolean, onEvent: (parsed: ParsedEvent) => void) {
+  // SSE permits CRLF; normalize after concatenation to handle a split CR/LF.
+  buffer = buffer.replace(/\r\n/g, "\n")
   const chunks = buffer.split("\n\n")
   const rest = final ? "" : (chunks.pop() ?? "")
   for (const chunk of chunks) {

@@ -1,6 +1,7 @@
 import { hasSharedValue, setSharedValue, sharedValue } from "./shared"
 import { uid } from "./uid"
 import { isApiKeyOptional, LOCAL_COMPAT_API_KEY, normalizeProviderBaseURL } from "./presets"
+import { inputFromMedia, parseInputMedia, type InputMedia, type ModelInput } from "./model-input"
 
 export type ModelRef = {
   providerID: string
@@ -15,6 +16,7 @@ export type ConfiguredModel = {
   modelID: string
   baseURL: string
   apiKey: string
+  inputModalities?: InputMedia[]
 }
 
 export type SelectableModel = {
@@ -24,6 +26,8 @@ export type SelectableModel = {
   name: string
   source: "coda" | "discovered"
   variants: string[]
+  input?: ModelInput
+  adapter?: string
 }
 
 export type ModelForm = {
@@ -33,6 +37,7 @@ export type ModelForm = {
   modelID: string
   baseURL: string
   apiKey: string
+  inputModalities?: InputMedia[]
 }
 
 export type BackendProviderConfig = {
@@ -51,6 +56,7 @@ export type BackendProviderConfig = {
       reasoning?: boolean
       temperature?: boolean
       attachment?: boolean
+      modalities?: { input: string[]; output: string[] }
       limit?: { context: number; output: number }
     }
   >
@@ -71,6 +77,8 @@ export type ProviderList = {
         id?: string
         name?: string
         variants?: Record<string, unknown>
+        capabilities?: { input?: ModelInput }
+        api?: { npm?: string }
       }
     >
   }>
@@ -179,6 +187,7 @@ function sanitizeModels(parsed: ConfiguredModel[], secrets: Record<string, strin
     )
     .map((item) => ({
       ...item,
+      inputModalities: parseInputMedia(item.inputModalities),
       apiKey: secrets[item.id] || item.apiKey || "",
     }))
 }
@@ -204,6 +213,7 @@ export function saveConfiguredModels(models: ConfiguredModel[]) {
     providerName: model.providerName,
     modelID: model.modelID,
     baseURL: model.baseURL,
+    ...(model.inputModalities ? { inputModalities: model.inputModalities } : {}),
   }))
   localStorage.setItem(STORAGE_MODELS, JSON.stringify(publicModels))
   saveSecrets(models)
@@ -234,6 +244,7 @@ export function createConfiguredModel(form: ModelForm): ConfiguredModel {
     modelID: form.modelID.trim(),
     baseURL,
     apiKey: form.apiKey.trim() || (isApiKeyOptional(baseURL, providerID) ? LOCAL_COMPAT_API_KEY : ""),
+    ...(form.inputModalities ? { inputModalities: parseInputMedia(form.inputModalities) } : {}),
   }
 }
 
@@ -274,6 +285,7 @@ export function toSelectable(model: ConfiguredModel): SelectableModel {
     name: model.name,
     source: "coda",
     variants: [],
+    ...(model.inputModalities ? { input: inputFromMedia(model.inputModalities) } : {}),
   }
 }
 
@@ -291,6 +303,8 @@ export function discoveredFromProviderList(list: ProviderList): SelectableModel[
         name: model.name || modelID,
         source: "discovered",
         variants: variantKeys(model),
+        input: model.capabilities?.input,
+        adapter: model.api?.npm,
       })
     }
   }
@@ -318,7 +332,7 @@ export function mergeSelectables(configured: ConfiguredModel[], discovered: Sele
   const extras = new Map(discovered.map((item) => [item.key, item]))
   const merged = coda.map((item) => {
     const extra = extras.get(item.key)
-    return extra?.variants.length ? { ...item, variants: extra.variants } : item
+    return { ...item, ...(extra?.variants.length ? { variants: extra.variants } : {}), input: item.input ?? extra?.input, adapter: "@ai-sdk/openai-compatible" }
   })
   const seen = new Set(merged.map((item) => item.key))
   return [...merged, ...discovered.filter((item) => !seen.has(item.key))]
@@ -352,6 +366,7 @@ export function toBackendPatch(models: ConfiguredModel[], selectedKey: string | 
       reasoning: true,
       temperature: true,
       attachment: true,
+      ...(model.inputModalities ? { modalities: { input: ["text", ...model.inputModalities], output: ["text"] } } : {}),
     }
     provider[model.providerID] = current
   }

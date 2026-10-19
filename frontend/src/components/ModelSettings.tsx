@@ -18,6 +18,7 @@ import { importedPresetId, parseImportedProviders, type ImportedProvider } from 
 import { listRemoteModels, type RemoteModel } from "../lib/remote-models"
 import { useModels } from "../store/app"
 import { Icon } from "./Icon"
+import { INPUT_MEDIA, INPUT_LABELS, type InputMedia } from "../lib/model-input"
 
 export function ModelSettings() {
   const models = useModels()
@@ -27,6 +28,8 @@ export function ModelSettings() {
   const [saving, setSaving] = createSignal(false)
   const [loadingModels, setLoadingModels] = createSignal(false)
   const [remoteModels, setRemoteModels] = createSignal<RemoteModel[]>([])
+  const [importedInputs, setImportedInputs] = createSignal<Record<string, InputMedia[]>>({})
+  const [expandedInput, setExpandedInput] = createSignal<string | null>(null)
   const [checked, setChecked] = createSignal<string[]>([])
   const [customModelID, setCustomModelID] = createSignal("")
   const [importText, setImportText] = createSignal("")
@@ -48,6 +51,7 @@ export function ModelSettings() {
   const resetForm = () => {
     invalidateFetch()
     setForm(emptyModelForm())
+    setImportedInputs({})
     setPresetId(CUSTOM_PRESET_ID)
     setFormError(null)
     setRemoteModels([])
@@ -72,6 +76,7 @@ export function ModelSettings() {
   }
 
   const applyPreset = (id: string) => {
+    setImportedInputs({})
     invalidateFetch()
     setPresetId(id)
     setRemoteModels([])
@@ -98,6 +103,7 @@ export function ModelSettings() {
   }
 
   const startEdit = (id: string) => {
+    setImportedInputs({})
     invalidateFetch()
     const model = models.configuredModels().find((item) => item.id === id)
     if (!model) return
@@ -128,6 +134,7 @@ export function ModelSettings() {
     setPresetId(importedPresetId(imported))
     setForm({ ...imported.form, baseURL })
     setRemoteModels(imported.models)
+    setImportedInputs(Object.fromEntries(imported.models.filter((model) => model.inputModalities).map((model) => [model.id, model.inputModalities!])))
     setChecked(imported.models.map((item) => item.id))
     setFormError(null)
   }
@@ -198,6 +205,7 @@ export function ModelSettings() {
           { ...item.form, baseURL: normalizeProviderBaseURL(item.form.baseURL, item.form.providerID) },
           ids,
           names,
+          Object.fromEntries(item.models.filter((model) => model.inputModalities).map((model) => [model.id, model.inputModalities!])),
         )
       }
       resetForm()
@@ -229,7 +237,7 @@ export function ModelSettings() {
     setSaving(true)
     setFormError(null)
     try {
-      await models.saveConfiguredProvider(next, selected, namesFor(selected))
+      await models.saveConfiguredProvider(next, selected, namesFor(selected), importedInputs())
       resetForm()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "保存失败")
@@ -372,6 +380,22 @@ export function ModelSettings() {
                       <div class="model-row-meta">
                         {model.providerName || model.providerID} / {model.modelID}
                       </div>
+                      <details class="model-input-settings" open={expandedInput() === model.id} onToggle={(event) => {
+                        if (event.currentTarget.open) setExpandedInput(model.id)
+                        else if (expandedInput() === model.id) setExpandedInput(null)
+                      }}>
+                        <summary>输入附件</summary>
+                        <div class="field-hint">按模型实际能力勾选。兼容接口的音频限 MP3 / WAV，暂不支持视频。修改会刷新后端模型配置。</div>
+                        <div class="model-input-options">
+                          <For each={INPUT_MEDIA}>{(type) => {
+                            const enabled = () => model.inputModalities?.includes(type) ?? models.selectableModels().find((item) => item.key === `${model.providerID}/${model.modelID}`)?.input?.[type] ?? false
+                            return <label><input type="checkbox" checked={enabled()} disabled={type === "video"} onChange={(event) => {
+                              const selected = INPUT_MEDIA.filter((item) => item === type ? event.currentTarget.checked : (model.inputModalities?.includes(item) ?? models.selectableModels().find((entry) => entry.key === `${model.providerID}/${model.modelID}`)?.input?.[item] ?? false))
+                              void models.setModelInput(model.id, selected)
+                            }} />{INPUT_LABELS[type]}</label>
+                          }}</For>
+                        </div>
+                      </details>
                     </div>
                     <div class="model-row-actions">
                       <button type="button" class="text-btn" onClick={() => startEdit(model.id)}>

@@ -1,6 +1,7 @@
 import { createConfiguredModel, hostnameSlug, type ConfiguredModel } from "./models"
 import { normalizeProviderBaseURL } from "./presets"
 import { parseImportedProviders, type ImportedProvider } from "./provider-import"
+import { parseInputMedia, type InputMedia } from "./model-input"
 
 export const MODEL_CONFIG_KIND = "coda-models"
 export const MODEL_CONFIG_VERSION = 1
@@ -15,6 +16,7 @@ export type ExportedModel = {
   modelID: string
   baseURL: string
   apiKey: string
+  inputModalities?: InputMedia[]
 }
 
 export type ExportedModelConfig = {
@@ -57,6 +59,7 @@ function configuredFromUnknown(value: unknown): ConfiguredModel | null {
     modelID,
     baseURL,
     apiKey,
+    inputModalities: parseInputMedia(value.inputModalities),
   })
 }
 
@@ -76,6 +79,7 @@ function flattenImported(imported: ImportedProvider[]): ConfiguredModel[] {
         ...provider.form,
         modelID: model.id,
         name: model.name,
+        inputModalities: model.inputModalities,
       }),
     ),
   )
@@ -106,6 +110,7 @@ export function serializeModelConfig(models: ConfiguredModel[]): string {
       modelID: model.modelID,
       baseURL: model.baseURL,
       apiKey: model.apiKey,
+      ...(model.inputModalities ? { inputModalities: model.inputModalities } : {}),
     })),
   }
   return `${JSON.stringify(payload, null, 2)}\n`

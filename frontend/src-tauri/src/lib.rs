@@ -1,6 +1,7 @@
 #[cfg(any(windows, test))]
 use std::time::Duration;
 
+mod attachments;
 mod backend;
 mod lifecycle;
 mod paths;
@@ -112,6 +113,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![
+            attachments::attachment_inspect,
+            attachments::attachment_save,
+            attachments::attachment_clipboard,
+            attachments::attachment_convert_image,
             lifecycle::desktop_activity,
             lifecycle::desktop_quit,
             path_exists,

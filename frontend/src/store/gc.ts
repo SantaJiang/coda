@@ -28,6 +28,8 @@ export function purgeSession(draft: AppState, sessionID: string, deleted = true)
   delete draft.syncErrors[sessionID]
   delete draft.settlingBySession[sessionID]
   delete draft.eventRevision[sessionID]
+  delete draft.statusRevision[sessionID]
+  delete draft.attachmentImports[`session:${sessionID}`]
   delete draft.timelineViews[sessionID]
   for (const [id, owner] of Object.entries(draft.removedMessages))
     if (owner === sessionID) delete draft.removedMessages[id]
@@ -35,6 +37,9 @@ export function purgeSession(draft: AppState, sessionID: string, deleted = true)
     if (owner.sessionID === sessionID) delete draft.removedParts[id]
   for (const [id, item] of Object.entries(draft.outgoing)) if (item.sessionID === sessionID) delete draft.outgoing[id]
   delete draft.drafts[`session:${sessionID}`]
+  for (const [id, owner] of Object.entries(draft.resolvedRequests)) {
+    if (owner === sessionID) delete draft.resolvedRequests[id]
+  }
   delete draft.planModeBySession[sessionID]
   for (const path of Object.keys(draft.draftSessionsByProject)) {
     const list = draft.draftSessionsByProject[path]

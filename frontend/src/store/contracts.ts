@@ -16,6 +16,7 @@ import type {
 } from "../lib/types"
 import type { ConnectionState, QueuedMessage } from "./state"
 import type { TimelineViewState } from "../lib/conversation"
+import type { InputMedia } from "../lib/model-input"
 
 export type ProjectApi = {
   projects: () => Project[]
@@ -55,9 +56,10 @@ export type ModelApi = {
   closeModelMenu: () => void
   openModelSettings: () => void
   closeModelSettings: () => void
-  saveConfiguredProvider: (form: ModelForm, modelIDs: string[], modelNames?: Record<string, string>) => Promise<void>
+  saveConfiguredProvider: (form: ModelForm, modelIDs: string[], modelNames?: Record<string, string>, modelInputs?: Record<string, InputMedia[]>) => Promise<void>
   importConfiguredModels: (models: ConfiguredModel[], mode: ModelConfigImportMode) => Promise<void>
   deleteConfiguredModel: (id: string) => Promise<void>
+  setModelInput: (id: string, input: InputMedia[]) => Promise<void>
   refreshDiscovered: () => Promise<void>
   setVariant: (value: string | null) => void
   openVariantMenu: () => void
@@ -92,6 +94,8 @@ export type RuntimeApi = {
   rejectQuestion: (id: string) => Promise<void>
   addFiles: () => Promise<void>
   addFolder: () => Promise<void>
+  importAttachments: (input: { files?: File[]; paths?: string[]; clipboard?: boolean; includeImage?: boolean }) => Promise<boolean>
+  attachmentsLoading: () => boolean
   removeAttachment: (id: string) => void
   messages: () => Message[]
   sessionError: () => string

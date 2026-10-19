@@ -19,6 +19,9 @@ export function AttachmentStrip() {
               >
                 <Icon name="times" />
               </button>
+              <Show when={item.preview || (item.mime.startsWith("image/") && item.url.startsWith("data:"))}>
+                <img class="attachment-preview" src={item.preview || item.url} alt={item.filename} />
+              </Show>
               <div class="attachment-name truncate">{item.filename}</div>
               <div class="attachment-type">{item.label}</div>
             </div>

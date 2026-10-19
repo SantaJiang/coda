@@ -1,9 +1,11 @@
 import { emptyModelForm, type ModelForm } from "./models"
 import { CUSTOM_PRESET_ID, presetByBaseURL, presetById } from "./presets"
+import { parseInputMedia, type InputMedia } from "./model-input"
 
 export type ImportedModel = {
   id: string
   name: string
+  inputModalities?: InputMedia[]
 }
 
 export type ImportedProvider = {
@@ -70,7 +72,8 @@ function modelEntries(models: unknown): ImportedModel[] {
     const id = String(value.id || key).trim()
     if (!id) continue
     const name = String(value.name || id).trim() || id
-    result.push({ id, name })
+    const modalities = isRecord(value.modalities) ? value.modalities.input : undefined
+    result.push({ id, name, inputModalities: parseInputMedia(value.inputModalities ?? modalities) })
   }
   return result
 }
@@ -143,11 +146,11 @@ function importedFromConfigured(models: unknown[]): ImportedProvider[] {
         },
         models: [],
       }
-      split.models.push({ id: modelID, name })
+      split.models.push({ id: modelID, name, inputModalities: parseInputMedia(item.inputModalities) })
       groups.set(splitKey, split)
       continue
     }
-    current.models.push({ id: modelID, name })
+    current.models.push({ id: modelID, name, inputModalities: parseInputMedia(item.inputModalities) })
     groups.set(groupKey, current)
   }
   const used = new Set<string>()

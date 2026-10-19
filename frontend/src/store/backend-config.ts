@@ -19,7 +19,10 @@ export function createBackendConfigSync(
     if (pending) return pending
     pending = (async () => {
       while (true) {
-        const patch = toBackendPatch(handle.state.configuredModels, handle.state.selectedModelKey)
+        // Requests carry their model explicitly. Changing the composer selection must
+        // not rewrite global config and tear down sessions already using that config.
+        const configured = toBackendPatch(handle.state.configuredModels, null)
+        const patch = configured ? { provider: configured.provider } : null
         const key = JSON.stringify(patch)
         if (key === applied) {
           onError(null)

@@ -66,6 +66,7 @@ export type AppState = {
   todos: Record<string, Todo[]>
   permissions: Record<string, PermissionRequest>
   questions: Record<string, QuestionRequest>
+  resolvedRequests: Record<string, string>
   sendingBySession: Record<string, boolean>
   stoppingBySession: Record<string, boolean>
   stoppedTurnBySession: Record<string, string>
@@ -73,6 +74,7 @@ export type AppState = {
   syncErrors: Record<string, string>
   settlingBySession: Record<string, boolean>
   eventRevision: Record<string, number>
+  statusRevision: Record<string, number>
   seenEventIDs: string[]
   sessionEpoch: Record<string, number>
   removedSessions: Record<string, boolean>
@@ -81,6 +83,7 @@ export type AppState = {
   outgoing: Record<string, OutgoingPrompt>
   timelineViews: Record<string, TimelineViewState>
   drafts: Record<string, SessionDraft>
+  attachmentImports: Record<string, number>
   backendError: string | null
   error: string | null
   configuredModels: ConfiguredModel[]
@@ -124,6 +127,7 @@ export const initialState: AppState = {
   todos: {},
   permissions: {},
   questions: {},
+  resolvedRequests: {},
   sendingBySession: {},
   stoppingBySession: {},
   stoppedTurnBySession: {},
@@ -131,6 +135,7 @@ export const initialState: AppState = {
   syncErrors: {},
   settlingBySession: {},
   eventRevision: {},
+  statusRevision: {},
   seenEventIDs: [],
   sessionEpoch: {},
   removedSessions: {},
@@ -139,6 +144,7 @@ export const initialState: AppState = {
   outgoing: {},
   timelineViews: {},
   drafts: {},
+  attachmentImports: {},
   backendError: null,
   error: null,
   configuredModels: [],

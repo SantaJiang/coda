@@ -4,6 +4,8 @@ import { autoReplyForMode, rulesetForProject, type PermissionMode } from "../lib
 import { isSessionBusy } from "../lib/session-status"
 import { projectByPath } from "./lookup"
 import { reportError, selectedProjectOf, selectedSessionOf, type StoreHandle } from "./handle"
+import { sessionLifetime } from "./gc"
+import { resolveRequest } from "./requests"
 
 export async function applySessionPermission(
   handle: StoreHandle,
@@ -47,19 +49,22 @@ export async function autoReplyPending(handle: StoreHandle, mode: PermissionMode
     (item) => item && (!sessionID || item.sessionID === sessionID),
   )
   for (const item of pending) {
+    if (!handle.state.permissions[item.id] || handle.state.resolvedRequests[`permission:${item.id}`] !== undefined) continue
     const reply = autoReplyForMode(mode, item.permission)
     if (!reply) continue
     const directory = sessionDirectory(handle, item.sessionID)
     if (!directory) continue
+    const current = sessionLifetime(handle.state, item.sessionID)
     try {
       await handle.client.replyPermission(directory, item.id, reply)
+      if (!current()) continue
       handle.setState(
         produce((draft) => {
-          delete draft.permissions[item.id]
+          resolveRequest(draft, "permission", item.id, item.sessionID)
         }),
       )
     } catch (error) {
-      reportError(handle, error, "自动授权失败")
+      if (current() && handle.state.resolvedRequests[`permission:${item.id}`] === undefined) reportError(handle, error, "自动授权失败")
     }
   }
 }

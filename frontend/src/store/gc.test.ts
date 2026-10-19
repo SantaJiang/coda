@@ -15,6 +15,7 @@ describe("purgeSession", () => {
       p2: { id: "p2", sessionID: "s2", permission: "edit", patterns: [] },
     }
     draft.planModeBySession = { s1: true, s2: true }
+    draft.resolvedRequests = { "permission:one": "s1", "question:two": "s2" }
     purgeSession(draft, "s1")
     expect(draft.messages.s1).toBeUndefined()
     expect(draft.parts.m1).toBeUndefined()
@@ -23,6 +24,7 @@ describe("purgeSession", () => {
     expect(draft.permissions.p2).toBeDefined()
     expect(draft.planModeBySession.s1).toBeUndefined()
     expect(draft.planModeBySession.s2).toBe(true)
+    expect(draft.resolvedRequests).toEqual({ "question:two": "s2" })
   })
 })
 

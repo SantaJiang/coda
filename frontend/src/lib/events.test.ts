@@ -66,4 +66,16 @@ describe("subscribeEvents", () => {
     await vi.waitFor(() => expect(events).toEqual(["session.idle"]))
     stop()
   })
+
+  it("reads CRLF event frames even when the separator is split across network chunks", async () => {
+    const events: string[] = []
+    const chunks = ['data: {"type":"session.status","properties":{"sessionID":"s1","status":{"type":"busy"}}}\r', '\n\r', '\ndata: {"type":"session.idle","properties":{"sessionID":"s1"}}\r\n\r', '\n']
+    let index = 0
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, body: {
+      getReader: () => ({ read: async () => index < chunks.length ? { value: new TextEncoder().encode(chunks[index++]), done: false } : { done: true } }),
+    } })))
+    const stop = subscribeEvents((parsed) => events.push(parsed.event.type))
+    try { await vi.waitFor(() => expect(events).toEqual(["session.status", "session.idle"])) }
+    finally { stop() }
+  })
 })

@@ -10,6 +10,38 @@ function draft(overrides: Partial<AppState> = {}): AppState {
 }
 
 describe("applyClientEvent", () => {
+  it("ignores replayed requests after their replies have already been processed", () => {
+    const state = draft({ permissionMode: "allow" })
+    applyClientEvent(state, { event: { type: "permission.replied", properties: { sessionID: "s1", requestID: "p1" } } })
+    const effect = applyClientEvent(state, { directory: "/tmp/app", event: { type: "permission.asked", properties: { id: "p1", sessionID: "s1", permission: "edit", patterns: [] } } })
+    expect(effect.autoReplies).toEqual([])
+    expect(state.permissions.p1).toBeUndefined()
+    applyClientEvent(state, { event: { type: "question.rejected", properties: { sessionID: "s1", requestID: "q1" } } })
+    applyClientEvent(state, { event: { type: "question.asked", properties: { id: "q1", sessionID: "s1", questions: [] } } })
+    expect(state.questions.q1).toBeUndefined()
+  })
+  it("reconciles disposed instances without overwriting a newer optimistic prompt", () => {
+    const state = draft({
+      status: { s1: { type: "busy" }, s2: { type: "retry" }, child: { type: "busy" } },
+      permissions: { p1: { id: "p1", sessionID: "s1", permission: "edit", patterns: [] }, p2: { id: "p2", sessionID: "s2", permission: "edit", patterns: [] } },
+      sessionsByProject: {
+        "/tmp/one": [{ id: "s1", directory: "/tmp/one", title: "one", time: { created: 1, updated: 1 } }],
+        "/tmp/two": [{ id: "s2", directory: "/tmp/two", title: "two", time: { created: 1, updated: 1 } }],
+      },
+    })
+    const effects = applyClientEvent(state, { event: { type: "server.instance.disposed", properties: { directory: "/tmp/one" } } })
+    expect(effects.idleSessions).toEqual(["s1"])
+    expect(state.settlingBySession.s1).toBe(true)
+    expect(state.status.s1.type).toBe("busy")
+    expect(state.status.s2.type).toBe("retry")
+    expect(state.status.child.type).toBe("busy")
+    expect(state.permissions.p1).toBeUndefined()
+    expect(state.permissions.p2).toBeDefined()
+    const global = applyClientEvent(state, { event: { type: "global.disposed", properties: {} } })
+    expect(global.idleSessions).toEqual(["s1", "s2"])
+    expect(state.settlingBySession.s2).toBe(true)
+    expect(state.status.child.type).toBe("idle")
+  })
   it("records idle sessions so the queue can flush per session", () => {
     const state = draft({ selectedSessionId: "other" })
     const effects = applyClientEvent(state, {

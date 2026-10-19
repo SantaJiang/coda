@@ -201,6 +201,7 @@ function asAttachment(value: unknown): ComposerAttachment | null {
     kind: item.kind,
     url: String(item.url),
     label: String(item.label || item.filename),
+    ...(typeof item.preview === "string" && item.preview.startsWith("data:image/") ? { preview: item.preview } : {}),
   }
 }
 
