@@ -39,3 +39,21 @@ it("keeps manual recovery available for a short interrupted command without a te
   ;(host.querySelector(".terminal-resume") as HTMLButtonElement).click()
   expect(action).toHaveBeenCalledWith("short", "resume")
 })
+
+it("shows the same minute/second shell countdown in place across the minute boundary", () => {
+  const start = 1_700_000_000_000
+  const [now, setNow] = createSignal(start)
+  const info = { id: "waiting", status: "running", lastOutputAt: start, nextCheckAt: start + 90000 }
+  const t = { items: () => [info], visible: () => [info], selected: () => info, view: () => ({ open: false }), waiting: () => info, error: () => "", now } as unknown as Terminals
+  const host = document.createElement("div")
+  document.body.append(host)
+  cleanups.push(() => host.remove())
+  cleanups.push(render(() => <TerminalDock terminals={t} />, host))
+  const line = host.querySelector(".shell-wait")!
+  expect(line.textContent).toBe("Waiting up to 1m 30s for shell")
+  setNow(start + 30000)
+  expect(line.textContent).toBe("Waiting up to 1m 0s for shell")
+  setNow(start + 31000)
+  expect(host.querySelector(".shell-wait")).toBe(line)
+  expect(line.textContent).toBe("Waiting up to 0m 59s for shell")
+})

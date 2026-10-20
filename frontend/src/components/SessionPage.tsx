@@ -58,27 +58,15 @@ export function SessionPage() {
           <Show when={projects.error()}>
             <div class="session-error">{projects.error()}</div>
           </Show>
-          <Show
-            when={!isDraftView()}
-            fallback={
-              <div class="empty">
-                <div class="empty-composer">
-                  <Composer />
-                  <ContextBar />
-                </div>
-              </div>
-            }
-          >
-            <MessageTimeline />
-            <div class="composer-region">
-              <QuestionDock />
-              <PermissionDock />
-              <QueueDock />
-              <TerminalDock terminals={terminals} />
-              <Composer />
-              <ContextBar />
-            </div>
-          </Show>
+          <Show when={!isDraftView()}><MessageTimeline /></Show>
+          <div class="composer-region" classList={{ "draft-composer-region": isDraftView() }}>
+            <QuestionDock />
+            <PermissionDock />
+            <QueueDock />
+            <TerminalDock terminals={terminals} />
+            <Composer />
+            <ContextBar />
+          </div>
         </div>
         <Show when={showAside()}>
           <aside class="session-aside terminal-aside" style={{ "--terminal-width": `${terminals.view().width}px` }}>

@@ -1,4 +1,5 @@
-import { For, Index, Show, createEffect, createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import { KeyedList } from "./KeyedList"
 import { isLocalProject, projectDisplay } from "../lib/persist"
 import { isLocalDraft } from "../lib/draft-session"
 import { formatSessionTitle } from "../lib/session-label"
@@ -218,12 +219,18 @@ export function Sidebar() {
           when={projects.projects().length > 0}
           fallback={<div class="tree-empty">点击右上角 + 添加一个代码项目</div>}
         >
-          <Index each={projects.projects()}>
+          <KeyedList each={projects.projects()} by={(project) => project.id}>
             {(project) => {
-              const sessions = () =>
-                [...projects.sessionsFor(project().path)].sort(
+              const sessions = createMemo((previous: Session[] = []) => {
+                const sorted = [...projects.sessionsFor(project().path)].sort(
                   (a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0),
                 )
+                if (!editingId()) return sorted
+                // Moving a focused input in the DOM can blur it and commit a
+                // partial rename. Defer recency reordering until editing ends.
+                const order = new Map(previous.map((session, index) => [session.id, index]))
+                return sorted.sort((a, b) => (order.get(a.id) ?? previous.length) - (order.get(b.id) ?? previous.length))
+              })
               const display = () => projectDisplay(project(), projects.projects())
               const subtitle = () => display().hint
               const sessionDot = (sessionID: string) => runtime.sessionDot(sessionID)
@@ -315,52 +322,51 @@ export function Sidebar() {
                     <Show when={sessions().length === 0}>
                       <div class="tree-empty nested">暂无会话</div>
                     </Show>
-                    <For each={sessions()}>
+                    <KeyedList each={sessions()} by={(session) => session.id}>
                       {(session) => (
                         <div
                           class="tree-session"
                           classList={{
-                            active: projects.selectedSessionId() === session.id,
-                            draft: isLocalDraft(session),
+                            active: projects.selectedSessionId() === session().id,
+                            draft: isLocalDraft(session()),
                           }}
                         >
                           <Show
-                            when={editingId() !== session.id}
+                            when={editingId() !== session().id}
                             fallback={
                               <input
                                 ref={(element) => {
                                   element.value = editingValue()
-                                  element.focus()
-                                  element.select()
+                                  queueMicrotask(() => { if (element.isConnected) { element.focus({ preventScroll: true }); element.select() } })
                                 }}
                                 class="tree-rename"
                                 onInput={(event) => setEditingValue(event.currentTarget.value)}
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter") {
                                     event.preventDefault()
-                                    commitRename(session)
+                                    commitRename(session())
                                   } else if (event.key === "Escape") {
                                     event.stopPropagation()
                                     setEditingId(null)
                                   }
                                 }}
-                                onBlur={() => commitRename(session)}
+                                onBlur={() => commitRename(session())}
                               />
                             }
                           >
                             <button
                               type="button"
                               class="tree-session-main"
-                              onContextMenu={(event) => openSessionMenu(event, session)}
-                              onClick={() => void projects.selectSession(session)}
+                              onContextMenu={(event) => openSessionMenu(event, session())}
+                              onClick={() => void projects.selectSession(session())}
                             >
-                              <Show when={isLocalDraft(session)}>
+                              <Show when={isLocalDraft(session())}>
                                 <span class="tree-draft-icon" title="未提交的草稿">
                                   <SidebarIcon name="pencil" />
                                 </span>
                               </Show>
-                              <span class="truncate">{sessionLabel(session)}</span>
-                              <Show when={sessionDot(session.id)}>
+                              <span class="truncate">{sessionLabel(session())}</span>
+                              <Show when={sessionDot(session().id)}>
                                 {(kind) => (
                                   <span
                                     class="session-dot"
@@ -378,12 +384,12 @@ export function Sidebar() {
                           </Show>
                         </div>
                       )}
-                    </For>
+                    </KeyedList>
                   </TreeCollapse>
                 </div>
               )
             }}
-          </Index>
+          </KeyedList>
         </Show>
       </div>
 

@@ -1,0 +1,50 @@
+diff --git a/packages/opencode/src/terminal/client.ts b/packages/opencode/src/terminal/client.ts
+index de83bde61a..a242f78b77 100644
+--- a/packages/opencode/src/terminal/client.ts
++++ b/packages/opencode/src/terminal/client.ts
+@@ -196,7 +196,7 @@ export async function start(
+       rows: 32,
+       name: "xterm-256color",
+       env: Object.fromEntries(
+-        Object.entries({ ...env, TERM: "xterm-256color", PAGER: "cat", GIT_PAGER: "cat" })
++        Object.entries({ ...env, PYTHONUNBUFFERED: env.PYTHONUNBUFFERED ?? "1", TERM: "xterm-256color", PAGER: "cat", GIT_PAGER: "cat" })
+           .filter((item): item is [string, string] => typeof item[1] === "string"),
+       ),
+     })
+diff --git a/packages/opencode/src/tool/shell.ts b/packages/opencode/src/tool/shell.ts
+index f1e7c99f61..6c034838d5 100644
+--- a/packages/opencode/src/tool/shell.ts
++++ b/packages/opencode/src/tool/shell.ts
+@@ -614,7 +614,8 @@ export const ShellTool = Tool.define(
+                   /If not specified, commands will time out after \d+ms\./g,
+                   "If omitted, commands have no execution deadline.",
+                 ) +
+-                "\nIn Coda, commands run in managed terminals. Unspecified timeout means no execution deadline. The initial wait defaults to 10 seconds; wait_ms controls only the next check. If still running, use shell_wait with task_id and cursor until completion. Never claim success while a command is running. Use non-interactive install flags; interactive terminal input is unavailable."
++                "\nIn Coda, commands run in managed terminals. Unspecified timeout means no execution deadline. The initial wait defaults to 10 seconds; wait_ms controls only the next check. If still running, use shell_wait with task_id and cursor until completion. Never claim success while a command is running. Use non-interactive install flags; interactive terminal input is unavailable.\n" +
++                "For long downloads, installs, builds, clones, and data processing, prefer commands that report real progress or incremental logs to stdout/stderr. For file downloads use curl -L --progress-bar --show-error -o <file> <url> (avoid -s/--silent), or wget --progress=bar:force; keep the response body out of terminal logs. Use git clone/fetch --progress where appropriate. Avoid quiet flags and redirecting both output streams to files or /dev/null when live progress is useful. For scripts, flush real stage or item-count updates (python -u or flush=True); preserve machine-readable stdout and report progress on stderr. Do not invent percentages or add fake heartbeat output. A command with no output is intentionally omitted from the terminal viewer. Do not rerun or cancel an existing command just to add progress; inspect its actual state and use progress output for subsequent operations."
+               : prompt.description,
+           parameters: prompt.parameters,
+           execute: (params: Parameters, ctx: Tool.Context): Effect.Effect<Tool.ExecuteResult> =>
+diff --git a/packages/opencode/test/terminal/managed.test.ts b/packages/opencode/test/terminal/managed.test.ts
+index f88f0b276f..1adb2040e5 100644
+--- a/packages/opencode/test/terminal/managed.test.ts
++++ b/packages/opencode/test/terminal/managed.test.ts
+@@ -72,6 +72,18 @@ test("managed commands have a usable TERM and disable interactive pagers", async
+   expect(done.status).toBe("completed")
+   expect(output(done)).toContain("xterm-256color|cat|cat")
+ })
++test("Python stage output is visible before a long command finishes", async () => {
++  const python = Bun.which("python3")
++  if (!python || process.platform === "win32" || process.env.PYTHONUNBUFFERED !== undefined) return
++  const info = await command(`"${python}" -c 'import sys,time; sys.stdout.write("stage 1"); time.sleep(30)'`, "python-progress")
++  try {
++    const deadline = Date.now() + 5000
++    let current = info
++    while (!output(current).includes("stage 1") && Date.now() < deadline) current = await Client.wait(info.id, 50)
++    expect(current.status).toBe("running")
++    expect(output(current)).toContain("stage 1")
++  } finally { await Client.cancel(info.id) }
++})
+ test("git log completes unattended in a managed PTY even when Git enables a pager", async () => {
+   if (process.platform === "win32") return
+   const init = await command(

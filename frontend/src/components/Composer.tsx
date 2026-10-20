@@ -47,7 +47,7 @@ export function Composer() {
 
   const resize = () => {
     if (!area) return
-    if (!runtime.composer()) {
+    if (!area.value) {
       area.style.height = ""
       return
     }
@@ -55,19 +55,13 @@ export function Composer() {
     area.style.height = `${Math.min(area.scrollHeight, COMPOSER_MAX_HEIGHT)}px`
   }
 
-  createEffect(() => {
-    runtime.composer()
-    queueMicrotask(resize)
-  })
-
   // textarea 不用 value 绑定做受控组件：Solid 每次输入都回写 node.value 会
   // 重置光标并打断 IME 组合，导致 "" 自动配对、智能引号变成 ”” 之类的乱码。
   // 只有外部改动（发送清空、恢复草稿等）且不在组合输入中时才回写 DOM。
   createEffect(() => {
     const next = runtime.composer()
-    if (!area || composing || area.value === next) return
-    area.value = next
-    resize()
+    if (area && !composing && area.value !== next) area.value = next
+    queueMicrotask(() => { if (area?.isConnected) resize() })
   })
 
   const onCompositionEnd = () => {
@@ -83,7 +77,7 @@ export function Composer() {
 
   onMount(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.isComposing) return
+      if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return
       const target = event.target as HTMLElement | null
       if (target?.closest(".dialog-overlay, .context-menu, .model-menu")) return
       if (target?.closest("input, textarea, select") && !target.closest(".composer")) return
@@ -91,6 +85,18 @@ export function Composer() {
     }
     document.addEventListener("keydown", onKey)
     onCleanup(() => document.removeEventListener("keydown", onKey))
+    // A terminal/plan sidebar changes line wrapping even when the draft does
+    // not change. Refit before paint so text does not clip then jump on typing.
+    if (typeof ResizeObserver !== "undefined") {
+      let width = root.clientWidth
+      const observer = new ResizeObserver(() => {
+        if (root.clientWidth === width) return
+        width = root.clientWidth
+        resize()
+      })
+      observer.observe(root)
+      onCleanup(() => observer.disconnect())
+    }
     if (isTauri()) {
       let disposed = false
       let unlisten: (() => void) | undefined
@@ -139,7 +145,7 @@ export function Composer() {
 
   const insertNewline = () => {
     if (!area) return
-    area.focus()
+    area.focus({ preventScroll: true })
     const start = area.selectionStart ?? area.value.length
     const end = area.selectionEnd ?? start
     const inserted = typeof document.execCommand === "function" && document.execCommand("insertText", false, "\n")

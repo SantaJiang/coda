@@ -2,6 +2,7 @@ import { Show } from "solid-js"
 import { isTerminalRunning } from "../lib/api"
 import type { Terminals } from "../lib/terminals"
 import { terminalStatusLabel } from "../lib/terminals"
+import { shellWaitLabel } from "../lib/terminal-policy"
 
 export function TerminalDock(props: { terminals: Terminals }) {
   const t = props.terminals
@@ -44,7 +45,7 @@ export function TerminalDock(props: { terminals: Terminals }) {
         <Show when={t.waiting()}>
           {(info) => (
             <span class="shell-wait" role="status">
-              Waiting for shell {Math.max(0, Math.ceil(((info().nextCheckAt ?? t.now()) - t.now()) / 1000))}s
+              {shellWaitLabel((info().nextCheckAt ?? t.now()) - t.now())}
             </span>
           )}
         </Show>

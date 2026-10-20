@@ -107,7 +107,7 @@ function WorkStep(props: { part: Part; open: boolean; onToggle: () => void; inac
         <Show when={output()}><div class="detail-label">{failed() ? "错误" : "输出"}</div><pre class="work-step-body">{output()}</pre></Show>
         <Show when={running() && !output()}><div class="detail-label">{toolActivity(tool()!)}，等待输出</div></Show>
       </div>}>
-        <div class="work-step-body reasoning-inline"><MarkdownView text={thinking()} /></div>
+        <div class="work-step-body reasoning-inline" role="region" aria-label="思考过程" tabIndex={0}><MarkdownView text={thinking()} /></div>
       </Show>
     </Show>
   </div>

@@ -1,10 +1,11 @@
 {
   "base": "15e63b8d7c45ec78f9c5849e2f2c32b6a9a22f2a",
-  "revision": "06b0918582404288b6697a82f99194925dd5cc57",
+  "revision": "056d9dca7f8a05a5d24956b301e859ce19d440c4",
   "patches": [
     "managed-terminals.patch",
     "desktop-contracts.patch",
     "shell-output-drain.patch",
-    "session-runtime-stability.patch"
+    "session-runtime-stability.patch",
+    "terminal-progress.patch"
   ]
 }

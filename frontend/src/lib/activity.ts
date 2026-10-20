@@ -1,4 +1,4 @@
-import { LONG_TERMINAL_MS } from "./terminal-policy"
+import { LONG_TERMINAL_MS, shellWaitLabel } from "./terminal-policy"
 import type { AssistantMessage, Message, Part, ReasoningPart, ToolPart } from "./types"
 import { basename } from "./path"
 
@@ -232,7 +232,7 @@ function waitLabelFor(part: ToolPart, now: number) {
   if (!Number.isFinite(deadline)) return ""
   const started = "metadata" in part.state ? Number(part.state.metadata?.terminalStartedAt ?? part.state.time?.start) : Number.NaN
   if (Number.isFinite(started) && now - started < LONG_TERMINAL_MS) return ""
-  return `Waiting for shell ${Math.max(0, Math.ceil((deadline - now) / 1000))}s`
+  return shellWaitLabel(deadline - now)
 }
 
 function withDetail(verb: string, detail: string) {

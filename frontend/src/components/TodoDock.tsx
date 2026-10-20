@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from "solid-js"
+import { Index, Show, createMemo } from "solid-js"
 import { Icon } from "./Icon"
 import { useChrome, useRuntime } from "../store/app"
 import { ChromeDrag, WindowControls } from "./WindowChrome"
@@ -34,14 +34,14 @@ export function TodoDock(props: { embedded?: boolean } = {}) {
           <div class="plan-unfinished" role="status">计划仍有 {todos().filter((todo) => todo.status === "pending" || todo.status === "in_progress").length} 项未完成</div>
         </Show>
         <ol class="plan-list">
-          <For each={todos()}>
+          <Index each={todos()}>
             {(todo, index) => (
-              <li classList={{ done: todo.status === "completed", active: runtime.busy() && todo.status === "in_progress" }}>
-                <span class="plan-index">{index() + 1}</span>
-                <span class="plan-text">{todo.content}</span>
+              <li classList={{ done: todo().status === "completed", active: runtime.busy() && todo().status === "in_progress" }}>
+                <span class="plan-index">{index + 1}</span>
+                <span class="plan-text">{todo().content}</span>
               </li>
             )}
-          </For>
+          </Index>
         </ol>
       </div>
     </Show>

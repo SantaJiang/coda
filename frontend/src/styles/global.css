@@ -993,7 +993,6 @@ button.ctx-pill:hover {
   margin-top: 2px;
   font-size: var(--font-chat);
   line-height: 1.4em;
-  animation: work-fade-in 220ms ease;
 }
 
 .work-status-head {
@@ -1229,7 +1228,6 @@ button.ctx-pill:hover {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  animation: work-fade-in 200ms ease;
 }
 
 .work-step-head {
@@ -1324,15 +1322,15 @@ button.ctx-pill:hover {
 }
 
 .work-step-body.reasoning-inline {
-  background: transparent;
-  padding: 0 0 4px;
+  padding: 10px 12px;
   color: var(--text-muted);
-  max-height: none;
+  max-height: min(320px, 40vh);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .worked-for {
   margin: 0 0 12px;
-  animation: work-fade-in 280ms ease;
 }
 
 .worked-for-body {
@@ -1349,7 +1347,6 @@ button.ctx-pill:hover {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg-elevated);
-  animation: work-fade-in 280ms ease;
 }
 
 .changed-files-head {
@@ -1524,6 +1521,11 @@ button.ctx-pill:hover {
 
 .composer-region > .context-bar {
   margin-top: -3px;
+}
+
+.composer-region.draft-composer-region {
+  margin-block: auto;
+  padding-block: 24px;
 }
 
 .queue-dock {
@@ -2950,6 +2952,7 @@ button.ctx-pill:hover {
 .terminal-output { position: relative; min-height: 100px; flex: 1; display: flex; flex-direction: column; padding: 0 8px 8px; }
 .terminal-canvas { flex: 1; min-height: 80px; overflow: hidden; border-radius: 5px; }
 .terminal-notice { color: var(--text-muted); font-size: 11px; padding: 6px 10px; overflow-wrap: anywhere; }
+.terminal-command { flex-shrink: 0; max-height: 96px; overflow: auto; margin: 0; padding: 8px 2px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); font: 11px/1.5 Menlo, Consolas, monospace; }
 .terminal-follow { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); }
 .terminal-earlier { align-self: center; margin-bottom: 5px; }
 

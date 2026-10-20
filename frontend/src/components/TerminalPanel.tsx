@@ -73,6 +73,8 @@ export function TerminalOutput(props: {
   let host!: HTMLDivElement
   let terminal: GhosttyTerminal | undefined
   let disposed = false
+  let updatingOutput = false
+  let replaying = false
   let disconnect: (() => void) | undefined
   let earliest = 0,
     cursor = 0,
@@ -82,6 +84,8 @@ export function TerminalOutput(props: {
   const [error, setError] = createSignal("")
   const [earlier, setEarlier] = createSignal(false)
   const [loading, setLoading] = createSignal(false)
+  const [ready, setReady] = createSignal(false)
+  const [hasOutput, setHasOutput] = createSignal(false)
   const [following, setFollowing] = createSignal(initialScroll <= 1)
   const theme = useTheme()
   const colors = () =>
@@ -105,13 +109,25 @@ export function TerminalOutput(props: {
   const write = (frame: TerminalLog) => {
     if (!terminal || disposed) return
     if (frame.truncated) {
-      terminal.writeln("\r\n[更早的输出已轮转]\r\n")
       decoder = new TextDecoder()
     }
     const bytes = Uint8Array.from(atob(frame.data), (char) => char.charCodeAt(0))
-    const text = decoder.decode(bytes, { stream: !frame.ended })
+    const text = (frame.truncated ? "\r\n[更早的输出已轮转]\r\n" : "") + decoder.decode(bytes, { stream: !frame.ended })
     // Ghostty's WASM allocator does not accept zero-length writes (heartbeats have no output).
-    if (text) terminal.write(text)
+    if (text) {
+      const hold = ready() && !following() && !replaying
+      const viewport = hold ? terminal.getViewportY() : 0
+      const lines = hold ? terminal.getScrollbackLength() : 0
+      updatingOutput = true
+      try {
+        // Ghostty.write always jumps to the bottom. Restore the inspected
+        // buffer line before paint, including newly appended scrollback rows.
+        terminal.write(text)
+        if (hold) terminal.scrollToLine(viewport + Math.max(0, terminal.getScrollbackLength() - lines))
+      } finally { updatingOutput = false }
+      setHasOutput(true)
+      if (hold) props.onScroll(terminal.getViewportY())
+    }
     cursor = frame.cursor
     baseCursor = frame.baseCursor
     if (following()) terminal.scrollToBottom()
@@ -130,30 +146,40 @@ export function TerminalOutput(props: {
     try {
       const start = Math.max(baseCursor, earliest - 64 * 1024)
       const end = cursor
+      const frames: TerminalLog[] = []
+      let next = start
+      // Replay at most 2 MiB at a time; the scrollback itself is bounded too.
+      const replayEnd = Math.min(end, start + 2 * 1024 * 1024)
+      while (next < replayEnd && !disposed) {
+        const frame = await client.log(
+          props.directory,
+          props.sessionID,
+          props.info.id,
+          next,
+          Math.min(64 * 1024, replayEnd - next),
+        )
+        if (frame.cursor <= next) throw new Error("未能读取更早日志，请重试")
+        frames.push(frame)
+        next = frame.cursor
+      }
+      if (disposed) return
+      // Keep the current screen intact while fetching, then replay in one turn.
+      replaying = true
+      setFollowing(false)
       terminal.reset()
       decoder = new TextDecoder()
       earliest = start
       cursor = start
-      // Replay at most 2 MiB at a time; the scrollback itself is bounded too.
-      const replayEnd = Math.min(end, start + 2 * 1024 * 1024)
-      while (cursor < replayEnd && !disposed)
-        write(
-          await client.log(
-            props.directory,
-            props.sessionID,
-            props.info.id,
-            cursor,
-            Math.min(64 * 1024, replayEnd - cursor),
-          ),
-        )
+      for (const frame of frames) write(frame)
       terminal.scrollToTop()
-      setFollowing(false)
       setEarlier(start > baseCursor)
-      if (!disposed) connect()
+      props.onScroll(terminal.getViewportY())
     } catch (e) {
-      setError(String(e))
+      if (!disposed) setError(String(e))
     } finally {
+      replaying = false
       setLoading(false)
+      if (!disposed) connect()
     }
   }
   onMount(() => {
@@ -171,6 +197,9 @@ export function TerminalOutput(props: {
           scrollback: 20000,
           theme: colors(),
         })
+        // Ghostty.open calls focus immediately AND on a timer. This read-only
+        // viewer must never move focus or scroll the window away from Composer.
+        terminal.focus = () => {}
         terminal.open(host)
         // Ghostty marks its host editable by default. A viewer must also disable
         // that browser editing surface, otherwise WebKit draws an insertion caret.
@@ -181,6 +210,10 @@ export function TerminalOutput(props: {
         terminal.textarea?.setAttribute("readonly", "")
         terminal.textarea?.setAttribute("tabindex", "-1")
         terminal.textarea?.setAttribute("aria-hidden", "true")
+        if (terminal.textarea) {
+          const focus = terminal.textarea.focus.bind(terminal.textarea)
+          terminal.textarea.focus = (options) => focus({ ...options, preventScroll: true })
+        }
         terminal.attachCustomKeyEventHandler((event) => {
           if (!event.metaKey && !event.ctrlKey) return false
           const key = event.key.toLowerCase()
@@ -198,7 +231,7 @@ export function TerminalOutput(props: {
         const observer = new ResizeObserver(() => fit.fit())
         observer.observe(host)
         const scroll = terminal.onScroll(() => {
-          if (!terminal) return
+          if (!terminal || updatingOutput || replaying) return
           const value = terminal.getViewportY()
           setFollowing(value <= 1)
           props.onScroll(value)
@@ -212,6 +245,7 @@ export function TerminalOutput(props: {
         earliest = initial.start
         setEarlier(initial.start > initial.baseCursor)
         write(initial)
+        setReady(true)
         if (initialScroll > 1) terminal.scrollLines(-initialScroll)
         connect()
       } catch (e) {
@@ -228,6 +262,14 @@ export function TerminalOutput(props: {
   })
   return (
     <div class="terminal-output">
+      <pre class="terminal-command">$ {props.info.command}</pre>
+      <Show when={!error() && !hasOutput()}>
+        <div class="terminal-notice" role="status">
+          {!ready() ? "正在加载终端输出…" : isTerminalRunning(props.info)
+            ? "命令运行中，暂未产生输出（静默命令不会显示进度）"
+            : `${terminalStatusLabel(props.info)}，命令未产生输出`}
+        </div>
+      </Show>
       <Show when={earlier()}>
         <button class="terminal-earlier" disabled={loading()} onClick={() => void loadEarlier()}>
           {loading() ? "加载中…" : "加载更早日志"}

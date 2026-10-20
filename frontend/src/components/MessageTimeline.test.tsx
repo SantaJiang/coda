@@ -70,3 +70,34 @@ it("preserves the reading anchor when a layout-generated scroll arrives before R
     expect(scroller.scrollTop).toBe(400)
   } finally { dispose(); container.remove() }
 })
+
+it("restores a historical reading position after delayed session details arrive", () => {
+  let resize!: ResizeObserverCallback
+  vi.stubGlobal("requestAnimationFrame", () => 1)
+  vi.stubGlobal("cancelAnimationFrame", () => {})
+  vi.stubGlobal("ResizeObserver", class { constructor(callback: ResizeObserverCallback) { resize = callback } observe() {} disconnect() {} })
+  const [messages, setMessages] = createSignal<import("../lib/types").Message[]>([])
+  const [view, setView] = createSignal({ ...emptyTimelineView(), following: false, top: 400 })
+  const runtime = {
+    timelineView: view, updateTimelineView: (patch: Partial<TimelineViewState>) => setView({ ...view(), ...patch }),
+    messages, partsByMessage: () => ({}), status: () => ({ type: "idle" }), busy: () => false, stopping: () => false,
+    settling: () => false, stoppedTurnID: () => undefined, stoppedTurns: () => ({}),
+    pendingPermissions: () => [], pendingQuestions: () => [], sessionError: () => "", syncError: () => "",
+  } as unknown as RuntimeApi
+  const host = document.createElement("div")
+  document.body.append(host)
+  const dispose = render(() => <StoreProviders runtime={runtime} projects={{ selectedSessionId: () => "history", connection: () => "connected" } as ProjectApi}
+    models={{ nameFor: () => "model" } as ModelApi} chrome={{} as ChromeApi}><MessageTimeline /></StoreProviders>, host)
+  try {
+    const scroller = host.querySelector<HTMLDivElement>(".timeline")!
+    expect(view().top).toBe(400)
+    resize([], {} as ResizeObserver)
+    expect(view().top).toBe(400)
+    setMessages([{ id: "user", role: "user", sessionID: "history", time: { created: 1 } }])
+    Object.defineProperties(scroller, { scrollHeight: { value: 1200 }, clientHeight: { value: 200 } })
+    resize([], {} as ResizeObserver)
+    expect(scroller.scrollTop).toBe(400)
+    expect(view().top).toBe(400)
+    expect(view().following).toBe(false)
+  } finally { dispose(); host.remove() }
+})

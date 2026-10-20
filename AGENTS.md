@@ -75,6 +75,9 @@ git -C backend apply ../patches/backend/<name>.patch
 | `desktop-contracts.patch` | core 环境变量、构建入口、终端 HTTP Schema 与测试 | 优先读取 Coda 环境变量并兼容旧名；为终端信息、日志和控制响应建立明确契约，使用共享测试样本验证跨语言结构。 |
 | `shell-output-drain.patch` | `packages/opencode/src/tool/shell.ts` 与工具测试 | 快速命令退出后，在有界等待内排空输出流，避免进程已成功但最后一段输出丢失。 |
 | `session-runtime-stability.patch` | 全局配置 HTTP、会话重试、托管终端与回归测试 | 配置写入返回前完成实例清理，防止延迟清理中断新回复；供应商重试等待每次最多一分钟；无人交互终端禁用分页器并提供有效 TERM；上下文整理前后按真实用户轮次关联终端、停止和恢复。 |
+| `terminal-progress.patch` | Shell 工具提示、托管终端环境与回归测试 | 长任务优先输出真实进度、阶段或增量日志；下载避免静默参数，Python 默认关闭输出缓冲，不伪造进度，不为补进度重跑已有任务。 |
+
+`terminal-progress.patch` 的后续同步规则：默认保留并重新应用进度输出指引和 Python 输出缓冲改动，避免被后端升级冲掉。若远程更新直接调整了相同的进度输出或 Python 缓冲逻辑，**对应项以远程实现为准**，删除或缩减本地补丁中被替代的部分，不再强行覆盖远程实现；远程未涉及的其他部分继续保留。逐项检查实际逻辑，不能仅因同一文件有变化就丢掉整个补丁。这是本补丁对上述冲突合并流程的例外；调整后同步更新补丁清单，并通过 `bun run backend:check` 和相关测试验证。
 
 `patches/backend/manifest.json` 记录补丁重建基准 `base`、已提交源码的 `revision`（省略时为 base）与补丁应用顺序。`bun run backend:prepare` 会在干净基准上应用这些补丁；已应用时核对内容，不覆盖未知改动。前四个历史补丁已包含在当前基准提交中，不重复应用。后端源码提交后保留 base 与补丁系列以验证内容，并将 revision 和父仓库 gitlink 更新到该提交；已含补丁的源码不会重复应用。启动和打包入口都执行这一检查，保证干净检出的发布源码与本地一致。升级后端时必须同步更新基准与清单。
 

@@ -1,4 +1,5 @@
-import { For, Show, createMemo } from "solid-js"
+import { Show, createMemo } from "solid-js"
+import { KeyedList } from "./KeyedList"
 import { useRuntime } from "../store/app"
 import { Icon } from "./Icon"
 
@@ -18,13 +19,13 @@ export function QueueDock() {
       <div class="queue-dock">
         <div class="queue-title">{items().length} Queued Message</div>
         <div class="queue-list">
-          <For each={items()}>
+          <KeyedList each={items()} by={(item) => item.id}>
             {(item) => (
               <div class="queue-row">
-                <div class="queue-row-text" title={preview(item.text, item.attachments.map((file) => file.filename))}>
+                <div class="queue-row-text" title={preview(item().text, item().attachments.map((file) => file.filename))}>
                   {preview(
-                    item.text,
-                    item.attachments.map((file) => file.filename),
+                    item().text,
+                    item().attachments.map((file) => file.filename),
                   )}
                 </div>
                 <div class="queue-row-actions">
@@ -33,7 +34,7 @@ export function QueueDock() {
                     class="icon-btn"
                     title="立即发送"
                     aria-label="立即发送"
-                    onClick={() => void runtime.sendQueuedNow(item.id)}
+                    onClick={() => void runtime.sendQueuedNow(item().id)}
                   >
                     <Icon name="paper-plane" />
                   </button>
@@ -42,7 +43,7 @@ export function QueueDock() {
                     class="icon-btn"
                     title="编辑"
                     aria-label="编辑"
-                    onClick={() => runtime.editQueued(item.id)}
+                    onClick={() => runtime.editQueued(item().id)}
                   >
                     <Icon name="pencil" />
                   </button>
@@ -51,14 +52,14 @@ export function QueueDock() {
                     class="icon-btn"
                     title="删除"
                     aria-label="删除"
-                    onClick={() => runtime.removeQueued(item.id)}
+                    onClick={() => runtime.removeQueued(item().id)}
                   >
                     <Icon name="trash" />
                   </button>
                 </div>
               </div>
             )}
-          </For>
+          </KeyedList>
         </div>
       </div>
     </Show>

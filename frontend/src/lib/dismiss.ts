@@ -14,13 +14,17 @@ export function useDismissable(options: {
       options.onClose()
     }
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && options.active()) options.onClose()
+      if (event.key === "Escape" && !event.defaultPrevented && options.active()) {
+        // Consume dismissal before the composer's Escape-to-stop listener.
+        event.preventDefault()
+        options.onClose()
+      }
     }
     document.addEventListener("pointerdown", onPointer)
-    document.addEventListener("keydown", onKey)
+    document.addEventListener("keydown", onKey, true)
     onCleanup(() => {
       document.removeEventListener("pointerdown", onPointer)
-      document.removeEventListener("keydown", onKey)
+      document.removeEventListener("keydown", onKey, true)
     })
   })
 }

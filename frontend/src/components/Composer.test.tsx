@@ -66,6 +66,15 @@ it("keeps the stop button usable while files are still being read", () => {
   expect(abort).toHaveBeenCalledOnce()
 })
 
+it("does not stop a session for an Escape already consumed by a menu", () => {
+  const abort = vi.fn()
+  const { area } = setup(undefined, { busy: () => true, abort })
+  const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })
+  event.preventDefault()
+  area.dispatchEvent(event)
+  expect(abort).not.toHaveBeenCalled()
+})
+
 it("falls back to native clipboard files then inserts plain text at the selected caret", async () => {
   native.active = true
   const { area, paste, text, importAttachments } = setup()

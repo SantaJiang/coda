@@ -1,6 +1,7 @@
 import { render } from "solid-js/web"
-import { createSignal } from "solid-js"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { Show, createSignal, onCleanup } from "solid-js"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { defaultTerminalClient } from "./terminal-client"
 import { useTerminals, isLongTerminal, LONG_TERMINAL_MS } from "./terminals"
 import { listTerminals, terminalLog, terminalControl, type TerminalInfo } from "./api"
 
@@ -10,6 +11,7 @@ vi.mock("./api", async (original) => ({
   terminalControl: vi.fn(),
 }))
 const cleanups: (() => void)[] = []
+beforeEach(() => vi.spyOn(defaultTerminalClient, "log").mockResolvedValue({ data: btoa("real output"), start: 0, cursor: 11, baseCursor: 0, endCursor: 11, truncated: false, status: "running" }))
 afterEach(() => {
   cleanups.splice(0).forEach((cleanup) => cleanup())
   vi.useRealTimers()
@@ -25,12 +27,36 @@ const task = (id: string): TerminalInfo => ({
   startedAt: Date.now() - LONG_TERMINAL_MS - 1000,
   lastOutputAt: Date.now(),
   status: "running",
-  cursor: 0,
+  cursor: 1,
   baseCursor: 0,
 })
-const flush = () => new Promise<void>((resolve) => queueMicrotask(() => queueMicrotask(resolve)))
+const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
 describe("session terminal ownership", () => {
+  it("keeps an open terminal mounted when stop/send refreshes the same session metadata", async () => {
+    vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [task("stable")] })
+    const [session, setSession] = createSignal({ id: "one", updated: 1 })
+    const [project, setProject] = createSignal({ path: "/tmp/stable-panel", updated: 1 })
+    let model!: ReturnType<typeof useTerminals>
+    let mounts = 0, unmounts = 0
+    const Panel = () => { mounts++; onCleanup(() => unmounts++); return <div /> }
+    cleanups.push(render(() => {
+      model = useTerminals(() => project().path, () => session().id)
+      return <Show when={model.view().open && model.visible().length > 0}><Panel /></Show>
+    }, document.createElement("div")))
+    await flush()
+    model.open("stable")
+    const items = model.items()
+    const requests = vi.mocked(listTerminals).mock.calls.length
+    setSession({ id: "one", updated: 2 })
+    setProject({ path: "/tmp/stable-panel", updated: 2 })
+    expect(model.items()).toBe(items)
+    expect(model.selected()?.id).toBe("stable")
+    expect(model.view().open).toBe(true)
+    expect(mounts).toBe(1)
+    expect(unmounts).toBe(0)
+    expect(vi.mocked(listTerminals).mock.calls.length).toBe(requests)
+  })
   it("does not auto-open on launch, and closing the panel preserves the running terminal", async () => {
     vi.mocked(listTerminals).mockResolvedValue({
       backendID: "backend",
@@ -127,6 +153,40 @@ describe("terminal output response", () => {
 
 
 describe("long terminal visibility", () => {
+  it("omits silent tasks from the dock and rejects direct viewer requests until real output arrives", async () => {
+    vi.useFakeTimers()
+    const silent = { ...task("silent"), cursor: 2 }
+    vi.mocked(defaultTerminalClient.log).mockResolvedValue({ data: btoa("\r\n"), start: 0, cursor: 2, baseCursor: 0, endCursor: 2, truncated: false, status: "running" })
+    vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [silent] })
+    let model!: ReturnType<typeof useTerminals>
+    cleanups.push(render(() => { model = useTerminals(() => "/tmp/silent", () => "one"); return null }, document.createElement("div")))
+    await flush()
+    expect(model.visible()).toEqual([])
+    model.open("silent")
+    window.dispatchEvent(new CustomEvent("coda:open-terminal", { detail: "silent" }))
+    expect(model.view().open).toBe(false)
+    vi.mocked(defaultTerminalClient.log).mockResolvedValue({ data: btoa("progress"), start: 2, cursor: 12, baseCursor: 0, endCursor: 12, truncated: false, status: "running" })
+    vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [{ ...silent, cursor: 12 }] })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(model.visible().map((info) => info.id)).toEqual(["silent"])
+    expect(model.view().open).toBe(false)
+    model.open("silent")
+    expect(model.view().open).toBe(true)
+  })
+  it("keeps the inspected terminal selected when another command becomes the running task", async () => {
+    vi.useFakeTimers()
+    const first = task("inspected"), second = task("new-task")
+    vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [first] })
+    let model!: ReturnType<typeof useTerminals>
+    cleanups.push(render(() => { model = useTerminals(() => "/tmp/selected-stable", () => "one"); return null }, document.createElement("div")))
+    await flush()
+    expect(model.selected()?.id).toBe("inspected")
+    vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [{ ...first, status: "completed", endedAt: Date.now() }, second] })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(model.selected()?.id).toBe("inspected")
+    model.open("new-task")
+    expect(model.selected()?.id).toBe("new-task")
+  })
   it("does not promote fast commands, and keeps completed long commands visible", () => {
     const start = 1_000_000
     const info = { ...task("time"), startedAt: start }

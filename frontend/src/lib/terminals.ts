@@ -1,9 +1,10 @@
-import { createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
 import { LONG_TERMINAL_MS } from "./terminal-policy"
 export { LONG_TERMINAL_MS } from "./terminal-policy"
 import { isTerminalRunning } from "./api"
 import type { TerminalInfo } from "./terminal-contracts"
 import { defaultTerminalClient, type TerminalClient } from "./terminal-client"
+import { createTerminalOutputProbe } from "./terminal-output"
 
 type View = {
   open: boolean
@@ -27,6 +28,7 @@ function load(key: string): View {
       return {
         ...blank(),
         ...saved,
+        open: false,
         width: Math.max(260, Math.min(700, Number(saved.width) || 420)),
       }
   } catch {}
@@ -41,21 +43,39 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
   const [view, setView] = createSignal(blank())
   const [error, setError] = createSignal("")
   const [now, setNow] = createSignal(Date.now())
-  const key = () => `${directory() ?? ""}:${sessionID() ?? ""}`
+  const snapshots = new Map<string, TerminalInfo[]>()
+  const probes = new Map<string, { cursor: number; read: ReturnType<typeof createTerminalOutputProbe> }>()
+  const [withOutput, setWithOutput] = createSignal<ReadonlySet<string>>(new Set())
+  const canView = (info: TerminalInfo) => isLongTerminal(info, now()) && withOutput().has(info.id)
+  const key = createMemo(() => JSON.stringify([directory() ?? "", sessionID() ?? ""]))
+  const storageKey = () => `${directory() ?? ""}:${sessionID() ?? ""}`
+  const pendingViews = new Map<string, View>()
+  let persistTimer: number | undefined
+  const persistViews = () => {
+    for (const [key, value] of pendingViews) {
+      try { localStorage.setItem(`coda.terminalView:${key}`, JSON.stringify(value)) } catch {}
+    }
+    pendingViews.clear()
+  }
+  onCleanup(() => { window.clearTimeout(persistTimer); persistViews() })
   const patch = (next: Partial<View>) => {
     const value = { ...view(), ...next }
     setView(value)
-    views.set(key(), value)
-    try {
-      localStorage.setItem(`coda.terminalView:${key()}`, JSON.stringify(value))
-    } catch {}
+    views.set(storageKey(), value)
+    // Drag/scroll events can arrive every frame. Keep them in memory now and
+    // persist after the gesture rather than synchronously writing each frame.
+    pendingViews.set(storageKey(), value)
+    window.clearTimeout(persistTimer)
+    persistTimer = window.setTimeout(persistViews, 120)
   }
   let refreshCurrent: (() => Promise<void>) | undefined
-  createEffect(() => {
+  // Session metadata changes on stop/send. Only a different identity should
+  // clear the list and remount the terminal (which also used to steal focus).
+  createEffect(on(key, () => {
     const dir = directory(),
       id = sessionID(),
-      currentKey = key()
-    setItems([])
+      currentKey = storageKey()
+    setItems(snapshots.get(key()) ?? [])
     setError("")
     setView(load(currentKey))
     if (!dir || !id || id.startsWith("draft")) return
@@ -67,8 +87,24 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
       try {
         const data = await client.list(dir, id)
         if (!disposed) {
+          snapshots.delete(key())
+          snapshots.set(key(), data.items)
+          if (snapshots.size > 32) snapshots.delete(snapshots.keys().next().value!)
           setItems(data.items)
           setError("")
+          // A silent PTY still echoes its startup newline. Inspect actual log
+          // content once, and retry only when more bytes arrive. Never add fake
+          // progress merely to make a terminal eligible for the viewer.
+          await Promise.allSettled(data.items.filter((info) => isLongTerminal(info) && info.cursor > 0 && !withOutput().has(info.id)).map(async (info) => {
+            const probe = probes.get(info.id) ?? { cursor: 0, read: createTerminalOutputProbe() }
+            if (probe.cursor >= info.cursor) return
+            const frame = await client.log(dir, id, info.id, probe.cursor, 64 * 1024)
+            if (disposed) return
+            if (frame.truncated) probe.read = createTerminalOutputProbe()
+            if (probe.read(frame.data)) setWithOutput((current) => new Set([...current, info.id]))
+            probe.cursor = frame.cursor
+            probes.set(info.id, probe)
+          }))
         }
       } catch (e) {
         if (!disposed) setError(e instanceof Error ? e.message : "终端状态同步失败")
@@ -84,19 +120,22 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
       window.clearInterval(timer)
       if (refreshCurrent === refresh) refreshCurrent = undefined
     })
-  })
+  }))
   const tick = window.setInterval(() => setNow(Date.now()), 250)
   onCleanup(() => window.clearInterval(tick))
-  const visible = createMemo(() => items().filter((info) => !info.hidden && isLongTerminal(info, now())))
-  const selected = createMemo(
-    () =>
+  const visible = createMemo(() => items().filter((info) => !info.hidden && canView(info)))
+  const selected = createMemo<TerminalInfo | undefined>(
+    (previous) =>
       visible().find((info) => info.id === view().selected) ??
+      visible().find((info) => info.id === previous?.id) ??
       visible().find(isTerminalRunning) ??
       visible()[visible().length - 1],
   )
   const open = (id?: string) => {
-    if (id && items().some((info) => info.id === id && info.hidden)) void action(id, "show")
-    patch({ open: true, tab: "terminal", selected: id ?? selected()?.id })
+    const info = id ? items().find((info) => info.id === id) : selected()
+    if (!info || !canView(info)) return
+    if (info.hidden) void action(info.id, "show")
+    patch({ open: true, tab: "terminal", selected: info.id })
   }
   const reveal = (event: Event) => {
     const id = (event as CustomEvent<string>).detail

@@ -1,4 +1,5 @@
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { Show, createMemo, createSignal } from "solid-js"
+import { KeyedList } from "./KeyedList"
 import type { ChangedFile } from "../lib/activity"
 import { highlightDiff, languageFromPath } from "../lib/highlight"
 
@@ -51,32 +52,32 @@ export function ChangedFiles(props: { files: ChangedFile[] }) {
           </button>
         </header>
         <div class="changed-files-list">
-          <For each={props.files}>
+          <KeyedList each={props.files} by={(file) => file.path}>
             {(file) => (
-              <div class="changed-file" classList={{ open: review() || openPath() === file.path }}>
+              <div class="changed-file" classList={{ open: review() || openPath() === file().path }}>
                 <button
                   type="button"
                   class="changed-file-row"
-                  title={file.path}
-                  onClick={() => toggleFile(file.path)}
+                  title={file().path}
+                  onClick={() => toggleFile(file().path)}
                 >
-                  <FileGlyph name={file.name} />
-                  <span class="changed-file-name">{file.name}</span>
+                  <FileGlyph name={file().name} />
+                  <span class="changed-file-name">{file().name}</span>
                   <span class="work-diff">
-                    <Show when={file.added > 0}>
-                      <span class="work-diff-add">+{file.added}</span>
+                    <Show when={file().added > 0}>
+                      <span class="work-diff-add">+{file().added}</span>
                     </Show>
-                    <Show when={file.removed > 0}>
-                      <span class="work-diff-del">-{file.removed}</span>
+                    <Show when={file().removed > 0}>
+                      <span class="work-diff-del">-{file().removed}</span>
                     </Show>
                   </span>
                 </button>
-                <Show when={(review() || openPath() === file.path) && file.patch}>
-                  <PatchView path={file.path} patch={file.patch ?? ""} />
+                <Show when={(review() || openPath() === file().path) && file().patch}>
+                  <PatchView path={file().path} patch={file().patch ?? ""} />
                 </Show>
               </div>
             )}
-          </For>
+          </KeyedList>
         </div>
       </section>
     </Show>

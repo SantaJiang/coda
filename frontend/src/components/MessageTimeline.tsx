@@ -20,6 +20,7 @@ function SessionTimeline(props: { sessionID: string }) {
   let disposed = false
   let userScroll = false
   let draggingScrollbar = false
+  let restoreTop = saved.following ? undefined : saved.top
   let anchor: { key: string; offset: number; turnID?: string } | undefined
   const turns = createMemo(() => conversationTurns(runtime.messages(), runtime.partsByMessage(), {
     status: runtime.status(), sending: runtime.busy() && !runtime.status(), stopping: runtime.stopping(),
@@ -34,7 +35,7 @@ function SessionTimeline(props: { sessionID: string }) {
     return Boolean(scroller && selection && !selection.isCollapsed && selection.rangeCount && selection.getRangeAt(0).intersectsNode(scroller))
   }
   const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
-  const save = () => runtime.updateTimelineView({ following: following(), top: scroller.scrollTop }, props.sessionID)
+  const save = () => runtime.updateTimelineView({ following: following(), top: restoreTop ?? scroller.scrollTop }, props.sessionID)
   const captureAnchor = (preferred?: HTMLElement) => {
     if (!scroller) return
     const top = scroller.getBoundingClientRect().top
@@ -42,39 +43,50 @@ function SessionTimeline(props: { sessionID: string }) {
     const visible = preferred ?? entries.find((element) => element.getBoundingClientRect().bottom > top)
     if (visible) anchor = { key: visible.dataset.scrollKey ?? visible.dataset.entryKey!, offset: visible.getBoundingClientRect().top - top, turnID: visible.closest<HTMLElement>("[data-turn-id]")?.dataset.turnId }
   }
+  const applyLayout = () => {
+    frame = undefined
+    if (disposed) return
+    if (restoreTop !== undefined) {
+      // Session detail may arrive after mount. Do not overwrite its saved
+      // reading position with the empty/loading timeline's clamped zero.
+      if (!inner.querySelector("[data-turn-id]")) return
+      scroller.scrollTop = restoreTop
+      restoreTop = undefined
+    } else if (following() && !selectedText()) scroller.scrollTop = scroller.scrollHeight
+    else if (anchor) {
+      const element = [...scroller.querySelectorAll<HTMLElement>("[data-entry-key], [data-scroll-key], [data-block-key]")].find((element) => (element.dataset.scrollKey ?? element.dataset.entryKey) === anchor!.key)
+        ?? [...scroller.querySelectorAll<HTMLElement>("[data-turn-id]")].find((element) => element.dataset.turnId === anchor!.turnID)
+      if (element) scroller.scrollTop += element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.offset
+    }
+    save()
+    captureAnchor()
+  }
   const scheduleLayout = () => {
     if (frame !== undefined) return
-    frame = requestAnimationFrame(() => {
-      frame = undefined
-      if (disposed) return
-      if (following() && !selectedText()) scroller.scrollTop = scroller.scrollHeight
-      else if (anchor) {
-        const element = [...scroller.querySelectorAll<HTMLElement>("[data-entry-key], [data-scroll-key], [data-block-key]")].find((element) => (element.dataset.scrollKey ?? element.dataset.entryKey) === anchor!.key)
-          ?? [...scroller.querySelectorAll<HTMLElement>("[data-turn-id]")].find((element) => element.dataset.turnId === anchor!.turnID)
-        if (element) scroller.scrollTop += element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.offset
-      }
-      save()
-      captureAnchor()
-    })
+    frame = requestAnimationFrame(applyLayout)
   }
-  const pause = () => { captureAnchor(); setFollowing(false); save() }
+  const pause = () => { restoreTop = undefined; captureAnchor(); setFollowing(false); save() }
   const latest = () => {
     window.getSelection()?.removeAllRanges()
     anchor = undefined
+    restoreTop = undefined
     setFollowing(true)
     save()
     scheduleLayout()
   }
   onMount(() => {
-    if (saved.top !== undefined && !saved.following) scroller.scrollTop = saved.top
-    else scroller.scrollTop = scroller.scrollHeight
-    captureAnchor()
+    applyLayout()
     const onSelection = () => { if (selectedText()) pause() }
     const releaseScrollbar = () => { draggingScrollbar = false }
     document.addEventListener("selectionchange", onSelection)
     document.addEventListener("pointerup", releaseScrollbar)
     document.addEventListener("pointercancel", releaseScrollbar)
-    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(scheduleLayout)
+    // ResizeObserver runs before paint. Correct anchors there immediately,
+    // otherwise a sidebar resize or a completed turn paints one shifted frame.
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => {
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      applyLayout()
+    })
     observer?.observe(inner)
     observer?.observe(scroller)
     onCleanup(() => {

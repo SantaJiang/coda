@@ -1,4 +1,5 @@
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
+import { KeyedList } from "./KeyedList"
 import { changedFiles, formatDuration } from "../lib/activity"
 import type { CompactionEntry, ConversationEntry, ConversationTurn } from "../lib/conversation"
 import { conversationBlocks, visibleConversationPart as isVisiblePart } from "../lib/conversation"
@@ -137,7 +138,7 @@ function UserBubble(props: { message: Message; parts: Part[] }) {
     <article class="turn" data-role="user">
       <div class="turn-stack">
         <div class="user-bubble">
-          <For each={parts()}>{(part) => <MessagePartView part={part} plain />}</For>
+          <KeyedList each={parts()} by={(part) => part.id}>{(part) => <MessagePartView part={part()} plain />}</KeyedList>
         </div>
         <MessageMeta
           agent={user().agent}
