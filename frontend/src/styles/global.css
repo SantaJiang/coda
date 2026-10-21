@@ -324,6 +324,9 @@ a,
   padding: 2px 8px 12px;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
+  /* Fade only the scrolled edge; the first row stays crisp at scrollTop 0. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--tree-fade-size, 0px));
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--tree-fade-size, 0px));
 }
 
 .tree:hover {
@@ -473,8 +476,9 @@ a,
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: var(--nav-text);
-  font-size: 14px;
+  color: color-mix(in srgb, var(--nav-text) 90%, var(--nav-bg));
+  font-size: 13px;
+  font-weight: 400;
   text-align: left;
 }
 
@@ -521,7 +525,8 @@ a,
   border-radius: 10px;
   background: var(--bg-elevated);
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 400;
   outline: none;
 }
 

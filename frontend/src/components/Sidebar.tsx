@@ -214,7 +214,13 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div class="tree">
+      <div
+        class="tree"
+        onScroll={(event) => {
+          const tree = event.currentTarget
+          tree.style.setProperty("--tree-fade-size", `${Math.min(12, Math.max(0, tree.scrollTop))}px`)
+        }}
+      >
         <Show
           when={projects.projects().length > 0}
           fallback={<div class="tree-empty">点击右上角 + 添加一个代码项目</div>}
