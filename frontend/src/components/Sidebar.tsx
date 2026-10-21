@@ -11,6 +11,7 @@ import { ChromeDrag } from "./WindowChrome"
 
 const COLLAPSE_MS = 200
 const COLLAPSE_EASE = "cubic-bezier(0.16, 1, 0.3, 1)"
+const SESSION_PREVIEW_COUNT = 5
 
 const SIDEBAR_ICON_PATHS = {
   plus: "M12 5v14M5 12h14",
@@ -227,6 +228,7 @@ export function Sidebar() {
         >
           <KeyedList each={projects.projects()} by={(project) => project.id}>
             {(project) => {
+              const [showAllSessions, setShowAllSessions] = createSignal(false)
               const sessions = createMemo((previous: Session[] = []) => {
                 const sorted = [...projects.sessionsFor(project().path)].sort(
                   (a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0),
@@ -237,11 +239,20 @@ export function Sidebar() {
                 const order = new Map(previous.map((session, index) => [session.id, index]))
                 return sorted.sort((a, b) => (order.get(a.id) ?? previous.length) - (order.get(b.id) ?? previous.length))
               })
+              // Keep the active conversation visible, including restored older
+              // sessions and sessions whose recency changes while renaming.
+              const visibleSessionCount = createMemo(() => {
+                if (showAllSessions()) return sessions().length
+                const selectedIndex = sessions().findIndex((session) => session.id === projects.selectedSessionId())
+                const editingIndex = sessions().findIndex((session) => session.id === editingId())
+                return Math.max(SESSION_PREVIEW_COUNT, selectedIndex + 1, editingIndex + 1)
+              })
+              const visibleSessions = createMemo(() => sessions().slice(0, visibleSessionCount()))
               const display = () => projectDisplay(project(), projects.projects())
               const subtitle = () => display().hint
               const sessionDot = (sessionID: string) => runtime.sessionDot(sessionID)
               return (
-                <div class="tree-project" classList={{ missing: !!project().missing }}>
+                <div class="tree-project" classList={{ missing: !!project().missing, expanded: project().expanded }}>
                   <div class="tree-root" classList={{ active: projects.selectedProject()?.id === project().id && (!project().expanded || !projects.selectedSessionId()) }}>
                     <button
                       type="button"
@@ -328,7 +339,7 @@ export function Sidebar() {
                     <Show when={sessions().length === 0}>
                       <div class="tree-empty nested">暂无会话</div>
                     </Show>
-                    <KeyedList each={sessions()} by={(session) => session.id}>
+                    <KeyedList each={visibleSessions()} by={(session) => session.id}>
                       {(session) => (
                         <div
                           class="tree-session"
@@ -363,6 +374,7 @@ export function Sidebar() {
                             <button
                               type="button"
                               class="tree-session-main"
+                              title={sessionLabel(session())}
                               onContextMenu={(event) => openSessionMenu(event, session())}
                               onClick={() => void projects.selectSession(session())}
                             >
@@ -391,6 +403,16 @@ export function Sidebar() {
                         </div>
                       )}
                     </KeyedList>
+                    <Show when={sessions().length > SESSION_PREVIEW_COUNT && (showAllSessions() || visibleSessionCount() < sessions().length)}>
+                      <button
+                        type="button"
+                        class="tree-show-more"
+                        aria-expanded={showAllSessions()}
+                        onClick={() => setShowAllSessions((value) => !value)}
+                      >
+                        {showAllSessions() ? "收起显示" : "展开显示"}
+                      </button>
+                    </Show>
                   </TreeCollapse>
                 </div>
               )

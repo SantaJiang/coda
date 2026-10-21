@@ -318,6 +318,7 @@ a,
 }
 
 .tree {
+  --tree-label-inset: 32px;
   flex: 1 1 0;
   min-height: 0;
   overflow: auto;
@@ -334,7 +335,11 @@ a,
 }
 
 .tree-project {
-  margin-bottom: 6px;
+  margin-bottom: 0;
+}
+
+.tree-project.expanded {
+  margin-bottom: 12px;
 }
 
 .tree-empty {
@@ -344,7 +349,7 @@ a,
 }
 
 .tree-empty.nested {
-  padding-left: 12px;
+  padding-left: var(--tree-label-inset);
 }
 
 .tree-root,
@@ -362,8 +367,8 @@ a,
   align-items: center;
   gap: 2px;
   box-sizing: border-box;
-  min-height: 32px;
-  padding: 4px 6px 4px 10px;
+  min-height: 30px;
+  padding: 3px 6px 3px 8px;
   font-size: 14px;
 }
 
@@ -372,7 +377,7 @@ a,
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-height: 24px;
   padding: 0;
   border: none;
@@ -470,14 +475,14 @@ a,
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  height: 31px;
-  min-height: 31px;
-  padding: 0 12px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 10px 0 var(--tree-label-inset);
   border: none;
   border-radius: 10px;
   background: transparent;
   color: color-mix(in srgb, var(--nav-text) 90%, var(--nav-bg));
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
   text-align: left;
 }
@@ -518,16 +523,35 @@ a,
 }
 
 .tree-rename {
+  box-sizing: border-box;
   width: 100%;
-  height: 31px;
-  padding: 0 12px 0 35px;
+  height: 32px;
+  padding: 0 10px 0 var(--tree-label-inset);
   border: 1px solid var(--focus-border);
   border-radius: 10px;
   background: var(--bg-elevated);
   color: var(--text);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
   outline: none;
+}
+
+.tree-show-more {
+  display: block;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 var(--tree-label-inset);
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--nav-muted);
+  font-size: 13px;
+  text-align: left;
+}
+
+.tree-show-more:hover {
+  background: var(--nav-hover);
+  color: var(--nav-text);
 }
 
 .tree-collapse {
