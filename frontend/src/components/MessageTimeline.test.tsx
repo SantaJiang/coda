@@ -204,13 +204,13 @@ it.each(["wheel", "touch", "keyboard", "pointer"])("never shows jump-latest for 
       : new Event("touchstart", { bubbles: true })
     scene.scroller.dispatchEvent(event)
     expect(scene.view().following).toBe(false)
-    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).toBeNull()
     scene.host.querySelector<HTMLButtonElement>(".rollback")!.click()
     scene.host.querySelector<HTMLButtonElement>(".dialog-actions .stop")!.click()
     scene.layout()
     expect(scene.runtime.revertToMessage).toHaveBeenCalledWith("u1")
     expect(scene.host.querySelector("[data-turn-id]")).toBeNull()
-    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).toBeNull()
   } finally { scene.dispose() }
 })
 
@@ -222,12 +222,12 @@ it.each([0, 400, 640, 679])("hides jump-latest without a scroll event when conte
     scene.scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true }))
     scene.scroller.scrollTop = 0
     scene.scroller.dispatchEvent(new Event("scroll"))
-    expect(scene.host.querySelector(".jump-latest")).not.toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).not.toBeNull()
     // Rollback, process collapse or completion removes content. Browsers need
     // not emit scroll when a scroller already at zero becomes shorter.
     scene.height(height)
     scene.layout()
-    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).toBeNull()
     // Inspection remains paused so a later expansion keeps its anchor.
     expect(scene.view().following).toBe(false)
   } finally { scene.dispose() }
@@ -237,18 +237,18 @@ it("rechecks jump-latest when viewport grows and while paused content grows agai
   const scene = mountScrollScenario({ height: 1400, savedTop: 100 })
   try {
     scene.send()
-    expect(scene.host.querySelector(".jump-latest")).not.toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).not.toBeNull()
     scene.viewport(1400)
     scene.layout()
-    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).toBeNull()
     scene.height(2200)
     scene.layout()
-    expect(scene.host.querySelector(".jump-latest")).not.toBeNull()
-    scene.host.querySelector<HTMLButtonElement>(".jump-latest")!.click()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).not.toBeNull()
+    scene.host.querySelector<HTMLButtonElement>(".jump-latest:not([disabled])")!.click()
     scene.layout()
     expect(scene.view().following).toBe(true)
     expect(scene.scroller.scrollTop).toBe(800)
-    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).toBeNull()
   } finally { scene.dispose() }
 })
 
@@ -261,13 +261,13 @@ it("hides jump-latest at the bottom even when selection pauses following", () =>
     vi.spyOn(window, "getSelection").mockReturnValue(selection as unknown as Selection)
     document.dispatchEvent(new Event("selectionchange"))
     expect(scene.view().following).toBe(false)
-    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).toBeNull()
     scene.scroller.scrollTop = 100
     scene.scroller.dispatchEvent(new Event("scroll"))
-    expect(scene.host.querySelector(".jump-latest")).not.toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).not.toBeNull()
     scene.scroller.scrollTop = 800
     scene.scroller.dispatchEvent(new Event("scroll"))
-    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).toBeNull()
   } finally { scene.dispose() }
 })
 
@@ -276,9 +276,9 @@ it("does not show jump-latest from a stale paused view while an empty session lo
   try {
     scene.layout()
     expect(scene.view().top).toBe(400)
-    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).toBeNull()
     scene.send()
     expect(scene.scroller.scrollTop).toBe(0)
-    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    expect(scene.host.querySelector(".jump-latest:not([disabled])")).toBeNull()
   } finally { scene.dispose() }
 })

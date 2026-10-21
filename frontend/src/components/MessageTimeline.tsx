@@ -16,6 +16,7 @@ function SessionTimeline(props: { sessionID: string }) {
   const saved = runtime.timelineView()
   const [following, setFollowing] = createSignal(saved.following)
   const [awayFromBottom, setAwayFromBottom] = createSignal(false)
+  const showLatest = () => !following() && awayFromBottom()
   const [clock, setClock] = createSignal(Date.now())
   let frame: number | undefined
   let disposed = false
@@ -145,6 +146,7 @@ function SessionTimeline(props: { sessionID: string }) {
         </Show>
       </div>
     </div>
-    <Show when={!following() && awayFromBottom()}><button type="button" class="jump-latest" onClick={latest}>回到最新 ↓</button></Show>
+    <button type="button" class="jump-latest" classList={{ "is-visible": showLatest() }}
+      disabled={!showLatest()} aria-hidden={!showLatest()} onClick={latest}>回到最新 ↓</button>
   </div>
 }
