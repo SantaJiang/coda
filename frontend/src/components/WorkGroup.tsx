@@ -10,12 +10,12 @@ import { StatusText, type StatusLine } from "./StatusText"
 export function WorkGroup(props: {
   entries: ConversationEntry[]
   open: boolean
-  onToggle: () => void
+  onToggle: (target: HTMLElement) => void
   inactive: boolean
   active: boolean
   statusLine: StatusLine
   stepOpen: Record<string, boolean>
-  onToggleStep: (key: string) => void
+  onToggleStep: (key: string, target: HTMLElement) => void
   onRevealThoughts: (keys: string[]) => void
 }) {
   const parts = createMemo(() => props.entries.flatMap((entry) => entry.kind === "part" ? [entry.part] : []))
@@ -32,7 +32,7 @@ export function WorkGroup(props: {
   })
   return <div class="work-group" classList={{ open: props.open, live: props.active, failed: failures() > 0 }}>
     <button type="button" class={statusLeads() ? "work-head work-status-head" : "work-head"}
-      disabled={!expandable()} aria-expanded={expandable() ? props.open : undefined} onClick={props.onToggle}>
+      disabled={!expandable()} aria-expanded={expandable() ? props.open : undefined} onClick={(event) => props.onToggle(event.currentTarget)}>
       <span class="work-summary">
         <Show when={statusLeads()} fallback={<span class="work-summary-text">{summary()}</span>}>
           <StatusText line={props.statusLine} active />
@@ -47,7 +47,7 @@ export function WorkGroup(props: {
         <For each={props.entries.map((entry) => entry.key)}>{(key) => {
           const part = () => (map().get(key)! as { part: Part }).part
           return <div data-entry-key={key}>
-            <WorkStep part={part()} headless={thoughtOnly()} open={props.stepOpen[key] === true || thoughtOnly()} onToggle={() => props.onToggleStep(key)} inactive={props.inactive} />
+            <WorkStep part={part()} headless={thoughtOnly()} open={props.stepOpen[key] === true || thoughtOnly()} onToggle={(target) => props.onToggleStep(key, target)} inactive={props.inactive} />
           </div>
         }}</For>
       </div>
@@ -58,7 +58,7 @@ export function WorkGroup(props: {
   </div>
 }
 
-function WorkStep(props: { part: Part; open: boolean; onToggle: () => void; inactive: boolean; headless?: boolean }) {
+function WorkStep(props: { part: Part; open: boolean; onToggle: (target: HTMLElement) => void; inactive: boolean; headless?: boolean }) {
   const presentation = createMemo(() => {
     if (props.part.type === "reasoning") {
       const duration = reasoningDurationMs([props.part])
@@ -88,7 +88,7 @@ function WorkStep(props: { part: Part; open: boolean; onToggle: () => void; inac
     return ""
   }
   return <div class="work-step" classList={{ open: props.open, running: running(), failed: failed() }}>
-    <button type="button" class="work-step-head" onClick={props.onToggle} disabled={!expandable()}
+    <button type="button" class="work-step-head" onClick={(event) => props.onToggle(event.currentTarget)} disabled={!expandable()}
       style={{ display: props.headless ? "none" : undefined }}
       aria-expanded={expandable() ? props.open : undefined}>
       <span class="work-step-label">

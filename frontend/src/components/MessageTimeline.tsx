@@ -15,6 +15,7 @@ function SessionTimeline(props: { sessionID: string }) {
   let inner!: HTMLDivElement
   const saved = runtime.timelineView()
   const [following, setFollowing] = createSignal(saved.following)
+  const [awayFromBottom, setAwayFromBottom] = createSignal(false)
   const [clock, setClock] = createSignal(Date.now())
   let frame: number | undefined
   let disposed = false
@@ -35,11 +36,15 @@ function SessionTimeline(props: { sessionID: string }) {
     return Boolean(scroller && selection && !selection.isCollapsed && selection.rangeCount && selection.getRangeAt(0).intersectsNode(scroller))
   }
   const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+  // Inspection pauses following even on a single screen. Show the shortcut
+  // only while the viewport actually leaves content below, and remeasure on
+  // layout changes because rollback/collapse need not dispatch a scroll event.
+  const measureBottom = () => setAwayFromBottom(scroller.clientHeight > 0 && !nearBottom())
   const save = () => runtime.updateTimelineView({ following: following(), top: restoreTop ?? scroller.scrollTop }, props.sessionID)
   const captureAnchor = (preferred?: HTMLElement) => {
     if (!scroller) return
     const top = scroller.getBoundingClientRect().top
-    const entries = [...scroller.querySelectorAll<HTMLElement>("[data-entry-key], [data-block-key]")]
+    const entries = [...scroller.querySelectorAll<HTMLElement>("[data-entry-key], [data-scroll-key], [data-block-key]")]
     const visible = preferred ?? entries.find((element) => element.getBoundingClientRect().bottom > top)
     if (visible) anchor = { key: visible.dataset.scrollKey ?? visible.dataset.entryKey!, offset: visible.getBoundingClientRect().top - top, turnID: visible.closest<HTMLElement>("[data-turn-id]")?.dataset.turnId }
   }
@@ -49,7 +54,7 @@ function SessionTimeline(props: { sessionID: string }) {
     if (restoreTop !== undefined) {
       // Session detail may arrive after mount. Do not overwrite its saved
       // reading position with the empty/loading timeline's clamped zero.
-      if (!inner.querySelector("[data-turn-id]")) return
+      if (!inner.querySelector("[data-turn-id]")) { measureBottom(); return }
       scroller.scrollTop = restoreTop
       restoreTop = undefined
     } else if (following() && !selectedText()) scroller.scrollTop = scroller.scrollHeight
@@ -58,6 +63,7 @@ function SessionTimeline(props: { sessionID: string }) {
         ?? [...scroller.querySelectorAll<HTMLElement>("[data-turn-id]")].find((element) => element.dataset.turnId === anchor!.turnID)
       if (element) scroller.scrollTop += element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.offset
     }
+    measureBottom()
     save()
     captureAnchor()
   }
@@ -65,7 +71,7 @@ function SessionTimeline(props: { sessionID: string }) {
     if (frame !== undefined) return
     frame = requestAnimationFrame(applyLayout)
   }
-  const pause = () => { restoreTop = undefined; captureAnchor(); setFollowing(false); save() }
+  const pause = () => { restoreTop = undefined; captureAnchor(); setFollowing(false); measureBottom(); save() }
   const latest = () => {
     window.getSelection()?.removeAllRanges()
     anchor = undefined
@@ -115,6 +121,7 @@ function SessionTimeline(props: { sessionID: string }) {
         else if (event.target === scroller) { draggingScrollbar = true; userScroll = true; pause() }
       }}
       onScroll={() => {
+        measureBottom()
         // Layout shrinkage and our own scrollTop writes also dispatch scroll.
         // They must not replace the anchor before the next layout correction.
         if (userScroll || draggingScrollbar) {
@@ -129,12 +136,15 @@ function SessionTimeline(props: { sessionID: string }) {
         </Show>
         <For each={turns().map((turn) => turn.id)}>{(id) => <ChatTurnView turn={byID().get(id)!}
           partsByMessage={runtime.partsByMessage()} following={following() && !selectedText()}
-          onInspect={pause} beforeLayout={() => captureAnchor(document.activeElement?.closest<HTMLElement>("[data-scroll-key], [data-entry-key]") ?? undefined)} afterLayout={scheduleLayout} />}</For>
+          onInspect={pause}
+          // Mouse activation on macOS need not focus the button. Anchor the
+          // toggled row itself so its new content grows below it.
+          beforeLayout={(target) => captureAnchor(target?.closest<HTMLElement>("[data-scroll-key], [data-entry-key]") ?? undefined)} afterLayout={scheduleLayout} />}</For>
         <Show when={runtime.syncError()}>
           <div class="connection-notice">同步回复失败：{runtime.syncError()} <button type="button" class="ghost-btn" onClick={() => void runtime.resync()}>重新同步回复</button></div>
         </Show>
       </div>
     </div>
-    <Show when={!following()}><button type="button" class="jump-latest" onClick={latest}>回到最新 ↓</button></Show>
+    <Show when={!following() && awayFromBottom()}><button type="button" class="jump-latest" onClick={latest}>回到最新 ↓</button></Show>
   </div>
 }

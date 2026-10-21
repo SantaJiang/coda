@@ -101,3 +101,184 @@ it("restores a historical reading position after delayed session details arrive"
     expect(view().following).toBe(false)
   } finally { dispose(); host.remove() }
 })
+
+it("keeps Worked for and earlier content fixed when an unfocused summary expands or collapses", () => {
+  let resize!: ResizeObserverCallback
+  vi.stubGlobal("requestAnimationFrame", () => 1)
+  vi.stubGlobal("cancelAnimationFrame", () => {})
+  vi.stubGlobal("ResizeObserver", class { constructor(callback: ResizeObserverCallback) { resize = callback } observe() {} disconnect() {} })
+  const [view, setView] = createSignal({ ...emptyTimelineView(), following: false, top: 40 })
+  const runtime = {
+    timelineView: view, updateTimelineView: (patch: Partial<TimelineViewState>) => setView({ ...view(), ...patch }),
+    messages: () => [
+      { id: "u1", sessionID: "s1", role: "user", time: { created: 1 } },
+      { id: "a1", sessionID: "s1", role: "assistant", parentID: "u1", time: { created: 2, completed: 1002 }, finish: "stop" },
+    ],
+    partsByMessage: () => ({ a1: [
+      { id: "thought", type: "reasoning", text: "Checking configuration", messageID: "a1", sessionID: "s1", time: { start: 2, end: 1000 } },
+      { id: "answer", type: "text", text: "Configuration complete", messageID: "a1", sessionID: "s1" },
+    ] }),
+    status: () => ({ type: "idle" }), busy: () => false, stopping: () => false, settling: () => false,
+    stoppedTurnID: () => undefined, stoppedTurns: () => ({}), pendingPermissions: () => [], pendingQuestions: () => [],
+    sessionError: () => "", syncError: () => "",
+  } as unknown as RuntimeApi
+  const original = HTMLElement.prototype.getBoundingClientRect
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    if (!this.matches("[data-scroll-key], [data-entry-key]")) return original.call(this)
+    const expanded = view().processOpen.u1 === true
+    const top = (this.matches(".worked-for") ? 160 : 210 + (expanded ? 180 : 0)) - this.closest(".timeline")!.scrollTop
+    return { top, bottom: top + 30, left: 0, right: 700, width: 700, height: 30, x: 0, y: top, toJSON() {} }
+  })
+  const host = document.createElement("div")
+  document.body.append(host)
+  const dispose = render(() => <StoreProviders runtime={runtime} projects={{ selectedSessionId: () => "s1", connection: () => "connected" } as ProjectApi}
+    models={{ nameFor: () => "model" } as ModelApi} chrome={{} as ChromeApi}><MessageTimeline /></StoreProviders>, host)
+  try {
+    const scroller = host.querySelector<HTMLDivElement>(".timeline")!
+    const summary = host.querySelector<HTMLButtonElement>(".worked-for > .work-head")!
+    Object.defineProperties(scroller, { scrollHeight: { value: 1200 }, clientHeight: { value: 600 } })
+    const initialTop = summary.parentElement!.getBoundingClientRect().top
+    expect(document.activeElement).not.toBe(summary)
+    // macOS mouse clicks need not focus buttons; keyboard/assistive clicks also
+    // reach this handler without a pointerdown event.
+    summary.click()
+    resize([], {} as ResizeObserver)
+    expect(view().processOpen.u1).toBe(true)
+    expect(scroller.scrollTop).toBe(40)
+    expect(summary.parentElement!.getBoundingClientRect().top).toBe(initialTop)
+    // A later resize must retain the summary, rather than recapture the answer.
+    resize([], {} as ResizeObserver)
+    summary.click()
+    resize([], {} as ResizeObserver)
+    expect(view().processOpen.u1).toBe(false)
+    expect(scroller.scrollTop).toBe(40)
+    expect(summary.parentElement!.getBoundingClientRect().top).toBe(initialTop)
+    expect(view().following).toBe(false)
+  } finally { dispose(); host.remove() }
+})
+
+function mountScrollScenario(options: { height?: number; viewport?: number; savedTop?: number } = {}) {
+  let height = options.height ?? 400
+  let viewport = options.viewport ?? 600
+  let top = options.savedTop ?? 0
+  let resize!: ResizeObserverCallback
+  let frame: FrameRequestCallback | undefined
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frame = callback; return 1 })
+  vi.stubGlobal("cancelAnimationFrame", () => { frame = undefined })
+  vi.stubGlobal("ResizeObserver", class { constructor(callback: ResizeObserverCallback) { resize = callback } observe() {} disconnect() {} })
+  // Model the browser's scroll clamping, including content/viewport shrinkage.
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("timeline") ? viewport : 0 })
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("timeline") ? Math.max(height, viewport) : 0 })
+  vi.spyOn(Element.prototype, "scrollTop", "get").mockImplementation(() => Math.min(top, Math.max(0, height - viewport)))
+  vi.spyOn(Element.prototype, "scrollTop", "set").mockImplementation((value: number) => { top = Math.max(0, Math.min(value, height - viewport)) })
+  const [messages, setMessages] = createSignal<import("../lib/types").Message[]>([])
+  const [busy, setBusy] = createSignal(false)
+  const [view, setView] = createSignal({ ...emptyTimelineView(), following: options.savedTop === undefined, top })
+  const runtime = {
+    timelineView: view, updateTimelineView: (patch: Partial<TimelineViewState>) => setView({ ...view(), ...patch }),
+    messages, partsByMessage: () => ({}), status: () => ({ type: busy() ? "busy" : "idle" }), busy,
+    stopping: () => false, settling: () => false, stoppedTurnID: () => undefined, stoppedTurns: () => ({}),
+    pendingPermissions: () => [], pendingQuestions: () => [], sessionError: () => "", syncError: () => "",
+    revertToMessage: vi.fn(async () => { height = 0; setMessages([]) }),
+  } as unknown as RuntimeApi
+  const host = document.createElement("div")
+  document.body.append(host)
+  const dispose = render(() => <StoreProviders runtime={runtime} projects={{ selectedSessionId: () => "s1", connection: () => "connected" } as ProjectApi}
+    models={{ nameFor: () => "model" } as ModelApi} chrome={{} as ChromeApi}><MessageTimeline /></StoreProviders>, host)
+  const layout = () => { resize([], {} as ResizeObserver); const callback = frame; frame = undefined; callback?.(0) }
+  const send = () => { setBusy(true); setMessages([{ id: "u1", sessionID: "s1", role: "user", time: { created: 1 } }]); layout() }
+  return { host, view, runtime, layout, send, stop: () => { setBusy(false); layout() },
+    scroller: host.querySelector<HTMLDivElement>(".timeline")!,
+    height: (value: number) => { height = value }, viewport: (value: number) => { viewport = value },
+    dispose: () => { dispose(); host.remove() } }
+}
+
+it.each(["wheel", "touch", "keyboard", "pointer"])("never shows jump-latest for a short sent/stopped turn paused by %s or after rollback", (input) => {
+  const scene = mountScrollScenario()
+  try {
+    scene.send()
+    scene.stop()
+    const event = input === "wheel" ? new WheelEvent("wheel", { deltaY: -100, bubbles: true })
+      : input === "keyboard" ? new KeyboardEvent("keydown", { key: "Home", bubbles: true })
+      : input === "pointer" ? new MouseEvent("pointerdown", { bubbles: true })
+      : new Event("touchstart", { bubbles: true })
+    scene.scroller.dispatchEvent(event)
+    expect(scene.view().following).toBe(false)
+    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    scene.host.querySelector<HTMLButtonElement>(".rollback")!.click()
+    scene.host.querySelector<HTMLButtonElement>(".dialog-actions .stop")!.click()
+    scene.layout()
+    expect(scene.runtime.revertToMessage).toHaveBeenCalledWith("u1")
+    expect(scene.host.querySelector("[data-turn-id]")).toBeNull()
+    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+  } finally { scene.dispose() }
+})
+
+it.each([0, 400, 640, 679])("hides jump-latest without a scroll event when content shrinks to %i pixels", (height) => {
+  const scene = mountScrollScenario({ height: 1400 })
+  try {
+    scene.send()
+    scene.stop()
+    scene.scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true }))
+    scene.scroller.scrollTop = 0
+    scene.scroller.dispatchEvent(new Event("scroll"))
+    expect(scene.host.querySelector(".jump-latest")).not.toBeNull()
+    // Rollback, process collapse or completion removes content. Browsers need
+    // not emit scroll when a scroller already at zero becomes shorter.
+    scene.height(height)
+    scene.layout()
+    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    // Inspection remains paused so a later expansion keeps its anchor.
+    expect(scene.view().following).toBe(false)
+  } finally { scene.dispose() }
+})
+
+it("rechecks jump-latest when viewport grows and while paused content grows again", () => {
+  const scene = mountScrollScenario({ height: 1400, savedTop: 100 })
+  try {
+    scene.send()
+    expect(scene.host.querySelector(".jump-latest")).not.toBeNull()
+    scene.viewport(1400)
+    scene.layout()
+    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    scene.height(2200)
+    scene.layout()
+    expect(scene.host.querySelector(".jump-latest")).not.toBeNull()
+    scene.host.querySelector<HTMLButtonElement>(".jump-latest")!.click()
+    scene.layout()
+    expect(scene.view().following).toBe(true)
+    expect(scene.scroller.scrollTop).toBe(800)
+    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+  } finally { scene.dispose() }
+})
+
+it("hides jump-latest at the bottom even when selection pauses following", () => {
+  const scene = mountScrollScenario({ height: 1400 })
+  try {
+    scene.send()
+    scene.stop()
+    const selection = { isCollapsed: false, rangeCount: 1, getRangeAt: () => ({ intersectsNode: () => true }) }
+    vi.spyOn(window, "getSelection").mockReturnValue(selection as unknown as Selection)
+    document.dispatchEvent(new Event("selectionchange"))
+    expect(scene.view().following).toBe(false)
+    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    scene.scroller.scrollTop = 100
+    scene.scroller.dispatchEvent(new Event("scroll"))
+    expect(scene.host.querySelector(".jump-latest")).not.toBeNull()
+    scene.scroller.scrollTop = 800
+    scene.scroller.dispatchEvent(new Event("scroll"))
+    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+  } finally { scene.dispose() }
+})
+
+it("does not show jump-latest from a stale paused view while an empty session loads", () => {
+  const scene = mountScrollScenario({ height: 0, savedTop: 400 })
+  try {
+    scene.layout()
+    expect(scene.view().top).toBe(400)
+    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+    scene.send()
+    expect(scene.scroller.scrollTop).toBe(0)
+    expect(scene.host.querySelector(".jump-latest")).toBeNull()
+  } finally { scene.dispose() }
+})

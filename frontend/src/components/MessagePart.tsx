@@ -189,15 +189,15 @@ function UserBubble(props: { message: Message; parts: Part[] }) {
   )
 }
 
-function EntryList(props: { entries: ConversationEntry[]; onInspect?: () => void; beforeLayout?: () => void; afterLayout?: () => void }) {
+function EntryList(props: { entries: ConversationEntry[]; onInspect?: () => void; beforeLayout?: (target?: HTMLElement) => void; afterLayout?: () => void }) {
   const runtime = useRuntime()
   const map = createMemo(() => new Map(props.entries.map((entry) => [entry.key, entry])))
   return <For each={props.entries.map((entry) => entry.key)}>{(key) => {
     const entry = () => map().get(key)!
     const open = () => runtime.timelineView().stepOpen[key] === true
-    const toggle = () => {
+    const toggle = (target: HTMLElement) => {
       props.onInspect?.()
-      props.beforeLayout?.()
+      props.beforeLayout?.(target)
       runtime.updateTimelineView({ stepOpen: { ...runtime.timelineView().stepOpen, [key]: !open() } })
       props.afterLayout?.()
     }
@@ -214,15 +214,15 @@ function BlockList(props: {
   active: boolean
   statusLine: StatusLine
   onInspect?: () => void
-  beforeLayout?: () => void
+  beforeLayout?: (target?: HTMLElement) => void
   afterLayout?: () => void
 }) {
   const runtime = useRuntime()
   const blocks = createMemo(() => conversationBlocks(props.entries))
   const map = createMemo(() => new Map(blocks().map((block) => [block.key, block])))
-  const inspect = (change: () => void) => {
+  const inspect = (target: HTMLElement, change: () => void) => {
     props.onInspect?.()
-    props.beforeLayout?.()
+    props.beforeLayout?.(target)
     change()
     props.afterLayout?.()
   }
@@ -233,24 +233,24 @@ function BlockList(props: {
       <EntryList entries={block().entries} onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
     }>
       <div class="conversation-work-block" data-block-key={key} data-scroll-key={key}>
-        <WorkGroup entries={block().entries} open={open()} onToggle={() => inspect(() => runtime.updateTimelineView({ groupOpen: { ...runtime.timelineView().groupOpen, [key]: !open() } }))}
+        <WorkGroup entries={block().entries} open={open()} onToggle={(target) => inspect(target, () => runtime.updateTimelineView({ groupOpen: { ...runtime.timelineView().groupOpen, [key]: !open() } }))}
           inactive={!props.active} active={props.active && blocks()[blocks().length - 1]?.key === key} statusLine={props.statusLine}
           stepOpen={runtime.timelineView().stepOpen}
           onRevealThoughts={(keys) => {
             const opened = runtime.timelineView().stepOpen
             if (keys.some((key) => opened[key] !== true)) runtime.updateTimelineView({ stepOpen: { ...opened, ...Object.fromEntries(keys.map((key) => [key, true])) } })
           }}
-          onToggleStep={(stepKey) => inspect(() => runtime.updateTimelineView({ stepOpen: { ...runtime.timelineView().stepOpen, [stepKey]: runtime.timelineView().stepOpen[stepKey] !== true } }))} />
+          onToggleStep={(stepKey, target) => inspect(target, () => runtime.updateTimelineView({ stepOpen: { ...runtime.timelineView().stepOpen, [stepKey]: runtime.timelineView().stepOpen[stepKey] !== true } }))} />
       </div>
     </Show>
   }}</For>
 }
 
-function CompactionRow(props: { entry: CompactionEntry; open: boolean; onToggle: () => void }) {
+function CompactionRow(props: { entry: CompactionEntry; open: boolean; onToggle: (target: HTMLElement) => void }) {
   const label = () => ({ running: "正在整理上下文", done: "上下文已整理", failed: "上下文整理失败", interrupted: "上下文整理已中断" })[props.entry.status]
   return <div class="compaction-mark" classList={{ open: props.open, failed: props.entry.status === "failed" }}>
     <button type="button" class="work-step-head" disabled={!props.entry.summary && !props.entry.error}
-      aria-expanded={props.open} onClick={props.onToggle}>
+      aria-expanded={props.open} onClick={(event) => props.onToggle(event.currentTarget)}>
       <span>{label()}</span><Show when={props.entry.summary || props.entry.error}><Icon name="chevron-right" class="work-step-caret" /></Show>
     </button>
     <Show when={props.open}>
@@ -260,8 +260,8 @@ function CompactionRow(props: { entry: CompactionEntry; open: boolean; onToggle:
   </div>
 }
 
-function WorkedSummary(props: { durationMs: number; failures: number; open: boolean; onToggle: () => void }) {
-  return <button type="button" class="work-head" onClick={props.onToggle} aria-expanded={props.open}>
+function WorkedSummary(props: { durationMs: number; failures: number; open: boolean; onToggle: (target: HTMLElement) => void }) {
+  return <button type="button" class="work-head" onClick={(event) => props.onToggle(event.currentTarget)} aria-expanded={props.open}>
     <span class="work-summary"><span>Worked for {formatDuration(props.durationMs)}</span>
       <Show when={props.failures}><span class="work-failure">{props.failures} 项失败</span></Show>
       <Icon name="chevron-right" class="work-summary-caret" /></span>
@@ -272,7 +272,7 @@ export function ChatTurnView(props: {
   turn: ConversationTurn
   partsByMessage: Record<string, Part[]>
   following: boolean
-  beforeLayout?: () => void
+  beforeLayout?: (target?: HTMLElement) => void
   afterLayout?: () => void
   onInspect?: () => void
 }) {
@@ -293,9 +293,9 @@ export function ChatTurnView(props: {
     }
   })
   const processOpen = () => runtime.timelineView().processOpen[props.turn.id] === true
-  const toggleProcess = () => {
+  const toggleProcess = (target: HTMLElement) => {
     props.onInspect?.()
-    props.beforeLayout?.()
+    props.beforeLayout?.(target)
     runtime.updateTimelineView({ processOpen: { ...runtime.timelineView().processOpen, [props.turn.id]: !processOpen() } })
     props.afterLayout?.()
   }
@@ -311,9 +311,9 @@ export function ChatTurnView(props: {
           <Show when={grouped()} fallback={<>
             <Show when={props.turn.phase === "done" && props.turn.process.length > 0}>
               <div class="worked-for open" data-scroll-key={`status:${props.turn.id}`}>
-                <WorkedSummary durationMs={props.turn.durationMs} failures={props.turn.failures} open onToggle={() => {
+                <WorkedSummary durationMs={props.turn.durationMs} failures={props.turn.failures} open onToggle={(target) => {
                   props.onInspect?.()
-                  props.beforeLayout?.()
+                  props.beforeLayout?.(target)
                   runtime.updateTimelineView({ processOpen: { ...runtime.timelineView().processOpen, [props.turn.id]: false } })
                   setGrouped(true)
                   props.afterLayout?.()
