@@ -88,6 +88,7 @@ export type AppState = {
   error: string | null
   configuredModels: ConfiguredModel[]
   selectedModelKey: string | null
+  modelDiscoveryReady: boolean
   discoveredModels: SelectableModel[]
   modelMenuOpen: boolean
   modelSettingsOpen: boolean
@@ -149,6 +150,7 @@ export const initialState: AppState = {
   error: null,
   configuredModels: [],
   selectedModelKey: null,
+  modelDiscoveryReady: false,
   discoveredModels: [],
   modelMenuOpen: false,
   modelSettingsOpen: false,

@@ -45,7 +45,7 @@ export function createModelSlice(handle: StoreHandle, config = createBackendConf
   const applyConfiguredModels = async (models: ConfiguredModel[], preferredKey?: string | null) => {
     const extras = menuDiscoveredModels(state.discoveredModels)
     const selectables = mergeSelectables(models, extras)
-    const nextKey = resolveSelectedKey(models, selectables, preferredKey ?? state.selectedModelKey)
+    const nextKey = resolveSelectedKey(models, selectables, preferredKey ?? state.selectedModelKey, state.modelDiscoveryReady)
     setState("configuredModels", models)
     persistSelection(handle, nextKey)
     saveConfiguredModels(models)
@@ -60,6 +60,7 @@ export function createModelSlice(handle: StoreHandle, config = createBackendConf
       const list = await client.listProviders(project?.missing ? undefined : project?.path)
       if (gen !== discoveredGen) return
       const discovered = discoveredFromProviderList(list)
+      setState("modelDiscoveryReady", true)
       setState("discoveredModels", discovered)
       setState("modelVariants", variantsByKey(list))
       const extras = menuDiscoveredModels(discovered)

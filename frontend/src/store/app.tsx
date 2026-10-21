@@ -55,7 +55,7 @@ const defaultPorts: AppPorts = {
 export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
   const client = props.ports?.client ?? defaultPorts.client
   const subscribe = props.ports?.subscribe ?? defaultPorts.subscribe
-  const [state, setState] = createStore<AppState>(initialState)
+  const [state, setState] = createStore<AppState>(structuredClone(initialState))
   const handle: StoreHandle = { state, setState, client }
   const skipQueueFlush: Record<string, boolean> = {}
   const sendAfterIdle: Record<string, QueuedMessage | undefined> = {}
@@ -126,7 +126,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     if (selectedId && selectedId !== last) saveLastProject(selectedId)
     setState("draft", true)
     setState("configuredModels", configured)
-    persistSelection(handle, resolveSelectedKey(configured, mergeSelectables(configured, []), loadSelectedModelKey()))
+    persistSelection(handle, resolveSelectedKey(configured, mergeSelectables(configured, []), loadSelectedModelKey(), state.modelDiscoveryReady))
 
     const hydratedDrafts = loadDraftSessions()
     setState("draftSessionsByProject", hydratedDrafts.draftSessionsByProject)
@@ -192,7 +192,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
       if (patch.models || "selectedModelKey" in patch) {
         const configured = loadConfiguredModels()
         const extras = menuDiscoveredModels(state.discoveredModels)
-        const nextKey = resolveSelectedKey(configured, mergeSelectables(configured, extras), loadSelectedModelKey())
+        const nextKey = resolveSelectedKey(configured, mergeSelectables(configured, extras), loadSelectedModelKey(), state.modelDiscoveryReady)
         setState({ configuredModels: configured, selectedModelKey: nextKey })
         void config.sync().catch(() => undefined)
         bootstrap.invalidate()

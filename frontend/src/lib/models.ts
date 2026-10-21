@@ -338,8 +338,10 @@ export function mergeSelectables(configured: ConfiguredModel[], discovered: Sele
   return [...merged, ...discovered.filter((item) => !seen.has(item.key))]
 }
 
-export function resolveSelectedKey(configured: ConfiguredModel[], selectables: SelectableModel[], stored: string | null) {
+export function resolveSelectedKey(configured: ConfiguredModel[], selectables: SelectableModel[], stored: string | null, discoveryReady = true) {
   if (stored && selectables.some((item) => item.key === stored)) return stored
+  // Free models are discovered asynchronously. An unloaded list cannot invalidate a saved choice.
+  if (!discoveryReady && stored?.startsWith(`${OPENCODE_PROVIDER_ID}/`) && stored.length > OPENCODE_PROVIDER_ID.length + 1) return stored
   const first = configured[0]
   if (first) return modelKey(first.providerID, first.modelID)
   return selectables[0]?.key ?? null
