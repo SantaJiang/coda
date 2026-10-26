@@ -17,7 +17,7 @@ const SESSION_PREVIEW_COUNT = 5
 // with the pixel grid instead of scaling 24px geometry down to 16px.
 const SIDEBAR_ICON_PATHS = {
   plus: "M8.5 3.5v10M3.5 8.5h10",
-  compose: "M7 2.5H5a2.5 2.5 0 0 0-2.5 2.5v6A2.5 2.5 0 0 0 5 13.5h6a2.5 2.5 0 0 0 2.5-2.5V9M10.5 3l2.5 2.5M6.5 7l5-5a1.77 1.77 0 0 1 2.5 2.5l-5 5-3 .5Z",
+  compose: "M7.5 3.5H5a2.5 2.5 0 0 0-2.5 2.5v5a2.5 2.5 0 0 0 2.5 2.5h6a2.5 2.5 0 0 0 2.5-2.5V8.5",
   folder: "M2.5 6.5v-2a1 1 0 0 1 1-1H6l1.5 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-6h11",
   "folder-open": "M2.5 11.5v-7a1 1 0 0 1 1-1H6l1.5 2h5a1 1 0 0 1 1 1M3.5 13.5h8.25a1 1 0 0 0 .95-.68l1.65-5A1 1 0 0 0 13.4 6.5H5.75a1 1 0 0 0-.95.68l-2.25 5a1 1 0 0 0 .95 1.32Z",
   home: "m2 7 6-5 6 5M3.5 6v7.5h9V6M6.5 13.5v-5h3v5",
@@ -43,6 +43,10 @@ function SidebarIcon(props: { name: keyof typeof SIDEBAR_ICON_PATHS; class?: str
       aria-hidden="true"
     >
       <path d={SIDEBAR_ICON_PATHS[props.name]} />
+      <Show when={props.name === "compose"}>
+        {/* A solid nib stays legible at 16px without two antialiased outlines merging. */}
+        <path d="m6 8 5.5-5.5a.707.707 0 0 1 1 1L7 9l-1.5.5Z" fill="currentColor" stroke="none" />
+      </Show>
     </svg>
   )
 }
