@@ -13,27 +13,31 @@ const COLLAPSE_MS = 200
 const COLLAPSE_EASE = "cubic-bezier(0.16, 1, 0.3, 1)"
 const SESSION_PREVIEW_COUNT = 5
 
+// Draw at the rendered size: half-pixel centers keep 1px strokes aligned
+// with the pixel grid instead of scaling 24px geometry down to 16px.
 const SIDEBAR_ICON_PATHS = {
-  plus: "M12 5v14M5 12h14",
-  compose: "M10 3.5H6.5a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h11a3 3 0 0 0 3-3V14M16.5 4a2.475 2.475 0 0 1 3.5 3.5l-8.5 8.5-4 .5 .5-4Z",
-  folder: "M3 8V6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8Zm0 1h18",
-  "folder-open": "M3 18V6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2M5 20h12.5a2 2 0 0 0 1.9-1.4l1.5-5A2 2 0 0 0 19 11H7.5a2 2 0 0 0-1.9 1.4l-2.5 5A1.2 1.2 0 0 0 5 20Z",
-  home: "m3 10 9-7 9 7M5 9v11h14V9M9 20v-7h6v7",
-  warning: "m10.3 4-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01",
-  "ellipsis-h": "M5 12h.01M12 12h.01M19 12h.01",
-  pencil: "m16 3 5 5M4 15l-1 6 6-1L21 8a3.5 3.5 0 0 0-5-5Z",
-  cog: "M10 3h4l.5 2.5 2 1.2L19 6l2 3.5-2 1.7v2l2 1.7-2 3.5-2.5-.7-2 1.2L14 21h-4l-.5-2.1-2-1.2-2.5.7-2-3.5 2-1.7v-2L3 9.5 5 6l2.5.7 2-1.2ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
-  times: "m6 6 12 12M6 18 18 6",
+  plus: "M8.5 3.5v10M3.5 8.5h10",
+  compose: "M7 2.5H5a2.5 2.5 0 0 0-2.5 2.5v6A2.5 2.5 0 0 0 5 13.5h6a2.5 2.5 0 0 0 2.5-2.5V9M10.5 3l2.5 2.5M6.5 7l5-5a1.77 1.77 0 0 1 2.5 2.5l-5 5-3 .5Z",
+  folder: "M2.5 6.5v-2a1 1 0 0 1 1-1H6l1.5 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-6h11",
+  "folder-open": "M2.5 11.5v-7a1 1 0 0 1 1-1H6l1.5 2h5a1 1 0 0 1 1 1M3.5 13.5h8.25a1 1 0 0 0 .95-.68l1.65-5A1 1 0 0 0 13.4 6.5H5.75a1 1 0 0 0-.95.68l-2.25 5a1 1 0 0 0 .95 1.32Z",
+  home: "m2 7 6-5 6 5M3.5 6v7.5h9V6M6.5 13.5v-5h3v5",
+  warning: "m7.13 2.5-6 10.5a1 1 0 0 0 .87 1.5h12a1 1 0 0 0 .87-1.5l-6-10.5a1 1 0 0 0-1.74 0ZM8 6v3.5M8 12h.01",
+  "ellipsis-h": "M3.5 8.5h.01M8.5 8.5h.01M13.5 8.5h.01",
+  pencil: "m10.5 2.5 3 3M3 10l-.5 3.5L6 13l7.5-7.5a2.12 2.12 0 0 0-3-3Z",
+  cog: "M6.5 1.5h3l.5 2 1.5 1 2-.5L15 6.5l-1.5 1v1l1.5 1-1.5 2.5-2-.5-1.5 1-.5 2h-3l-.5-2-1.5-1-2 .5L1 9.5l1.5-1v-1L1 6.5 2.5 4l2 .5 1.5-1ZM10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Z",
+  times: "m4 4 8 8M4 12l8-8",
 } as const
 
 function SidebarIcon(props: { name: keyof typeof SIDEBAR_ICON_PATHS; class?: string }) {
   return (
     <svg
       class={`sidebar-icon ${props.class ?? ""}`}
-      viewBox="0 0 24 24"
+      viewBox="0 0 16 16"
+      width="16"
+      height="16"
       fill="none"
       stroke="currentColor"
-      stroke-width="1.75"
+      stroke-width="1"
       stroke-linecap="round"
       stroke-linejoin="round"
       aria-hidden="true"
