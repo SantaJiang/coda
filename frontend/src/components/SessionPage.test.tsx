@@ -5,7 +5,10 @@ import { StoreProviders } from "../store/ctx"
 import type { ChromeApi, ModelApi, ProjectApi, RuntimeApi } from "../store/contracts"
 import type { Message, Session } from "../lib/types"
 import type { TerminalClient } from "../lib/terminal-client"
+import type { TerminalInfo } from "../lib/terminal-contracts"
 import { SessionPage } from "./SessionPage"
+
+vi.mock("./TerminalPanel", () => ({ default: () => <div class="terminal-panel" /> }))
 
 vi.mock("./MessageTimeline", () => ({ MessageTimeline: () => <div class="timeline-region" /> }))
 vi.mock("./ContextBar", () => ({ ContextBar: () => <div /> }))
@@ -18,7 +21,10 @@ vi.mock("./VariantMenu", () => ({ VariantMenu: () => null }))
 vi.mock("./PermissionMenu", () => ({ PermissionMenu: () => null }))
 vi.mock("./WindowChrome", () => ({ ChromeDrag: (props: { children: unknown }) => props.children, WindowControls: () => null }))
 let dispose: (() => void) | undefined
-afterEach(() => { dispose?.(); document.body.replaceChildren(); localStorage.clear() })
+afterEach(() => { dispose?.(); document.body.replaceChildren(); localStorage.clear(); vi.unstubAllGlobals() })
+
+const frames = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
 it("keeps the same focused composer across draft admission, stop, and shortcut resend", async () => {
   const [session, setSession] = createSignal({ id: "draft:one", title: "新会话", localDraft: true } as Session)
@@ -61,4 +67,72 @@ it("keeps the same focused composer across draft admission, stop, and shortcut r
   expect(send).toHaveBeenCalledTimes(2)
   expect(host.querySelector(".composer textarea")).toBe(area)
   expect(document.activeElement).toBe(area)
+})
+
+function terminalSession() {
+  const now = Date.now()
+  const info: TerminalInfo = {
+    id: "term",
+    sessionID: "aside-real",
+    rootSessionID: "aside-real",
+    command: "bun test",
+    cwd: "/tmp",
+    startedAt: now - 20_000,
+    lastOutputAt: now,
+    status: "running",
+    cursor: 5,
+    baseCursor: 0,
+  }
+  const client = {
+    list: async () => ({ backendID: "test", items: [info] }),
+    log: async () => ({ data: btoa("hello"), start: 0, cursor: 5, baseCursor: 0, endCursor: 5, truncated: false, status: "running" as const }),
+    subscribe: () => () => {},
+    control: async () => {},
+  } as TerminalClient
+  const runtime = {
+    messages: () => [], composer: () => "", setComposer: () => {}, busy: () => false, hasPlan: () => false, todos: () => [],
+    attachments: () => [], attachmentsLoading: () => false, blocked: () => false, stopping: () => false,
+    send: async () => {}, abort: async () => {},
+  } as unknown as RuntimeApi
+  const host = document.createElement("div")
+  document.body.append(host)
+  dispose = render(() => <StoreProviders
+    projects={{ selectedSession: () => ({ id: "aside-real", title: "会话" } as Session), selectedSessionId: () => "aside-real", selectedProject: () => ({ path: `/tmp/aside-${now}` }), error: () => "" } as ProjectApi}
+    runtime={runtime} models={{ selectedModel: () => ({ name: "model" }) } as ModelApi}
+    chrome={{ planPanelDismissed: () => false, overlayOpen: () => false, planMode: () => false, sendShortcut: () => "mod-enter", closePlanPanel: () => {} } as ChromeApi}
+    terminals={client}>
+    <SessionPage />
+  </StoreProviders>, host)
+  return host
+}
+
+it("slides the terminal aside open and keeps it mounted until the close transition ends", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: false }))
+  const host = terminalSession()
+  await flush()
+  const button = host.querySelector<HTMLButtonElement>(".terminal-dock-button")
+  expect(button).not.toBeNull()
+  button!.click()
+  const aside = host.querySelector(".terminal-aside")
+  expect(aside).not.toBeNull()
+  expect(aside!.classList.contains("is-open")).toBe(false)
+  await frames()
+  expect(aside!.classList.contains("is-open")).toBe(true)
+  button!.click()
+  expect(host.querySelector(".terminal-aside")).toBe(aside)
+  expect(aside!.classList.contains("is-open")).toBe(false)
+  aside!.dispatchEvent(new TransitionEvent("transitionend", { propertyName: "width" }))
+  expect(host.querySelector(".terminal-aside")).toBeNull()
+})
+
+it("opens and closes the terminal aside immediately when motion is reduced", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true }))
+  const host = terminalSession()
+  await flush()
+  const button = host.querySelector<HTMLButtonElement>(".terminal-dock-button")!
+  button.click()
+  const aside = host.querySelector(".terminal-aside")
+  expect(aside?.classList.contains("is-open")).toBe(true)
+  host.querySelector<HTMLButtonElement>(".terminal-dock-button")!.click()
+  expect(host.querySelector(".terminal-aside")).toBeNull()
 })
