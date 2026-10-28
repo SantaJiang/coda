@@ -1,4 +1,4 @@
-import { marked } from "marked"
+import { marked, Tokenizer } from "marked"
 import { escapeHtml, highlightCode, inlineKind } from "./highlight"
 import { sanitizeHtml } from "./sanitize"
 
@@ -32,6 +32,32 @@ marked.use({
     url(src: string) {
       if (/^https?:\/\//i.test(src)) return false
       return undefined
+    },
+  },
+})
+
+// 汉字不算空白。**“引用”**、**注意：**后文 这种紧贴标点的写法，
+// 星号开不了也关不上，会原样留在段落里。默认规则失败时，再把贴着 * 的汉字当成空白试一次。
+const cjkChar = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
+const cjkBesideAsterisk = /(?<=\*)[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]|[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}](?=\*)/gu
+
+marked.use({
+  tokenizer: {
+    emStrong(src, maskedSrc, prevChar = "") {
+      const found = Tokenizer.prototype.emStrong.call(this, src, maskedSrc, prevChar)
+      if (found) return found
+      const adjustedPrev = cjkChar.test(prevChar) ? "" : prevChar
+      cjkBesideAsterisk.lastIndex = 0
+      const adjustedMask = maskedSrc.replace(cjkBesideAsterisk, " ")
+      if (adjustedPrev === prevChar && adjustedMask === maskedSrc) return false
+      const token = Tokenizer.prototype.emStrong.call(this, src, adjustedMask, adjustedPrev)
+      if (!token) return false
+      const openRun = token.raw.match(/^\*+|^_+/)?.[0] ?? ""
+      const closeRun = token.raw.match(/\*+$|_+$/)?.[0] ?? ""
+      // 重试若把 *** 拆成一颗星的强调，会留下多余的 *。成对的 ** 后面多出来的星号不算拆开。
+      if (openRun.length !== closeRun.length || openRun[0] !== closeRun[0]) return false
+      if (openRun.length === 1 && src.startsWith(openRun, token.raw.length)) return false
+      return token
     },
   },
 })
