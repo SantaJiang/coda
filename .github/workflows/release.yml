@@ -61,6 +61,12 @@ jobs:
       run:
         shell: bash
     steps:
+      # Patch reconstruction compares source bytes with git blobs (LF).
+      # Apply this before both the parent checkout and submodule checkout.
+      - name: Preserve LF on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
       # GITHUB_TOKEN is scoped to this repo. Fetch the public backend
       # submodule without it, otherwise GitHub treats the request as
       # authenticated and rejects the other repository.
@@ -87,7 +93,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.2"
+          bun-version-file: backend/package.json
 
       - uses: dtolnay/rust-toolchain@stable
 
