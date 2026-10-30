@@ -32,13 +32,26 @@ jobs:
         run: bash ./scripts/ci-should-pack.sh
       - name: Decision
         run: echo "${{ steps.check.outputs.reason }}"
+      # Release assets do not consume the account's Actions artifact quota.
+      # Keep a new release in draft until every platform has uploaded its installer.
+      - name: Prepare release
+        if: steps.check.outputs.should_pack == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          if ! gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release create "v$VERSION" --draft --target "$GITHUB_SHA" \
+              --title "Coda $VERSION" --generate-notes
+          fi
 
   pack:
     name: Pack ${{ matrix.name }}
     needs: gate
     if: needs.gate.outputs.should_pack == 'true'
     permissions:
-      contents: read
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -46,15 +59,12 @@ jobs:
           - name: Windows
             os: windows-latest
             bundles: nsis
-            artifact: coda-windows-x64
           - name: macOS Apple Silicon
             os: macos-14
             bundles: dmg
-            artifact: coda-macos-aarch64
           - name: Linux deb
             os: ubuntu-22.04
             bundles: deb
-            artifact: coda-linux-amd64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     defaults:
@@ -123,14 +133,21 @@ jobs:
         run: bash ./scripts/pack.sh
 
       - name: Upload installers
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          if-no-files-found: error
-          path: |
-            frontend/src-tauri/target/release/bundle/**/*.dmg
-            frontend/src-tauri/target/release/bundle/**/*.exe
-            frontend/src-tauri/target/release/bundle/**/*.deb
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find frontend/src-tauri/target/release/bundle -type f \
+            \( -name '*.dmg' -o -name '*.exe' -o -name '*.deb' \) -print0)
+          if (( ${#files[@]} == 0 )); then
+            echo "::error::No installers found"
+            exit 1
+          fi
+          gh release upload "v$VERSION" "${files[@]}" --clobber
 
   release:
     name: GitHub Release
@@ -140,18 +157,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ needs.gate.outputs.version }}
-          name: Coda ${{ needs.gate.outputs.version }}
-          generate_release_notes: true
-          make_latest: true
-          files: |
-            dist/**/*.dmg
-            dist/**/*.exe
-            dist/**/*.deb
-          fail_on_unmatched_files: true
+      - name: Publish release after all installers are uploaded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: gh release edit "v$VERSION" --draft=false --latest
