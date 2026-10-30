@@ -1,22 +1,37 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { version as bundledVersion } from "../../package.json"
-import { modifierLabel, type SendShortcut } from "../lib/settings"
+import { modifierLabel, type CloseBehavior, type SendShortcut, type StopBehavior, type TaskRecovery } from "../lib/settings"
 import { useChrome } from "../store/app"
 import { useTheme } from "../store/theme"
 import { Icon } from "./Icon"
 
-const CHOICES: Array<{ id: SendShortcut; name: () => string; hint: () => string }> = [
-  {
-    id: "enter",
-    name: () => "Enter",
-    hint: () => `换行使用 ${modifierLabel()}+Enter`,
-  },
-  {
-    id: "mod-enter",
-    name: () => `${modifierLabel()}+Enter`,
-    hint: () => "换行使用 Enter",
-  },
-]
+function Segment<T extends string>(props: {
+  label: string
+  value: T
+  options: Array<{ id: T; label: string }>
+  onChange: (value: T) => void
+}) {
+  return (
+    <div class="settings-row">
+      <div class="settings-row-label">{props.label}</div>
+      <div class="settings-seg" role="radiogroup" aria-label={props.label}>
+        <For each={props.options}>
+          {(option) => (
+            <button
+              type="button"
+              role="radio"
+              aria-checked={props.value === option.id}
+              classList={{ active: props.value === option.id }}
+              onClick={() => props.onChange(option.id)}
+            >
+              {option.label}
+            </button>
+          )}
+        </For>
+      </div>
+    </div>
+  )
+}
 
 export function Settings() {
   const chrome = useChrome()
@@ -59,75 +74,58 @@ export function Settings() {
             </button>
           </header>
 
-          <section class="settings-group">
-            <div class="settings-label">外观</div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={theme.theme() === "dark"}
-              class="settings-toggle"
-              onClick={() => theme.setTheme(theme.theme() === "dark" ? "light" : "dark")}
-            >
-              <span class="settings-toggle-text">
-                <span class="settings-choice-name">深色模式</span>
-                <span class="settings-choice-desc">关闭后切换为浅色主题</span>
-              </span>
-              <span class="settings-switch" aria-hidden="true" />
-            </button>
-          </section>
+          <div class="settings-list">
+            <div class="settings-row">
+              <div id="settings-theme" class="settings-row-label">深色模式</div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={theme.theme() === "dark"}
+                aria-labelledby="settings-theme"
+                class="settings-switch-btn"
+                onClick={() => theme.setTheme(theme.theme() === "dark" ? "light" : "dark")}
+              >
+                <span class="settings-switch" aria-hidden="true" />
+              </button>
+            </div>
 
-          <section class="settings-group">
-            <div class="settings-label">发送快捷键</div>
-            <div class="settings-choices">
-              <For each={CHOICES}>
-                {(choice) => (
-                  <button
-                    type="button"
-                    class="settings-choice"
-                    classList={{ active: chrome.sendShortcut() === choice.id }}
-                    onClick={() => chrome.setSendShortcut(choice.id)}
-                  >
-                    <span class="settings-choice-name">{choice.name()}</span>
-                    <span class="settings-choice-desc">{choice.hint()}</span>
-                  </button>
-                )}
-              </For>
-            </div>
-          </section>
-
-          <section class="settings-group">
-            <div class="settings-label">后端异常中断后的任务恢复</div>
-            <div class="settings-choices">
-              <button class="settings-choice" classList={{ active: chrome.taskRecovery() === "auto" }} onClick={() => chrome.setTaskRecovery("auto")}>
-                <span class="settings-choice-name">自动继续</span><span class="settings-choice-desc">检查任务状态后继续，权限请求仍需确认</span>
-              </button>
-              <button class="settings-choice" classList={{ active: chrome.taskRecovery() === "manual" }} onClick={() => chrome.setTaskRecovery("manual")}>
-                <span class="settings-choice-name">手动继续</span><span class="settings-choice-desc">保留中断记录，点击继续任务后恢复</span>
-              </button>
-            </div>
-          </section>
-          <section class="settings-group">
-            <div class="settings-label">停止按钮行为</div>
-            <div class="settings-choices">
-              <button class="settings-choice" classList={{ active: chrome.stopBehavior() === "all" }} onClick={() => chrome.setStopBehavior("all")}>
-                <span class="settings-choice-name">停止 AI 与本轮命令</span><span class="settings-choice-desc">同时终止当前轮次仍在运行的终端</span>
-              </button>
-              <button class="settings-choice" classList={{ active: chrome.stopBehavior() === "ai" }} onClick={() => chrome.setStopBehavior("ai")}>
-                <span class="settings-choice-name">只停止 AI</span><span class="settings-choice-desc">终端继续运行，完成后不会自动唤醒 AI</span>
-              </button>
-            </div>
-          </section>
-          <section class="settings-group">
-            <div class="settings-label">关闭窗口时</div>
-            <div class="settings-choices">
-              <button type="button" class="settings-choice" classList={{ active: chrome.closeBehavior() === "quit" }} onClick={() => chrome.setCloseBehavior("quit")}>
-                <span class="settings-choice-name">直接退出程序</span><span class="settings-choice-desc">默认选项；有任务进行时先确认是否中断并退出</span>
-              </button>
-              <button type="button" class="settings-choice" classList={{ active: chrome.closeBehavior() === "tray" }} onClick={() => chrome.setCloseBehavior("tray")}>
-                <span class="settings-choice-name">最小化到托盘</span><span class="settings-choice-desc">隐藏窗口，任务继续在后台运行</span>
-              </button>
-            </div>
-          </section>
+            <Segment<SendShortcut>
+              label="发送"
+              value={chrome.sendShortcut()}
+              options={[
+                { id: "enter", label: "Enter" },
+                { id: "mod-enter", label: `${modifierLabel()}+Enter` },
+              ]}
+              onChange={chrome.setSendShortcut}
+            />
+            <Segment<TaskRecovery>
+              label="中断恢复"
+              value={chrome.taskRecovery()}
+              options={[
+                { id: "auto", label: "自动继续" },
+                { id: "manual", label: "手动继续" },
+              ]}
+              onChange={chrome.setTaskRecovery}
+            />
+            <Segment<StopBehavior>
+              label="停止时"
+              value={chrome.stopBehavior()}
+              options={[
+                { id: "all", label: "AI 和终端" },
+                { id: "ai", label: "只停 AI" },
+              ]}
+              onChange={chrome.setStopBehavior}
+            />
+            <Segment<CloseBehavior>
+              label="关闭窗口"
+              value={chrome.closeBehavior()}
+              options={[
+                { id: "quit", label: "直接退出" },
+                { id: "tray", label: "最小化到托盘" },
+              ]}
+              onChange={chrome.setCloseBehavior}
+            />
+          </div>
 
           <div class="settings-version">版本 {version()}</div>
         </div>

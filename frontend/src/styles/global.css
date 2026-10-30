@@ -1997,97 +1997,85 @@ button.ctx-pill:hover {
 }
 
 .settings-dialog {
-  width: min(420px, 100%);
+  width: min(400px, 100%);
+  padding-bottom: 12px;
 }
 
 .confirm-dialog {
   width: min(380px, 100%);
 }
 
-.settings-group {
+.settings-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
-.settings-group + .settings-group {
-  margin-top: 18px;
-}
-
-.settings-label {
-  color: var(--text-muted);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-}
-
-.settings-choices {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.settings-choice {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-}
-
-.settings-choice:hover {
-  background: var(--bg-hover);
-}
-
-.settings-choice.active {
-  border-color: var(--accent);
-  background: var(--bg-hover);
-}
-
-.settings-choice-name {
-  font-size: 13px;
-}
-
-.settings-choice-desc {
-  color: var(--text-faint);
-  font-size: 11px;
-}
-
-.settings-toggle {
-  width: 100%;
+.settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--text);
-  text-align: left;
+  min-height: 44px;
 }
 
-.settings-toggle:hover {
-  background: var(--bg-hover);
+.settings-row + .settings-row {
+  border-top: 1px solid var(--border);
 }
 
-.settings-toggle-text {
+.settings-row-label {
+  font-size: 13px;
+}
+
+.settings-seg {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex: 0 0 228px;
+  padding: 2px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.settings-seg button {
+  flex: 1;
   min-width: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 5px 6px;
+  white-space: nowrap;
+}
+
+.settings-seg button:hover {
+  color: var(--text);
+}
+
+.settings-seg button.active {
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 16%, transparent);
+}
+
+.settings-seg button:focus-visible,
+.settings-switch-btn:focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 2px;
+}
+
+.settings-switch-btn {
+  display: flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
 }
 
 .settings-switch {
   position: relative;
   flex: 0 0 auto;
-  width: 40px;
-  height: 22px;
+  width: 36px;
+  height: 20px;
   border-radius: 999px;
   background: var(--bg-active);
   transition: background 140ms ease;
@@ -2098,24 +2086,26 @@ button.ctx-pill:hover {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--bg-elevated);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   transition: transform 140ms ease;
 }
 
-.settings-toggle[aria-checked="true"] .settings-switch {
+.settings-switch-btn[aria-checked="true"] .settings-switch {
   background: var(--accent);
 }
 
-.settings-toggle[aria-checked="true"] .settings-switch::after {
-  transform: translateX(18px);
+.settings-switch-btn[aria-checked="true"] .settings-switch::after {
+  transform: translateX(16px);
 }
 
 .settings-version {
-  margin-top: 18px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
   color: var(--text-faint);
   font-size: 11px;
   text-align: center;

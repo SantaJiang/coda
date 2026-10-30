@@ -1,11 +1,14 @@
 import { expect, it, vi } from "vitest"
 import { createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
-import { reportDesktopActivity } from "../lib/desktop"
-import { hasDesktopActivity, trackDesktopActivity } from "./desktop-activity"
+import { reportCloseBehavior, reportDesktopActivity } from "../lib/desktop"
+import { hasDesktopActivity, trackCloseBehavior, trackDesktopActivity } from "./desktop-activity"
 import { initialState } from "./state"
 
-vi.mock("../lib/desktop", () => ({ reportDesktopActivity: vi.fn().mockResolvedValue(undefined) }))
+vi.mock("../lib/desktop", () => ({
+  reportDesktopActivity: vi.fn().mockResolvedValue(undefined),
+  reportCloseBehavior: vi.fn().mockResolvedValue(undefined),
+}))
 
 it("reports sending and completion immediately without waiting for a polling interval", async () => {
   const [state, setState] = createStore(structuredClone(initialState))
@@ -37,6 +40,22 @@ it("warns for uncertain delivery but permits quitting after a definitive send fa
   expect(hasDesktopActivity(state)).toBe(false)
   state.messages.s1[0] = { ...state.messages.s1[0], role: "user", delivery: "uncertain" }
   expect(hasDesktopActivity(state)).toBe(true)
+})
+
+it("reports the window-close choice as soon as it changes", async () => {
+  const [state, setState] = createStore(structuredClone(initialState))
+  const dispose = createRoot((dispose) => {
+    trackCloseBehavior(() => state.closeBehavior)
+    return dispose
+  })
+  try {
+    await Promise.resolve()
+    expect(reportCloseBehavior).toHaveBeenLastCalledWith(false)
+    setState("closeBehavior", "tray")
+    expect(reportCloseBehavior).toHaveBeenLastCalledWith(true)
+    setState("closeBehavior", "quit")
+    expect(reportCloseBehavior).toHaveBeenLastCalledWith(false)
+  } finally { dispose() }
 })
 
 it("keeps permission and question waits active even when the backend status is idle", () => {

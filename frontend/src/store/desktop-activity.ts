@@ -1,5 +1,6 @@
 import { createEffect } from "solid-js"
-import { reportDesktopActivity } from "../lib/desktop"
+import { reportCloseBehavior, reportDesktopActivity } from "../lib/desktop"
+import type { CloseBehavior } from "../lib/settings"
 import type { AppState } from "./state"
 
 type ActivityState = Pick<AppState, "status" | "sendingBySession" | "outgoing" | "messages" | "permissions" | "questions">
@@ -15,4 +16,8 @@ export function hasDesktopActivity(state: ActivityState) {
 
 export function trackDesktopActivity(state: ActivityState) {
   createEffect(() => { void reportDesktopActivity(hasDesktopActivity(state)) })
+}
+
+export function trackCloseBehavior(behavior: () => CloseBehavior) {
+  createEffect(() => { void reportCloseBehavior(behavior() === "tray") })
 }

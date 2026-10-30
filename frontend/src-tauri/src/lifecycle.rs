@@ -1,6 +1,6 @@
 use crate::terminal_record::{Status as TerminalStatus, TerminalRecord};
 use std::fs;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{Manager, RunEvent, WindowEvent};
@@ -13,6 +13,8 @@ static EXIT_READY: AtomicBool = AtomicBool::new(false);
 static TRAY_READY: AtomicBool = AtomicBool::new(false);
 static NOTIFIED: AtomicBool = AtomicBool::new(false);
 static ACTIVE: AtomicBool = AtomicBool::new(false);
+// 0 = not yet reported by the webview, 1 = quit, 2 = hide to tray.
+static CLOSE_CHOICE: AtomicU8 = AtomicU8::new(0);
 static OWNER: OnceLock<String> = OnceLock::new();
 static LOCK: Mutex<()> = Mutex::new(());
 
@@ -50,6 +52,11 @@ fn heartbeat() {
 #[tauri::command]
 pub fn desktop_activity(active: bool) {
     ACTIVE.store(active, Ordering::SeqCst);
+}
+
+#[tauri::command]
+pub fn desktop_close_behavior(tray: bool) {
+    CLOSE_CHOICE.store(if tray { 2 } else { 1 }, Ordering::SeqCst);
 }
 
 #[tauri::command]
@@ -190,11 +197,29 @@ fn install_app_menu(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-// Read the shared preference natively, including before the WebView has loaded.
+#[derive(PartialEq, Debug)]
+enum CloseAction {
+    Hide,
+    Quit,
+}
+
+fn close_action(tray: bool, tray_ready: bool) -> CloseAction {
+    if tray && tray_ready {
+        CloseAction::Hide
+    } else {
+        CloseAction::Quit
+    }
+}
+
+// The webview reports the choice immediately. Before it loads, use the settings file.
 fn close_to_tray() -> bool {
-    crate::settings_read()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-        .is_some_and(|settings| settings["closeBehavior"] == "tray")
+    match CLOSE_CHOICE.load(Ordering::SeqCst) {
+        1 => false,
+        2 => true,
+        _ => crate::settings_read()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .is_some_and(|settings| settings["closeBehavior"] == "tray"),
+    }
 }
 
 pub fn window_event(window: &tauri::Window, event: &WindowEvent) {
@@ -206,7 +231,8 @@ pub fn window_event(window: &tauri::Window, event: &WindowEvent) {
         if EXIT_PENDING.load(Ordering::SeqCst) {
             return;
         }
-        if !close_to_tray() || !TRAY_READY.load(Ordering::Relaxed) {
+        // Hide keeps the webview, backend, and running tasks. Quit is the only path that interrupts them.
+        if close_action(close_to_tray(), TRAY_READY.load(Ordering::Relaxed)) == CloseAction::Quit {
             request_exit(window.app_handle());
             return;
         }
@@ -244,6 +270,88 @@ fn is_running(value: &TerminalRecord) -> bool {
         value.status,
         TerminalStatus::Starting | TerminalStatus::Running
     )
+}
+
+// A command that finished on its own during shutdown stays as it is. One the backend
+// already marked interrupted because the desktop was exiting still has to become a
+// user cancellation, or the next launch treats it as a crash and resumes it.
+fn quit_should_cancel(value: &TerminalRecord) -> bool {
+    if is_running(value) {
+        return true;
+    }
+    let Some(reason) = value.reason.as_deref() else {
+        return false;
+    };
+    reason.starts_with("Interrupted: Coda desktop")
+        || reason.starts_with("Interrupted: backend exited")
+}
+
+fn replace_file(path: &std::path::Path, text: &str) {
+    let tmp = path.with_extension("desktop.tmp");
+    if fs::write(&tmp, text).is_ok() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
+        }
+        let _ = fs::rename(&tmp, path);
+    }
+}
+
+fn suppress_control(dir: &std::path::Path) {
+    let path = dir.join("control.json");
+    let mut value = fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .filter(|value| value.is_object())
+        .unwrap_or_else(|| serde_json::json!({}));
+    value["suppressed"] = serde_json::Value::Bool(true);
+    if let Ok(text) = serde_json::to_string(&value) {
+        replace_file(&path, &text);
+    }
+}
+
+fn suppress_active_run(value: &mut serde_json::Value, owner_id: &str) -> bool {
+    let Some(obj) = value.as_object_mut() else {
+        return false;
+    };
+    if obj.get("ownerID").and_then(|item| item.as_str()) != Some(owner_id) {
+        return false;
+    }
+    if obj.get("active") != Some(&serde_json::Value::Bool(true)) {
+        return false;
+    }
+    obj.insert("active".into(), serde_json::Value::Bool(false));
+    obj.insert("suppressed".into(), serde_json::Value::Bool(true));
+    true
+}
+
+fn suppress_owned_runs_in(dir: &std::path::Path, owner_id: &str) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        if !suppress_active_run(&mut value, owner_id) {
+            continue;
+        }
+        if let Ok(next) = serde_json::to_string(&value) {
+            replace_file(&path, &next);
+        }
+    }
+}
+
+fn suppress_owned_runs() {
+    suppress_owned_runs_in(&crate::paths::coda_home().join("runs"), owner());
 }
 fn has_running_terminals() -> bool {
     terminal_records()
@@ -369,17 +477,17 @@ fn begin_exit(app: &tauri::AppHandle) {
                     .args(["-KILL", "--", &format!("-{pid}")])
                     .status();
             }
-            if !is_running(&value) {
-                continue;
-            }
-            value.status = TerminalStatus::Cancelled;
-            value.ended_at = Some(u64::try_from(now()).unwrap_or(u64::MAX));
-            value.reason = Some("Cancelled: Coda exited".into());
-            let tmp = dir.join("info.desktop.tmp");
-            if fs::write(&tmp, value.to_string()).is_ok() {
-                let _ = fs::rename(tmp, dir.join("info.json"));
+            if quit_should_cancel(&value) {
+                value.status = TerminalStatus::Cancelled;
+                value.ended_at = Some(u64::try_from(now()).unwrap_or(u64::MAX));
+                value.reason = Some("Cancelled: Coda exited".into());
+                replace_file(&dir.join("info.json"), &value.to_string());
+                suppress_control(&dir);
             }
         }
+        // A still-active run checkpoint would be resumed after the next launch. The user
+        // confirmed quitting, so this turn must not start again. Hiding to the tray never reaches here.
+        suppress_owned_runs();
         eprintln!("Coda shutdown cleanup completed");
         EXIT_READY.store(true, Ordering::SeqCst);
         app.exit(0);
@@ -475,5 +583,72 @@ mod mac_exit {
             let _ = app.run_on_main_thread(move || request_exit(&handle));
         }
         0 // NSTerminateCancel; the shared shutdown path will exit after cleanup.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Map;
+
+    fn record(status: TerminalStatus, reason: Option<&str>) -> TerminalRecord {
+        TerminalRecord {
+            owner_id: "owner".into(),
+            status,
+            pid: None,
+            backend_pid: None,
+            ended_at: None,
+            reason: reason.map(str::to_string),
+            extra: Map::new(),
+        }
+    }
+
+    #[test]
+    fn tray_close_hides_only_when_the_tray_exists() {
+        assert_eq!(close_action(false, true), CloseAction::Quit);
+        assert_eq!(close_action(true, false), CloseAction::Quit);
+        assert_eq!(close_action(true, true), CloseAction::Hide);
+    }
+
+    #[test]
+    fn quit_cancels_live_tasks_and_shutdown_interrupts_but_not_finished_work() {
+        assert!(quit_should_cancel(&record(TerminalStatus::Running, None)));
+        assert!(quit_should_cancel(&record(
+            TerminalStatus::Interrupted,
+            Some("Interrupted: Coda desktop exited"),
+        )));
+        assert!(quit_should_cancel(&record(
+            TerminalStatus::Interrupted,
+            Some("Interrupted: backend exited"),
+        )));
+        assert!(!quit_should_cancel(&record(
+            TerminalStatus::Completed,
+            None
+        )));
+        assert!(!quit_should_cancel(&record(
+            TerminalStatus::Failed,
+            Some("command failed"),
+        )));
+        assert!(!quit_should_cancel(&record(
+            TerminalStatus::Interrupted,
+            Some("Interrupted: backend restarted; inspect project state before retrying"),
+        )));
+    }
+
+    #[test]
+    fn quitting_suppresses_only_this_desktop_active_run() {
+        let mut own = serde_json::json!({"ownerID": "me", "active": true, "turnID": "t"});
+        assert!(suppress_active_run(&mut own, "me"));
+        assert_eq!(own["active"], false);
+        assert_eq!(own["suppressed"], true);
+        assert_eq!(own["turnID"], "t");
+
+        let mut other = serde_json::json!({"ownerID": "other", "active": true});
+        assert!(!suppress_active_run(&mut other, "me"));
+        assert_eq!(other["active"], true);
+
+        let mut idle = serde_json::json!({"ownerID": "me", "active": false});
+        assert!(!suppress_active_run(&mut idle, "me"));
+        assert!(idle.get("suppressed").is_none());
     }
 }

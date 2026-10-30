@@ -3,6 +3,7 @@ import { createEffect, onCleanup, onMount, type ParentProps } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import * as api from "../lib/api"
 import { installQuitShortcut, prepareNotifications } from "../lib/desktop"
+import { loadCloseBehavior, loadSendShortcut, loadStopBehavior, loadTaskRecovery } from "../lib/settings"
 import { subscribeEvents } from "../lib/events"
 import {
   loadConfiguredModels,
@@ -31,7 +32,7 @@ import {
 import { applyClientEvent } from "./apply-event"
 import { sessionLifetime } from "./gc"
 import { resolveRequest } from "./requests"
-import { trackDesktopActivity } from "./desktop-activity"
+import { trackCloseBehavior, trackDesktopActivity } from "./desktop-activity"
 import { createChromeSlice } from "./chrome-slice"
 import { StoreProviders } from "./ctx"
 import { flushPendingDraftPersist, persistDraftSessions, rekeyDraftSessions } from "./draft-session-state"
@@ -56,6 +57,14 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
   const client = props.ports?.client ?? defaultPorts.client
   const subscribe = props.ports?.subscribe ?? defaultPorts.subscribe
   const [state, setState] = createStore<AppState>(structuredClone(initialState))
+  // initialState is captured before shared settings hydrate. Re-read after that so the
+  // window-close choice matches the file the native close button uses.
+  setState({
+    sendShortcut: loadSendShortcut(),
+    taskRecovery: loadTaskRecovery(),
+    stopBehavior: loadStopBehavior(),
+    closeBehavior: loadCloseBehavior(),
+  })
   const handle: StoreHandle = { state, setState, client }
   const skipQueueFlush: Record<string, boolean> = {}
   const sendAfterIdle: Record<string, QueuedMessage | undefined> = {}
@@ -211,6 +220,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     const stopQuitShortcut = installQuitShortcut()
     onCleanup(stopQuitShortcut)
     trackDesktopActivity(state)
+    trackCloseBehavior(() => state.closeBehavior)
 
     const stop = subscribe(
       (parsed) => {

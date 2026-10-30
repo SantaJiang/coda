@@ -35,3 +35,11 @@ export async function reportDesktopActivity(active: boolean) {
     await invoke("desktop_activity", { active })
   } catch {}
 }
+
+export async function reportCloseBehavior(tray: boolean) {
+  if (!isTauri()) return
+  try {
+    const { invoke } = await import("@tauri-apps/api/core")
+    await invoke("desktop_close_behavior", { tray })
+  } catch {}
+}

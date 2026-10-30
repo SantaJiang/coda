@@ -118,6 +118,7 @@ pub fn run() {
             attachments::attachment_clipboard,
             attachments::attachment_convert_image,
             lifecycle::desktop_activity,
+            lifecycle::desktop_close_behavior,
             lifecycle::desktop_quit,
             path_exists,
             settings_read,
