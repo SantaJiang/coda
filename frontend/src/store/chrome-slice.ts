@@ -13,6 +13,7 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
   return {
     overlayOpen: () =>
       state.settingsOpen ||
+      state.mcpSettingsOpen ||
       state.modelSettingsOpen ||
       state.modelMenuOpen ||
       state.plusMenuOpen ||
@@ -24,6 +25,7 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
     permissionMode: () => state.permissionMode,
     permissionLabel: () => permissionPreset(state.permissionMode).label,
     settingsOpen: () => state.settingsOpen,
+    mcpSettingsOpen: () => state.mcpSettingsOpen,
     sendShortcut: () => state.sendShortcut,
     taskRecovery: () => state.taskRecovery,
     stopBehavior: () => state.stopBehavior,
@@ -50,8 +52,10 @@ export function createChromeSlice(handle: StoreHandle): ChromeApi {
       }
     },
     closePlanPanel: () => setState("planPanelDismissed", true),
-    openSettings: () => setState({ settingsOpen: true, ...popoverPatch(null) }),
+    openSettings: () => setState({ settingsOpen: true, mcpSettingsOpen: false, ...popoverPatch(null) }),
     closeSettings: () => setState("settingsOpen", false),
+    openMcpSettings: () => setState({ settingsOpen: false, mcpSettingsOpen: true, ...popoverPatch(null) }),
+    closeMcpSettings: () => setState("mcpSettingsOpen", false),
     setSendShortcut: (shortcut: SendShortcut) => {
       setState("sendShortcut", shortcut)
       saveSendShortcut(shortcut)

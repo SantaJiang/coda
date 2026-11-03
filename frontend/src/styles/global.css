@@ -2001,6 +2001,57 @@ button.ctx-pill:hover {
   padding-bottom: 12px;
 }
 
+.mcp-dialog {
+  width: min(480px, 100%);
+}
+
+.mcp-copy {
+  min-width: 0;
+}
+
+.mcp-status {
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-status.bad {
+  color: var(--danger);
+}
+
+.mcp-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.mcp-form {
+  margin-top: 12px;
+}
+
+.field textarea {
+  width: 100%;
+  min-height: 52px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.field textarea:focus {
+  border-color: var(--focus-border);
+}
+
 .confirm-dialog {
   width: min(380px, 100%);
 }

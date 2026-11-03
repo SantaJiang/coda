@@ -1,3 +1,4 @@
+import type { McpServerConfig, McpStatusMap } from "./mcp"
 import type { TerminalInfo, TerminalLog } from "./terminal-contracts"
 import { API_BASE, DEFAULT_AGENT } from "./config"
 import type { ComposerAttachment } from "./attachments"
@@ -237,6 +238,36 @@ export async function listProviders(directory?: string) {
 
 export async function patchGlobalConfig(body: ConfigPatch) {
   return request<unknown>("PATCH", "/global/config", { body })
+}
+
+export async function getGlobalConfig() {
+  return request<{ mcp?: Record<string, McpServerConfig | { enabled: boolean }> }>("GET", "/global/config")
+}
+
+export async function listMcp(directory: string) {
+  return request<McpStatusMap>("GET", "/mcp", { directory })
+}
+
+export async function saveMcpServer(name: string, server: McpServerConfig) {
+  return request<unknown>("PATCH", "/global/config", { body: { mcp: { [name]: server } } })
+}
+
+const mcpServerPath = (name: string, suffix = "") => `/mcp/${encodeURIComponent(name)}${suffix}`
+
+export async function connectMcp(directory: string, name: string) {
+  return request<boolean>("POST", mcpServerPath(name, "/connect"), { directory })
+}
+
+export async function disconnectMcp(directory: string, name: string) {
+  return request<boolean>("POST", mcpServerPath(name, "/disconnect"), { directory })
+}
+
+export async function removeMcp(directory: string, name: string) {
+  return request<boolean>("DELETE", mcpServerPath(name), { directory })
+}
+
+export async function authenticateMcp(directory: string, name: string) {
+  return request<unknown>("POST", mcpServerPath(name, "/auth/authenticate"), { directory })
 }
 
 export async function abortSession(directory: string, sessionID: string) {

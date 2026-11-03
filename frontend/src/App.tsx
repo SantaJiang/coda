@@ -3,6 +3,7 @@ import { AppProvider } from "./store/app"
 import { ThemeProvider } from "./store/theme"
 import { Sidebar } from "./components/Sidebar"
 import { SessionPage } from "./components/SessionPage"
+import { McpSettings } from "./components/McpSettings"
 import { ModelSettings } from "./components/ModelSettings"
 import { Settings } from "./components/Settings"
 
@@ -37,6 +38,7 @@ export default function App() {
         </div>
         <ModelSettings />
         <Settings />
+        <McpSettings />
       </AppProvider>
     </ThemeProvider>
   )

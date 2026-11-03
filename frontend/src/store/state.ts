@@ -101,6 +101,7 @@ export type AppState = {
   permissionMode: PermissionMode
   planPanelDismissed: boolean
   settingsOpen: boolean
+  mcpSettingsOpen: boolean
   sendShortcut: SendShortcut
   taskRecovery: TaskRecovery
   stopBehavior: StopBehavior
@@ -163,6 +164,7 @@ export const initialState: AppState = {
   permissionMode: loadPermissionMode(),
   planPanelDismissed: false,
   settingsOpen: false,
+  mcpSettingsOpen: false,
   sendShortcut: loadSendShortcut(),
   taskRecovery: loadTaskRecovery(),
   stopBehavior: loadStopBehavior(),

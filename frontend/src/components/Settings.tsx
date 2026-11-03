@@ -125,6 +125,10 @@ export function Settings() {
               ]}
               onChange={chrome.setCloseBehavior}
             />
+            <div class="settings-row">
+              <div class="settings-row-label">MCP</div>
+              <button type="button" class="text-btn" onClick={() => chrome.openMcpSettings()}>管理</button>
+            </div>
           </div>
 
           <div class="settings-version">版本 {version()}</div>
