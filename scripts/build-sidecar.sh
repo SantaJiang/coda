@@ -25,12 +25,12 @@ if [[ -z "$HOST" ]]; then
 fi
 
 case "$HOST" in
-  aarch64-apple-darwin) DIST_NAME="opencode-darwin-arm64" ;;
-  x86_64-apple-darwin) DIST_NAME="opencode-darwin-x64" ;;
-  aarch64-unknown-linux-gnu) DIST_NAME="opencode-linux-arm64" ;;
-  x86_64-unknown-linux-gnu) DIST_NAME="opencode-linux-x64" ;;
-  aarch64-pc-windows-msvc) DIST_NAME="opencode-windows-arm64" ;;
-  x86_64-pc-windows-msvc) DIST_NAME="opencode-windows-x64" ;;
+  aarch64-apple-darwin) DIST_NAME="cli-darwin-arm64" ;;
+  x86_64-apple-darwin) DIST_NAME="cli-darwin-x64" ;;
+  aarch64-unknown-linux-gnu) DIST_NAME="cli-linux-arm64" ;;
+  x86_64-unknown-linux-gnu) DIST_NAME="cli-linux-x64" ;;
+  aarch64-pc-windows-msvc) DIST_NAME="cli-windows-arm64" ;;
+  x86_64-pc-windows-msvc) DIST_NAME="cli-windows-x64" ;;
   *)
     echo "当前平台 ${HOST} 没有对应的后端发布产物命名。"
     exit 1

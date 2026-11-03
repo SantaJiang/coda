@@ -120,13 +120,18 @@ export function SessionPage() {
     if (!showAside()) return
     setAsidePane(showTerminal() ? "terminal" : "plan")
   })
+  const asideWidth = () => (asidePane() === "plan" ? terminals.view().planWidth : terminals.view().width)
   const [asidePresent, setAsidePresent] = createSignal(false)
   const [resizing, setResizing] = createSignal(false)
   const resize = (event: PointerEvent) => {
     event.preventDefault()
     setResizing(true)
-    const start = event.clientX, width = terminals.view().width
-    const move = (event: PointerEvent) => terminals.patch({ width: Math.max(260, Math.min(700, width + start - event.clientX)) })
+    const pane = asidePane()
+    const start = event.clientX, width = asideWidth()
+    const move = (event: PointerEvent) => {
+      const next = Math.max(260, Math.min(700, width + start - event.clientX))
+      terminals.patch(pane === "plan" ? { planWidth: next } : { width: next })
+    }
     const end = () => {
       setResizing(false)
       window.removeEventListener("pointermove", move)
@@ -170,7 +175,7 @@ export function SessionPage() {
             <ContextBar />
           </div>
         </div>
-        <TerminalAside open={showAside()} width={terminals.view().width} resizing={resizing()} onPresent={setAsidePresent}>
+        <TerminalAside open={showAside()} width={asideWidth()} resizing={resizing()} onPresent={setAsidePresent}>
           <div class="aside-resize" onPointerDown={resize} role="separator" aria-orientation="vertical" aria-label="调整侧栏宽度" />
           <div class="terminal-aside-sheet">
             <header class="terminal-panel-head">

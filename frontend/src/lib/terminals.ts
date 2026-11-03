@@ -11,6 +11,7 @@ type View = {
   tab: "terminal" | "plan"
   selected?: string
   width: number
+  planWidth: number
   scroll: Record<string, number>
 }
 const views = new Map<string, View>()
@@ -18,6 +19,7 @@ const blank = (): View => ({
   open: false,
   tab: "terminal",
   width: 420,
+  planWidth: 300,
   scroll: {},
 })
 function load(key: string): View {
@@ -30,6 +32,7 @@ function load(key: string): View {
         ...saved,
         open: false,
         width: Math.max(260, Math.min(700, Number(saved.width) || 420)),
+        planWidth: Math.max(260, Math.min(700, Number(saved.planWidth) || 300)),
       }
   } catch {}
   return blank()
