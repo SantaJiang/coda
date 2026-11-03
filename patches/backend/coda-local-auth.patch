@@ -32,7 +32,7 @@ index 2f64e3ec7b..70552d3c73 100644
          ? server.shutdown
          : options.mode === "stdio"
 diff --git a/packages/server/src/process.ts b/packages/server/src/process.ts
-index 9058d49722..4766be7ef9 100644
+index 9058d49722..1424b56e8b 100644
 --- a/packages/server/src/process.ts
 +++ b/packages/server/src/process.ts
 @@ -52,8 +52,7 @@ export const start = Effect.fn("ServerProcess.start")(function* <E, R>(
@@ -45,7 +45,7 @@ index 9058d49722..4766be7ef9 100644
    const hostname = options.hostname ?? "127.0.0.1"
    const port = Option.fromNullishOr(options.port)
    const shutdown = yield* Latch.make()
-@@ -175,14 +174,17 @@ function addressInUse(error: unknown) {
+@@ -175,14 +174,18 @@ function addressInUse(error: unknown) {
  }
  
  function dispatch(
@@ -62,6 +62,20 @@ index 9058d49722..4766be7ef9 100644
 +    password: password ? Option.some(password) : Option.none(),
 +    username: "opencode",
 +  })
++  const open = !ServerAuth.required(auth)
    return Effect.gen(function* () {
      const request = yield* HttpServerRequest.HttpServerRequest
      const url = new URL(request.url, "http://localhost")
+@@ -190,10 +193,11 @@ function dispatch(
+     const app = yield* Ref.get(application)
+     const ready = state.type === "ready" && Option.isSome(app)
+     if (request.method === "GET" && url.pathname === "/api/info" && !ready) {
+-      if (!(yield* authorizedRequest(request, auth))) return unauthorizedResponse(request)
++      if (!open && !(yield* authorizedRequest(request, auth))) return unauthorizedResponse(request)
+       return yield* infoResponse(status, version, urls, tmp)
+     }
+     if (
++      !open &&
+       !isPairingConnectURL(url) &&
+       (!ready ||
+         (!hasPtyConnectTicketURL(url) && !hasPersistentPtyConnectTicketURL(url) && !hasMcpClientTicketURL(url))) &&
