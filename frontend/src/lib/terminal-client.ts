@@ -86,6 +86,43 @@ export function subscribeTerminal(
   return () => abort.abort()
 }
 
+function pollTerminal(
+  directory: string,
+  sessionID: string,
+  id: string,
+  cursor: number,
+  onFrame: (frame: TerminalLog) => void,
+  onError: (message: string) => void,
+) {
+  const abort = new AbortController()
+  void (async () => {
+    while (!abort.signal.aborted) {
+      try {
+        const frame = parseTerminalLog(await terminalLog(directory, sessionID, id, cursor))
+        if (abort.signal.aborted) return
+        onError("")
+        onFrame(frame)
+        cursor = frame.cursor
+        if (frame.ended) return
+      } catch (error) {
+        if (abort.signal.aborted) return
+        onError(error instanceof Error ? error.message : "终端断开，正在重新连接")
+      }
+      await new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timer)
+          abort.signal.removeEventListener("abort", finish)
+          resolve()
+        }
+        const timer = setTimeout(finish, 500)
+        abort.signal.addEventListener("abort", finish, { once: true })
+        if (abort.signal.aborted) finish()
+      })
+    }
+  })()
+  return () => abort.abort()
+}
+
 export const defaultTerminalClient: TerminalClient = {
   list: async (...args) => {
     const value = await listTerminals(...args)
@@ -96,5 +133,7 @@ export const defaultTerminalClient: TerminalClient = {
   control: (...args) => terminalControl(...args),
   log: async (...args) => parseTerminalLog(await terminalLog(...args)),
   subscribe: (directory, sessionID, id, cursor, onFrame, onError) =>
-    subscribeTerminal((at) => terminalStreamURL(directory, sessionID, id, at), cursor, onFrame, onError),
+    terminalStreamURL(directory, sessionID, id, cursor)
+      ? subscribeTerminal((at) => terminalStreamURL(directory, sessionID, id, at), cursor, onFrame, onError)
+      : pollTerminal(directory, sessionID, id, cursor, onFrame, onError),
 }

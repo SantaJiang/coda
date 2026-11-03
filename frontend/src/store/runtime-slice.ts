@@ -735,7 +735,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const current = sessionLifetime(state, question.sessionID)
       replying.add(lock)
       try {
-        await client.replyQuestion(project.path, id, answers)
+        await client.replyQuestion(project.path, id, answers, question.sessionID)
         if (!current()) return
         setState(
           produce((draft) => {
@@ -757,7 +757,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const current = sessionLifetime(state, question.sessionID)
       replying.add(lock)
       try {
-        await client.rejectQuestion(project.path, id)
+        await client.rejectQuestion(project.path, id, question.sessionID)
         if (!current()) return
         setState(
           produce((draft) => {

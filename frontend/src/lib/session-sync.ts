@@ -5,7 +5,8 @@ export function preferMessage(local: Message, incoming: Message): Message {
   const localDone = Boolean(local.time.completed) || Boolean(local.error)
   const incomingDone = Boolean(incoming.time.completed) || Boolean(incoming.error)
   if (localDone && !incomingDone) return local
-  return { ...incoming, finish: incoming.finish ?? local.finish }
+  const created = Math.min(local.time.created, incoming.time.created)
+  return { ...incoming, finish: incoming.finish ?? local.finish, time: { ...incoming.time, created } }
 }
 
 export function mergeMessages(local: Message[], incoming: Message[]): Message[] {
@@ -58,7 +59,12 @@ function preferPart(local: Part, incoming: Part): Part {
     const localDone = local.state.status === "completed" || local.state.status === "error"
     const incomingDone = incoming.state.status === "completed" || incoming.state.status === "error"
     if (localDone && !incomingDone) return local
-    return { ...incoming, tool: incoming.tool || local.tool, callID: incoming.callID || local.callID }
+    const incomingInput = "input" in incoming.state ? incoming.state.input : undefined
+    const localInput = "input" in local.state ? local.state.input : undefined
+    const input = incomingInput ?? localInput
+    const kept = { ...incoming, tool: incoming.tool || local.tool, callID: incoming.callID || local.callID }
+    if (!input || typeof input === "string") return kept
+    return { ...kept, state: { ...incoming.state, input } }
   }
   return incoming
 }

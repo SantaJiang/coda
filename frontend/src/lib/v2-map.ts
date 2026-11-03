@@ -2,7 +2,8 @@ import type { McpConfigEntry, McpServerConfig, McpStatusMap } from "./mcp"
 import type { PermissionRule } from "./permissions"
 import type { ModelInput } from "./model-input"
 import type { ProviderList } from "./models"
-import type { AssistantMessage, BackendProject, MessageWithParts, Part, PermissionRequest, Session, SessionStatus, UserMessage } from "./types"
+import type { AssistantMessage, BackendProject, MessageWithParts, Part, PermissionRequest, QuestionRequest, Session, SessionStatus, Todo, UserMessage } from "./types"
+import type { TerminalInfo, TerminalLog } from "./terminal-contracts"
 
 type Rec = Record<string, unknown>
 
@@ -25,8 +26,15 @@ export function toPermission(row: Rec): PermissionRequest {
   }
 }
 
+function v2Action(permission: string) {
+  if (permission === "bash") return "shell"
+  if (permission === "write" || permission === "patch" || permission === "apply_patch") return "edit"
+  if (permission === "task") return "subagent"
+  return permission
+}
+
 export function toV2Rules(rules?: PermissionRule[]) {
-  return rules?.map((rule) => ({ action: rule.permission, resource: rule.pattern, effect: rule.action }))
+  return rules?.map((rule) => ({ action: v2Action(rule.permission), resource: rule.pattern, effect: rule.action }))
 }
 
 export function toSession(row: Rec): Session {
@@ -104,6 +112,24 @@ function partsFromAssistant(sessionID: string, messageID: string, content: unkno
   })
 }
 
+function fileParts(sessionID: string, messageID: string, files: unknown): Part[] {
+  if (!Array.isArray(files)) return []
+  return files.flatMap((item, index) => {
+    const file = rec(item)
+    const url = typeof file?.uri === "string" ? file.uri : typeof file?.url === "string" ? file.url : ""
+    if (!url) return []
+    return [{
+      id: `${messageID}:file:${index}`,
+      sessionID,
+      messageID,
+      type: "file" as const,
+      url,
+      ...(typeof file?.name === "string" ? { filename: file.name } : typeof file?.filename === "string" ? { filename: file.filename } : {}),
+      ...(typeof file?.mime === "string" ? { mime: file.mime } : {}),
+    }]
+  })
+}
+
 export function toTranscript(sessionID: string, rows: Rec[]): MessageWithParts[] {
   const messages: MessageWithParts[] = []
   for (const row of rows) {
@@ -113,7 +139,31 @@ export function toTranscript(sessionID: string, rows: Rec[]): MessageWithParts[]
       const info: UserMessage = { id, sessionID, role: "user", time: { created } }
       const parts: Part[] = []
       if (typeof row.text === "string" && row.text) parts.push({ id: `${id}:text`, sessionID, messageID: id, type: "text", text: row.text })
+      parts.push(...fileParts(sessionID, id, row.files))
       messages.push({ info, parts })
+      continue
+    }
+    if (row.type === "shell") {
+      const output = typeof row.output === "string" ? row.output : textOf(row.output)
+      const command = typeof row.command === "string" ? row.command : ""
+      const failed = row.status === "killed" || row.status === "timeout" || (typeof row.exit === "number" && row.exit !== 0)
+      const completedAt = rec(row.time)?.completed
+      messages.push({
+        info: { id, sessionID, role: "assistant", time: { created, ...(typeof completedAt === "number" ? { completed: completedAt } : {}) } },
+        parts: [{
+          id: String(row.shellID ?? id),
+          sessionID,
+          messageID: id,
+          type: "tool",
+          callID: String(row.shellID ?? id),
+          tool: "shell",
+          state: row.status === "running"
+            ? { status: "running", input: { command } }
+            : failed
+              ? { status: "error", input: { command }, error: output || "命令失败" }
+              : { status: "completed", input: { command }, output },
+        }],
+      })
       continue
     }
     if (row.type !== "assistant") continue
@@ -144,7 +194,7 @@ export function toProviderList(providers: Rec[], models: Rec[]): ProviderList {
   for (const model of models) {
     const providerID = String(model.providerID ?? "")
     const modelID = String(model.modelID ?? model.id ?? "")
-    if (!providerID || !modelID) continue
+    if (!providerID || !modelID || model.enabled === false) continue
     const bucket = all.get(providerID) ?? { id: providerID, name: providerID, models: {} }
     const capabilities = rec(model.capabilities)
     const input = Array.isArray(capabilities?.input) ? capabilities.input.filter((item): item is string => typeof item === "string") : []
@@ -211,4 +261,123 @@ export function mcpStatusFromServers(servers: Rec[]): McpStatusMap {
     else result[name] = { status: "failed", error: typeof status.error === "string" ? status.error : kind === "pending" ? "正在连接" : "连接失败" }
   }
   return result
+}
+
+const TODO_STATUS = new Set(["pending", "in_progress", "completed", "cancelled"])
+
+export function todosFromInput(value: unknown): Todo[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  return value.flatMap((item) => {
+    const row = rec(item)
+    if (!row || typeof row.content !== "string" || !row.content) return []
+    return [{
+      content: row.content,
+      status: typeof row.status === "string" && TODO_STATUS.has(row.status) ? row.status : "pending",
+      ...(typeof row.priority === "string" ? { priority: row.priority } : {}),
+    }]
+  })
+}
+
+/** The visible plan is the latest completed todowrite in the session transcript. */
+export function todosFromMessages(rows: Rec[]): Todo[] {
+  let latest: Todo[] | undefined
+  for (const row of rows) {
+    if (row.type !== "assistant" || !Array.isArray(row.content)) continue
+    for (const item of row.content) {
+      const part = rec(item)
+      const state = rec(part?.state)
+      const input = rec(state?.input)
+      if (part?.type !== "tool" || part.name !== "todowrite" || state?.status !== "completed") continue
+      const todos = todosFromInput(input?.todos)
+      if (todos) latest = todos
+    }
+  }
+  return latest ?? []
+}
+
+export function formToQuestion(row: Rec): QuestionRequest | null {
+  const metadata = rec(row.metadata)
+  const fields = Array.isArray(row.fields) ? row.fields : []
+  const questions = fields.flatMap((item) => {
+    const field = rec(item)
+    if (!field || (field.type !== "string" && field.type !== "multiselect")) return []
+    const options = Array.isArray(field.options)
+      ? field.options.flatMap((option) => {
+          const value = rec(option)
+          return typeof value?.label === "string"
+            ? [{ label: value.label, ...(typeof value.description === "string" ? { description: value.description } : {}) }]
+            : []
+        })
+      : []
+    if (!options.length && metadata?.kind !== "question") return []
+    return [{
+      question: typeof field.description === "string" && field.description ? field.description : typeof field.title === "string" ? field.title : "",
+      ...(typeof field.title === "string" ? { header: field.title } : {}),
+      options,
+      ...(field.type === "multiselect" ? { multiple: true } : {}),
+      ...(field.custom === true ? { custom: true } : {}),
+    }]
+  })
+  const id = typeof row.id === "string" ? row.id : ""
+  const sessionID = typeof row.sessionID === "string" ? row.sessionID : ""
+  if (!id || !sessionID || sessionID === "global" || !questions.length) return null
+  if (metadata?.kind !== "question" && !questions.some((item) => item.options.length > 0)) return null
+  return { id, sessionID, questions }
+}
+
+export function shellStatus(status: unknown, exit: unknown): TerminalInfo["status"] {
+  if (status === "running") return "running"
+  if (status === "killed") return "cancelled"
+  if (status === "timeout") return "failed"
+  if (typeof exit === "number" && exit !== 0) return "failed"
+  return "completed"
+}
+
+export function shellToTerminal(row: Rec, sessionID: string, hidden = false): TerminalInfo | null {
+  const id = typeof row.id === "string" ? row.id : ""
+  const metadata = rec(row.metadata)
+  const owner = typeof metadata?.sessionID === "string" ? metadata.sessionID : ""
+  if (!id || owner !== sessionID) return null
+  const time = rec(row.time)
+  const startedAt = num(time?.started, 0)
+  const status = shellStatus(row.status, row.exit)
+  const endedAt = status === "running" ? undefined : num(time?.completed, startedAt)
+  return {
+    id,
+    sessionID,
+    rootSessionID: sessionID,
+    command: typeof row.command === "string" ? row.command : "",
+    cwd: typeof row.cwd === "string" ? row.cwd : "",
+    startedAt,
+    lastOutputAt: status === "running" ? Date.now() : endedAt ?? startedAt,
+    ...(endedAt !== undefined ? { endedAt } : {}),
+    ...(typeof row.exit === "number" ? { exitCode: row.exit } : {}),
+    status,
+    ...(hidden ? { hidden: true } : {}),
+    cursor: 1,
+    baseCursor: 0,
+  }
+}
+
+export function utf8Base64(text: string) {
+  const bytes = new TextEncoder().encode(text)
+  let binary = ""
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
+export function shellOutputToLog(page: Rec, start: number, status: TerminalInfo["status"]): TerminalLog {
+  const cursor = num(page.cursor, start)
+  const endCursor = num(page.size, cursor)
+  const output = typeof page.output === "string" ? page.output : ""
+  return {
+    data: utf8Base64(output),
+    start,
+    cursor,
+    baseCursor: 0,
+    endCursor,
+    truncated: false,
+    status,
+    ended: status !== "running" && status !== "starting" && cursor >= endCursor,
+  }
 }

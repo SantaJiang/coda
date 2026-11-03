@@ -1,5 +1,6 @@
 import type { ParsedEvent } from "./events"
 import type { AssistantMessage, Part, Session, ToolState } from "./types"
+import { formToQuestion } from "./v2-map"
 
 type Wire = {
   id?: string
@@ -153,6 +154,12 @@ export function translateWireEvent(raw: Wire): ParsedEvent[] {
   if (type === "session.tool.failed") {
     return [emit("message.part.updated", { part: toolPart(data, { status: "error", error: textOf(data.error) || "工具失败", metadata: record(data.metadata), time: { end: Date.now() } }) })]
   }
+  if (type === "form.created") {
+    const question = formToQuestion(record(data.form) ?? data)
+    return question ? [emit("question.asked", { ...question })] : []
+  }
+  if (type === "form.replied") return [emit("question.replied", { requestID: data.id, sessionID: data.sessionID })]
+  if (type === "form.cancelled") return [emit("question.rejected", { requestID: data.id, sessionID: data.sessionID })]
   if (type === "session.execution.failed" || type === "session.error") {
     return [emit("session.error", { sessionID, error: data.error ?? data })]
   }

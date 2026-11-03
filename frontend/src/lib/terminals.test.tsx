@@ -128,11 +128,22 @@ describe("session terminal ownership", () => {
   })
 })
 describe("terminal output response", () => {
-  it("does not call the retired per-session terminal log route", async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal("fetch", fetchMock)
-    expect(await terminalLog("/tmp/project", "one", "first")).toMatchObject({ data: "", status: "completed", ended: true })
-    expect(fetchMock).not.toHaveBeenCalled()
+  it("pages v2 shell output into a terminal frame", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        const url = String(input)
+        if (url.includes("/output")) {
+          return new Response(JSON.stringify({ data: { output: "hello", cursor: 5, size: 5, truncated: false } }))
+        }
+        return new Response(JSON.stringify({
+          data: { id: "first", status: "running", command: "echo", cwd: "/tmp", metadata: { sessionID: "one" }, time: { started: 1 } },
+        }))
+      }),
+    )
+    const frame = await terminalLog("/tmp/project", "one", "first")
+    expect(frame).toMatchObject({ start: 0, cursor: 5, endCursor: 5, status: "running", ended: false })
+    expect(atob(frame.data)).toBe("hello")
     vi.unstubAllGlobals()
   })
 })

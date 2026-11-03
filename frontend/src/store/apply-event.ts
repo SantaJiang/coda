@@ -1,6 +1,7 @@
 import { autoReplyForMode } from "../lib/permissions"
 import { formatSessionErrorMessage, hasFailingAssistant, isAbortError } from "../lib/session-status"
 import { mergeParts, preferMessage } from "../lib/session-sync"
+import { todosFromInput } from "../lib/v2-map"
 import { isLocalProject, missingDirectoryMessage, parseMissingDirectory } from "../lib/persist"
 import { samePath } from "../lib/path"
 import { upsertById } from "../lib/upsert"
@@ -181,7 +182,15 @@ const handlers: Record<string, EventHandler> = {
   "message.part.updated": (draft, { props }) => {
     const part = props.part as Part | undefined
     if (part && (draft.removedMessages[part.messageID] || draft.removedParts[`${part.messageID}:${part.id}`])) return
-    if (part) draft.parts[part.messageID] = mergeParts(draft.parts[part.messageID] ?? [], [part])
+    if (part) {
+      draft.parts[part.messageID] = mergeParts(draft.parts[part.messageID] ?? [], [part])
+      const stored = draft.parts[part.messageID]?.find((item) => item.id === part.id)
+      if (stored?.type === "tool" && stored.tool === "todowrite") {
+        const input = "input" in stored.state && stored.state.input && typeof stored.state.input === "object" ? stored.state.input.todos : undefined
+        const todos = todosFromInput(input)
+        if (todos && stored.sessionID) draft.todos[stored.sessionID] = todos
+      }
+    }
   },
   "message.part.removed": (draft, { props }) => {
     const messageID = props.messageID as string

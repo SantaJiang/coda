@@ -1,10 +1,10 @@
 import type { McpServerConfig } from "./mcp"
-import type { TerminalInfo, TerminalLog } from "./terminal-contracts"
+import type { TerminalInfo } from "./terminal-contracts"
 import { API_BASE, DEFAULT_AGENT } from "./config"
 import type { ComposerAttachment } from "./attachments"
 import type { ConfigPatch, ModelRef } from "./models"
 import type { PermissionRule } from "./permissions"
-import { mcpConfigFromEntries, mcpStatusFromServers, sessionStatuses, toPermission, toProject, toProviderList, toSession, toTranscript, toV2Rules } from "./v2-map"
+import { formToQuestion, mcpConfigFromEntries, mcpStatusFromServers, sessionStatuses, shellOutputToLog, shellStatus, shellToTerminal, todosFromMessages, toPermission, toProject, toProviderList, toSession, toTranscript, toV2Rules } from "./v2-map"
 export class ApiError extends Error {
   status: number
   constructor(message: string, status: number) {
@@ -35,12 +35,10 @@ function directoryHeaders(directory?: string): Record<string, string> {
   return headers
 }
 
-function withDirectory(path: string, directory?: string, extra?: Record<string, string>, scope: "location" | "session" = "location") {
+function withDirectory(path: string, directory?: string, extra?: Record<string, string>, scope: "location" | "session" | "none" = "location") {
   const url = new URL(path, API_BASE)
-  if (directory) {
-    if (scope === "session") url.searchParams.set("directory", directory)
-    else url.searchParams.set("location[directory]", directory)
-  }
+  if (directory && scope === "session") url.searchParams.set("directory", directory)
+  if (directory && scope === "location") url.searchParams.set("location[directory]", directory)
   if (extra) {
     for (const [key, value] of Object.entries(extra)) url.searchParams.set(key, value)
   }
@@ -72,7 +70,7 @@ async function request<T>(
     body?: unknown
     extraQuery?: Record<string, string>
     raw?: boolean
-    scope?: "location" | "session"
+    scope?: "location" | "session" | "none"
   },
 ): Promise<T> {
   const headers: Record<string, string> = {
@@ -113,13 +111,47 @@ export async function fetchHomeDir(): Promise<string | null> {
   return null
 }
 
+function pageOf(body: unknown) {
+  const row = body && typeof body === "object" ? (body as Record<string, unknown>) : {}
+  const items = Array.isArray(row.data) ? (row.data as Record<string, unknown>[]) : []
+  const cursor = row.cursor && typeof row.cursor === "object" ? (row.cursor as Record<string, unknown>).next : undefined
+  return { items, next: typeof cursor === "string" && cursor ? cursor : undefined }
+}
+
+async function collectPages(
+  path: string,
+  options: { directory?: string; scope?: "location" | "session" | "none"; extraQuery?: Record<string, string> },
+  pages = 40,
+) {
+  const items: Record<string, unknown>[] = []
+  let cursor: string | undefined
+  for (let index = 0; index < pages; index++) {
+    let body: unknown
+    try {
+      body = await request<unknown>("GET", path, {
+        ...options,
+        raw: true,
+        // The cursor already carries the first page's order and filter. Sending them again is rejected.
+        extraQuery: cursor ? { cursor } : options.extraQuery,
+      })
+    } catch (error) {
+      if (index === 0) throw error
+      break
+    }
+    const page = pageOf(body)
+    items.push(...page.items)
+    if (!page.next || page.next === cursor) break
+    cursor = page.next
+  }
+  return items
+}
+
 async function sessionRows(directory: string, extra?: Record<string, string>) {
-  const rows = await request<Record<string, unknown>[]>("GET", "/api/session", {
-    directory,
-    scope: "session",
-    extraQuery: { limit: "100", order: "desc", ...extra },
-  })
-  return Array.isArray(rows) ? rows : []
+  return collectPages("/api/session", { directory, scope: "session", extraQuery: { limit: "100", order: "desc", ...extra } })
+}
+
+async function readSession(sessionID: string) {
+  return toSession(await request<Record<string, unknown>>("GET", sessionPath(sessionID), { scope: "none" }))
 }
 
 export async function listProjects() {
@@ -145,6 +177,7 @@ export async function createSession(
 ) {
   const row = await request<Record<string, unknown>>("POST", "/api/session", {
     directory,
+    scope: "none",
     body: {
       agent,
       location: { directory },
@@ -155,18 +188,20 @@ export async function createSession(
   return toSession(row)
 }
 
-export async function updateSessionTitle(directory: string, sessionID: string, title: string) {
-  await request("PATCH", sessionPath(sessionID), { directory, body: { title } })
-  return { ...(await listSessions(directory)).find((item) => item.id === sessionID), id: sessionID, directory, title, time: { created: Date.now(), updated: Date.now() } }
+export async function updateSessionTitle(_directory: string, sessionID: string, title: string) {
+  await request("PATCH", sessionPath(sessionID), { scope: "none", body: { title } })
+  const session = await readSession(sessionID)
+  return { ...session, title, directory: session.directory || _directory }
 }
 
-export async function updateSessionPermission(directory: string, sessionID: string, permission: PermissionRule[]) {
-  await request("PATCH", sessionPath(sessionID), { directory, body: { permissions: toV2Rules(permission) } })
-  return { id: sessionID, directory, title: "", time: { created: Date.now(), updated: Date.now() } }
+export async function updateSessionPermission(_directory: string, sessionID: string, permission: PermissionRule[]) {
+  await request("PATCH", sessionPath(sessionID), { scope: "none", body: { permissions: toV2Rules(permission) } })
+  const session = await readSession(sessionID)
+  return { ...session, directory: session.directory || _directory }
 }
 
-export async function deleteSession(directory: string, sessionID: string) {
-  await request("DELETE", sessionPath(sessionID), { directory })
+export async function deleteSession(_directory: string, sessionID: string) {
+  await request("DELETE", sessionPath(sessionID), { scope: "none" })
   return true
 }
 
@@ -180,16 +215,22 @@ export async function getVcs(directory: string) {
   return { branch: info?.branch?.current ?? null, default_branch: info?.branch?.default ?? null }
 }
 
-export async function listMessages(directory: string, sessionID: string) {
-  const rows = await request<Record<string, unknown>[]>("GET", sessionPath(sessionID, "/message"), {
+async function messageRows(directory: string, sessionID: string) {
+  // Newest page first, so a very long session keeps the latest turns when paging stops.
+  const rows = await collectPages(sessionPath(sessionID, "/message"), {
     directory,
-    extraQuery: { limit: "200", order: "asc" },
+    scope: "none",
+    extraQuery: { limit: "200", order: "desc" },
   })
-  return toTranscript(sessionID, Array.isArray(rows) ? rows : [])
+  return rows.reverse()
+}
+
+export async function listMessages(directory: string, sessionID: string) {
+  return toTranscript(sessionID, await messageRows(directory, sessionID))
 }
 
 export async function promptAsync(
-  directory: string,
+  _directory: string,
   sessionID: string,
   options: {
     text: string
@@ -204,14 +245,19 @@ export async function promptAsync(
   const text = options.text.trim()
   const files = (options.files ?? []).map((file) => ({ uri: file.url, ...(file.filename ? { name: file.filename } : {}) }))
   if (!text && !files.length) return
+  const session = { scope: "none" as const }
   await request("POST", sessionPath(sessionID, "/model"), {
-    directory,
+    ...session,
     body: { model: { id: options.model.modelID, providerID: options.model.providerID, ...(options.variant ? { variant: options.variant } : {}) } },
   })
-  if (options.agent) await request("POST", sessionPath(sessionID, "/agent"), { directory, body: { agent: options.agent } })
+  if (options.agent) await request("POST", sessionPath(sessionID, "/agent"), { ...session, body: { agent: options.agent } })
   await request("POST", sessionPath(sessionID, "/prompt"), {
-    directory,
-    body: { text, ...(files.length ? { files } : {}) },
+    ...session,
+    body: {
+      text,
+      ...(options.messageID?.startsWith("msg_") ? { id: options.messageID } : {}),
+      ...(files.length ? { files } : {}),
+    },
   })
 }
 
@@ -272,63 +318,157 @@ export async function authenticateMcp(directory: string, name: string) {
   return connectMcp(directory, name)
 }
 
-export async function abortSession(directory: string, sessionID: string) {
-  const body = await request<{ interrupted?: boolean }>("POST", sessionPath(sessionID, "/interrupt"), { directory })
+export async function abortSession(_directory: string, sessionID: string) {
+  const body = await request<{ interrupted?: boolean }>("POST", sessionPath(sessionID, "/interrupt"), { scope: "none" })
   return body?.interrupted !== false
 }
 
 export async function revertSession(directory: string, sessionID: string, messageID: string) {
-  await request("POST", sessionPath(sessionID, "/revert/stage"), { directory, body: { messageID } })
-  await request("POST", sessionPath(sessionID, "/revert/commit"), { directory })
-  return (await listSessions(directory)).find((item) => item.id === sessionID) ?? { id: sessionID, directory, title: "", time: { created: Date.now(), updated: Date.now() } }
+  await request("POST", sessionPath(sessionID, "/revert/stage"), { scope: "none", body: { messageID } })
+  await request("POST", sessionPath(sessionID, "/revert/commit"), { scope: "none" })
+  const session = await readSession(sessionID)
+  return { ...session, directory: session.directory || directory }
 }
 
-export async function listTodos(_directory: string, _sessionID: string) {
-  return []
+export async function listTodos(directory: string, sessionID: string) {
+  return todosFromMessages(await messageRows(directory, sessionID))
 }
 
 export async function listPermissions(directory: string) {
-  const sessions = await listSessions(directory)
-  const lists = await Promise.all(
-    sessions.map(async (session) => {
-      const rows = await request<Record<string, unknown>[]>("GET", sessionPath(session.id, "/permission"), { directory })
-      return (Array.isArray(rows) ? rows : []).map(toPermission)
-    }),
-  )
-  return lists.flat()
+  const rows = await request<Record<string, unknown>[]>("GET", "/api/permission/request", { directory })
+  return (Array.isArray(rows) ? rows : []).map(toPermission)
 }
 
 export async function replyPermission(
-  directory: string,
+  _directory: string,
   requestID: string,
   reply: "once" | "always" | "reject",
   sessionID?: string,
 ) {
   if (!sessionID) return false
   await request("POST", sessionPath(sessionID, `/permission/${encodeURIComponent(requestID)}/reply`), {
-    directory,
+    scope: "none",
     body: { decision: reply },
   })
   return true
 }
 
-export async function listQuestions(_directory: string) {
-  return []
+export async function listQuestions(directory: string) {
+  const forms = await request<Record<string, unknown>[]>("GET", "/api/form", { directory })
+  return (Array.isArray(forms) ? forms : []).flatMap((form) => {
+    const question = formToQuestion(form)
+    return question ? [question] : []
+  })
 }
 
-export async function replyQuestion(_directory: string, _requestID: string, _answers: string[][]) {
-  return false
+export async function replyQuestion(_directory: string, requestID: string, answers: string[][], sessionID?: string) {
+  if (!sessionID) return false
+  const detail = await request<Record<string, unknown>>("GET", sessionPath(sessionID, `/form/${encodeURIComponent(requestID)}`), { scope: "none" })
+  const fields = Array.isArray(detail.fields) ? detail.fields : []
+  const answer: Record<string, string | string[]> = {}
+  fields.forEach((item, index) => {
+    if (!item || typeof item !== "object") return
+    const field = item as { key?: string; type?: string }
+    if (!field.key) return
+    const labels = answers[index] ?? []
+    answer[field.key] = field.type === "multiselect" ? labels : (labels[0] ?? "")
+  })
+  await request("POST", sessionPath(sessionID, `/form/${encodeURIComponent(requestID)}/reply`), { scope: "none", body: { answer } })
+  return true
 }
 
-export async function rejectQuestion(_directory: string, _requestID: string) {
-  return false
+export async function rejectQuestion(_directory: string, requestID: string, sessionID?: string) {
+  if (!sessionID) return false
+  await request("DELETE", sessionPath(sessionID, `/form/${encodeURIComponent(requestID)}`), { scope: "none" })
+  return true
 }
 
 export type { TerminalInfo, TerminalLog } from "./terminal-contracts"
 export const isTerminalRunning = (info: TerminalInfo) => info.status === "starting" || info.status === "running"
-export const listTerminals = (_directory: string, _sessionID: string) => Promise.resolve({ backendID: "v2", items: [] as TerminalInfo[] })
-export const terminalControl = async (_directory: string, _sessionID: string, _id: string, _action: "cancel" | "hide" | "show" | "resume") => false
-export const terminalLog = (_directory: string, _sessionID: string, _id: string, cursor = 0, _limit?: number): Promise<TerminalLog> => Promise.resolve({ data: "", start: cursor, cursor, baseCursor: 0, endCursor: cursor, truncated: false, status: "completed", ended: true })
+
+const seenShells = new Map<string, Set<string>>()
+const hiddenKey = (sessionID: string, id: string) => `coda.terminalHidden:${sessionID}:${id}`
+const rememberedKey = (sessionID: string) => `coda.shells:${sessionID}`
+
+function rememberedShells(sessionID: string) {
+  const ids = seenShells.get(sessionID) ?? new Set<string>()
+  seenShells.set(sessionID, ids)
+  try {
+    const saved = JSON.parse(localStorage.getItem(rememberedKey(sessionID)) || "[]")
+    if (Array.isArray(saved)) for (const id of saved) if (typeof id === "string") ids.add(id)
+  } catch {
+    // Ignore a corrupt local list and keep what this page has already seen.
+  }
+  return ids
+}
+
+function storeShells(sessionID: string, ids: Set<string>) {
+  try { localStorage.setItem(rememberedKey(sessionID), JSON.stringify([...ids])) } catch { /* private mode */ }
+}
+
+function shellHidden(sessionID: string, id: string) {
+  try { return localStorage.getItem(hiddenKey(sessionID, id)) === "1" } catch { return false }
+}
+
+async function readShell(directory: string, id: string) {
+  return request<Record<string, unknown>>("GET", `/api/shell/${encodeURIComponent(id)}`, { directory })
+}
+
+export async function listTerminals(directory: string, sessionID: string) {
+  const running = await request<Record<string, unknown>[]>("GET", "/api/shell", { directory })
+  const ids = rememberedShells(sessionID)
+  const rows = new Map<string, Record<string, unknown>>()
+  for (const row of Array.isArray(running) ? running : []) {
+    if (shellToTerminal(row, sessionID)) {
+      rows.set(String(row.id), row)
+      ids.add(String(row.id))
+    }
+  }
+  await Promise.all([...ids].filter((id) => !rows.has(id)).map(async (id) => {
+    try {
+      const row = await readShell(directory, id)
+      if (shellToTerminal(row, sessionID)) rows.set(id, row)
+      else ids.delete(id)
+    } catch {
+      ids.delete(id)
+    }
+  }))
+  storeShells(sessionID, ids)
+  const items = [...rows.values()].flatMap((row) => {
+    const info = shellToTerminal(row, sessionID, shellHidden(sessionID, String(row.id)))
+    return info ? [info] : []
+  })
+  return { backendID: "v2", items }
+}
+
+export async function terminalControl(directory: string, sessionID: string, id: string, action: "cancel" | "hide" | "show" | "resume") {
+  if (action === "hide" || action === "show") {
+    try {
+      if (action === "hide") localStorage.setItem(hiddenKey(sessionID, id), "1")
+      else localStorage.removeItem(hiddenKey(sessionID, id))
+    } catch { /* the next list still returns the shell */ }
+    return true
+  }
+  if (action === "resume") return true
+  await request("DELETE", `/api/shell/${encodeURIComponent(id)}`, { directory }).catch((error: unknown) => {
+    if (error instanceof ApiError && error.status === 404) return
+    throw error
+  })
+  return true
+}
+
+export async function terminalLog(directory: string, _sessionID: string, id: string, cursor = 0, limit?: number) {
+  const [info, page] = await Promise.all([
+    readShell(directory, id).catch(() => undefined),
+    request<Record<string, unknown>>("GET", `/api/shell/${encodeURIComponent(id)}/output`, {
+      directory,
+      extraQuery: { cursor: String(cursor), ...(limit === undefined ? {} : { limit: String(limit) }) },
+    }),
+  ])
+  const status = info ? shellStatus(info.status, info.exit) : "running"
+  return shellOutputToLog(page, cursor, status)
+}
+
 export function terminalStreamURL(_directory: string, _sessionID: string, _id: string, _cursor: number) {
   return ""
 }
