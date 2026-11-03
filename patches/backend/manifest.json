@@ -1,10 +1,11 @@
 {
   "base": "9bbb8ce18c80f099e0e448775f59d965ead40a21",
-  "revision": "17ad09198588e9e2adfc0822548ba17547de8af4",
+  "revision": "680184dd1049e304a0984f85add3f345c39e6206",
   "patches": [
     "coda-home.patch",
     "coda-directory.patch",
     "coda-env.patch",
-    "coda-config-write.patch"
+    "coda-config-write.patch",
+    "coda-local-auth.patch"
   ]
 }

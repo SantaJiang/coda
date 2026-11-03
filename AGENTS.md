@@ -67,6 +67,7 @@ v1 时代的补丁系列随协议切换停用。当前补丁都相对 `v2.2.5`�
 | `coda-directory.patch` | `packages/server/src/location.ts` | 定位目录时接受 `x-coda-directory`，并继续接受上游头。 |
 | `coda-env.patch` | `packages/cli/src/database-path.ts` | 数据库路径优先读 `CODA_DB`、`CODA_CHANNEL`。 |
 | `coda-config-write.patch` | 配置补丁类型与 `Config.update` | 全局配置写入可以合并 `provider` 和 `mcp`，并按名字删除 MCP 服务器。模型设置和 MCP 管理都靠这一条落盘。 |
+| `coda-local-auth.patch` | `packages/cli/src/server-process.ts`、`packages/server/src/process.ts` | `CODA_CLIENT=coda` 的桌面 sidecar 只监听本机，不再生成网页端拿不到的随机密码。显式设置 `OPENCODE_PASSWORD` 时仍然启用认证。 |
 
 `patches/backend/manifest.json` 记录补丁重建基准 `base`、已提交源码的 `revision`（省略时为 base）与补丁应用顺序。`bun run backend:prepare` 会在干净基准上应用这些补丁；已应用时核对内容，不覆盖未知改动。后端源码提交后保留 base 与补丁系列以验证内容，并将 revision 和父仓库 gitlink 更新到该提交；已含补丁的源码不会重复应用。启动和打包入口都执行这一检查，保证干净检出的发布源码与本地一致。升级后端时必须同步更新基准与清单。
 
