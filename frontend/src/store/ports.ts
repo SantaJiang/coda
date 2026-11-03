@@ -44,7 +44,7 @@ export interface AgentClient extends SessionReader {
   promptAsync(directory: string, sessionID: string, options: PromptInput): Promise<void>
   abortSession(directory: string, sessionID: string): Promise<boolean>
   revertSession(directory: string, sessionID: string, messageID: string): Promise<Session>
-  replyPermission(directory: string, requestID: string, reply: "once" | "always" | "reject"): Promise<boolean>
+  replyPermission(directory: string, requestID: string, reply: "once" | "always" | "reject", sessionID?: string): Promise<boolean>
   replyQuestion(directory: string, requestID: string, answers: string[][]): Promise<boolean>
   rejectQuestion(directory: string, requestID: string): Promise<boolean>
   getVcs(directory: string): Promise<VcsInfo>

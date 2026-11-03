@@ -66,7 +66,7 @@ describe("permission-sync", () => {
       client: stubClient({ replyPermission }),
     }
     await autoReplyPending(handle, "allow", "s1")
-    expect(replyPermission).toHaveBeenCalledWith("/tmp/app", "p1", "always")
+    expect(replyPermission).toHaveBeenCalledWith("/tmp/app", "p1", "always", "s1")
     expect(state.permissions.p1).toBeUndefined()
   })
 })

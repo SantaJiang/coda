@@ -235,7 +235,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
         )
         for (const item of autoReplies) {
           const current = sessionLifetime(state, item.permission.sessionID)
-          void client.replyPermission(item.directory, item.id, item.reply).then(() => {
+          void client.replyPermission(item.directory, item.id, item.reply, item.permission.sessionID).then(() => {
             if (current()) setState(produce((draft) => resolveRequest(draft, "permission", item.id, item.permission.sessionID)))
           }).catch((error) => {
             if (!current() || state.resolvedRequests[`permission:${item.id}`] !== undefined) return

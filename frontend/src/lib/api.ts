@@ -1,19 +1,10 @@
-import type { McpServerConfig, McpStatusMap } from "./mcp"
+import type { McpServerConfig } from "./mcp"
 import type { TerminalInfo, TerminalLog } from "./terminal-contracts"
 import { API_BASE, DEFAULT_AGENT } from "./config"
 import type { ComposerAttachment } from "./attachments"
-import type { ConfigPatch, ModelRef, ProviderList } from "./models"
+import type { ConfigPatch, ModelRef } from "./models"
 import type { PermissionRule } from "./permissions"
-import type {
-  BackendProject,
-  MessageWithParts,
-  PermissionRequest,
-  QuestionRequest,
-  Session,
-  SessionStatus,
-  Todo,
-} from "./types"
-
+import { mcpConfigFromEntries, mcpStatusFromServers, sessionStatuses, toPermission, toProject, toProviderList, toSession, toTranscript, toV2Rules } from "./v2-map"
 export class ApiError extends Error {
   status: number
   constructor(message: string, status: number) {
@@ -40,19 +31,18 @@ function directoryHeaders(directory?: string): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/json",
   }
-  if (directory) {
-    headers["x-coda-directory"] = encodeURIComponent(directory)
-  }
+  if (directory) headers["x-coda-directory"] = encodeURIComponent(directory)
   return headers
 }
 
-function withDirectory(path: string, directory?: string, extra?: Record<string, string>) {
+function withDirectory(path: string, directory?: string, extra?: Record<string, string>, scope: "location" | "session" = "location") {
   const url = new URL(path, API_BASE)
-  if (directory) url.searchParams.set("directory", directory)
+  if (directory) {
+    if (scope === "session") url.searchParams.set("directory", directory)
+    else url.searchParams.set("location[directory]", directory)
+  }
   if (extra) {
-    for (const [key, value] of Object.entries(extra)) {
-      url.searchParams.set(key, value)
-    }
+    for (const [key, value] of Object.entries(extra)) url.searchParams.set(key, value)
   }
   return url.toString()
 }
@@ -82,6 +72,7 @@ async function request<T>(
     body?: unknown
     extraQuery?: Record<string, string>
     raw?: boolean
+    scope?: "location" | "session"
   },
 ): Promise<T> {
   const headers: Record<string, string> = {
@@ -91,7 +82,7 @@ async function request<T>(
     headers["Content-Type"] = "application/json"
   }
 
-  const response = await fetch(withDirectory(path, options?.directory, options?.extraQuery), {
+  const response = await fetch(withDirectory(path, options?.directory, options?.extraQuery, options?.scope), {
     method,
     headers,
     body: options?.body === undefined ? undefined : JSON.stringify(options.body),
@@ -111,7 +102,7 @@ async function request<T>(
 }
 
 export async function healthcheck() {
-  const response = await fetch(`${API_BASE}/global/health`, {
+  const response = await fetch(`${API_BASE}/api/info`, {
     method: "GET",
     signal: AbortSignal.timeout(HEALTHCHECK_TIMEOUT_MS),
   })
@@ -119,28 +110,32 @@ export async function healthcheck() {
 }
 
 export async function fetchHomeDir(): Promise<string | null> {
-  try {
-    const response = await fetch(`${API_BASE}/global/health`, { method: "GET" })
-    if (!response.ok) return null
-    const body = await parseBody(response)
-    const data = unwrap<{ home?: unknown }>(body)
-    return typeof data?.home === "string" && data.home.trim() ? data.home : null
-  } catch {
-    return null
-  }
+  return null
+}
+
+async function sessionRows(directory: string, extra?: Record<string, string>) {
+  const rows = await request<Record<string, unknown>[]>("GET", "/api/session", {
+    directory,
+    scope: "session",
+    extraQuery: { limit: "100", order: "desc", ...extra },
+  })
+  return Array.isArray(rows) ? rows : []
 }
 
 export async function listProjects() {
-  return request<BackendProject[]>("GET", "/project", {})
+  const rows = await request<Record<string, unknown>[]>("GET", "/api/project", {})
+  return (Array.isArray(rows) ? rows : []).map(toProject)
 }
 
 export async function listSessions(directory: string, extra?: Record<string, string>) {
-  return request<Session[]>("GET", "/session", { directory, extraQuery: extra })
+  return (await sessionRows(directory, extra)).map(toSession)
 }
 
 export async function listSessionStatuses(directory: string) {
-  return request<Record<string, SessionStatus>>("GET", "/session/status", { directory })
+  return sessionStatuses(await sessionRows(directory))
 }
+
+const sessionPath = (sessionID: string, suffix = "") => `/api/session/${encodeURIComponent(sessionID)}${suffix}`
 
 export async function createSession(
   directory: string,
@@ -148,32 +143,31 @@ export async function createSession(
   agent = DEFAULT_AGENT,
   permission?: PermissionRule[],
 ) {
-  return request<Session>("POST", "/session", {
+  const row = await request<Record<string, unknown>>("POST", "/api/session", {
     directory,
     body: {
       agent,
+      location: { directory },
       ...(model ? { model: { id: model.modelID, providerID: model.providerID } } : {}),
-      ...(permission ? { permission } : {}),
+      ...(permission ? { permissions: toV2Rules(permission) } : {}),
     },
   })
+  return toSession(row)
 }
 
 export async function updateSessionTitle(directory: string, sessionID: string, title: string) {
-  return request<Session>("PATCH", `/session/${sessionID}`, {
-    directory,
-    body: { title },
-  })
+  await request("PATCH", sessionPath(sessionID), { directory, body: { title } })
+  return { ...(await listSessions(directory)).find((item) => item.id === sessionID), id: sessionID, directory, title, time: { created: Date.now(), updated: Date.now() } }
 }
 
 export async function updateSessionPermission(directory: string, sessionID: string, permission: PermissionRule[]) {
-  return request<Session>("PATCH", `/session/${sessionID}`, {
-    directory,
-    body: { permission },
-  })
+  await request("PATCH", sessionPath(sessionID), { directory, body: { permissions: toV2Rules(permission) } })
+  return { id: sessionID, directory, title: "", time: { created: Date.now(), updated: Date.now() } }
 }
 
 export async function deleteSession(directory: string, sessionID: string) {
-  return request<boolean>("DELETE", `/session/${sessionID}`, { directory })
+  await request("DELETE", sessionPath(sessionID), { directory })
+  return true
 }
 
 export type VcsInfo = {
@@ -182,11 +176,16 @@ export type VcsInfo = {
 }
 
 export async function getVcs(directory: string) {
-  return request<VcsInfo>("GET", "/vcs", { directory })
+  const info = await request<{ branch?: { current?: string | null; default?: string | null } }>("GET", "/api/vcs", { directory })
+  return { branch: info?.branch?.current ?? null, default_branch: info?.branch?.default ?? null }
 }
 
 export async function listMessages(directory: string, sessionID: string) {
-  return request<MessageWithParts[]>("GET", `/session/${sessionID}/message`, { directory })
+  const rows = await request<Record<string, unknown>[]>("GET", sessionPath(sessionID, "/message"), {
+    directory,
+    extraQuery: { limit: "200", order: "asc" },
+  })
+  return toTranscript(sessionID, Array.isArray(rows) ? rows : [])
 }
 
 export async function promptAsync(
@@ -202,125 +201,134 @@ export async function promptAsync(
     partIDs?: string[]
   },
 ) {
-  const parts: Array<{ id?: string; type: "text"; text: string } | { id?: string; type: "file"; mime: string; filename?: string; url: string }> =
-    []
-  if (options.text.trim()) {
-    parts.push({ id: options.partIDs?.[parts.length], type: "text", text: options.text })
-  }
-  for (const file of options.files ?? []) {
-    parts.push({
-      id: options.partIDs?.[parts.length],
-      type: "file",
-      mime: file.mime,
-      filename: file.filename,
-      url: file.url,
-    })
-  }
-  if (!parts.length) return
-  return request<void>("POST", `/session/${sessionID}/prompt_async`, {
+  const text = options.text.trim()
+  const files = (options.files ?? []).map((file) => ({ uri: file.url, ...(file.filename ? { name: file.filename } : {}) }))
+  if (!text && !files.length) return
+  await request("POST", sessionPath(sessionID, "/model"), {
     directory,
-    body: {
-      ...(options.messageID ? { messageID: options.messageID } : {}),
-      agent: options.agent ?? DEFAULT_AGENT,
-      model: {
-        providerID: options.model.providerID,
-        modelID: options.model.modelID,
-      },
-      ...(options.variant ? { variant: options.variant } : {}),
-      parts,
-    },
+    body: { model: { id: options.model.modelID, providerID: options.model.providerID, ...(options.variant ? { variant: options.variant } : {}) } },
+  })
+  if (options.agent) await request("POST", sessionPath(sessionID, "/agent"), { directory, body: { agent: options.agent } })
+  await request("POST", sessionPath(sessionID, "/prompt"), {
+    directory,
+    body: { text, ...(files.length ? { files } : {}) },
   })
 }
 
 export async function listProviders(directory?: string) {
-  return request<ProviderList>("GET", "/provider", { directory })
+  const [providers, models] = await Promise.all([
+    request<Record<string, unknown>[]>("GET", "/api/provider", { directory }),
+    request<Record<string, unknown>[]>("GET", "/api/model", { directory }),
+  ])
+  return toProviderList(Array.isArray(providers) ? providers : [], Array.isArray(models) ? models : [])
 }
 
 export async function patchGlobalConfig(body: ConfigPatch) {
-  return request<unknown>("PATCH", "/global/config", { body })
+  return request<unknown>("PATCH", "/api/experimental/config", { body: { provider: body.provider } })
 }
 
 export async function getGlobalConfig() {
-  return request<{ mcp?: Record<string, McpServerConfig | { enabled: boolean }> }>("GET", "/global/config")
+  const entries = await request<unknown[]>("GET", "/api/config", {})
+  return { mcp: mcpConfigFromEntries(Array.isArray(entries) ? entries : []) }
 }
 
 export async function listMcp(directory: string) {
-  return request<McpStatusMap>("GET", "/mcp", { directory })
+  const servers = await request<Record<string, unknown>[]>("GET", "/api/mcp", { directory })
+  return mcpStatusFromServers(Array.isArray(servers) ? servers : [])
 }
 
 export async function saveMcpServer(name: string, server: McpServerConfig) {
-  return request<unknown>("PATCH", "/global/config", { body: { mcp: { [name]: server } } })
+  return request<unknown>("PATCH", "/api/experimental/config", { body: { mcp: { [name]: server } } })
 }
 
-const mcpServerPath = (name: string, suffix = "") => `/mcp/${encodeURIComponent(name)}${suffix}`
+const mcpServerPath = (name: string, suffix = "") => `/api/experimental/mcp/${encodeURIComponent(name)}${suffix}`
+
+async function setMcpEnabled(name: string, enabled: boolean) {
+  await request("PATCH", "/api/experimental/config", { body: { mcp: { [name]: { enabled } } } })
+}
 
 export async function connectMcp(directory: string, name: string) {
-  return request<boolean>("POST", mcpServerPath(name, "/connect"), { directory })
+  await setMcpEnabled(name, true)
+  await request("POST", mcpServerPath(name, "/connect"), { directory })
+  return true
 }
 
 export async function disconnectMcp(directory: string, name: string) {
-  return request<boolean>("POST", mcpServerPath(name, "/disconnect"), { directory })
+  await setMcpEnabled(name, false)
+  await request("POST", mcpServerPath(name, "/disconnect"), { directory })
+  return true
 }
 
 export async function removeMcp(directory: string, name: string) {
-  return request<boolean>("DELETE", mcpServerPath(name), { directory })
+  await request("PATCH", "/api/experimental/config", { body: { mcpRemove: [name] } })
+  await request("DELETE", mcpServerPath(name), { directory }).catch((error: unknown) => {
+    if (error instanceof ApiError && error.status === 404) return
+    throw error
+  })
+  return true
 }
 
 export async function authenticateMcp(directory: string, name: string) {
-  return request<unknown>("POST", mcpServerPath(name, "/auth/authenticate"), { directory })
+  return connectMcp(directory, name)
 }
 
 export async function abortSession(directory: string, sessionID: string) {
-  return request<boolean>("POST", `/session/${sessionID}/abort`, { directory })
+  const body = await request<{ interrupted?: boolean }>("POST", sessionPath(sessionID, "/interrupt"), { directory })
+  return body?.interrupted !== false
 }
 
 export async function revertSession(directory: string, sessionID: string, messageID: string) {
-  return request<Session>("POST", `/session/${sessionID}/revert`, {
-    directory,
-    body: { messageID },
-  })
+  await request("POST", sessionPath(sessionID, "/revert/stage"), { directory, body: { messageID } })
+  await request("POST", sessionPath(sessionID, "/revert/commit"), { directory })
+  return (await listSessions(directory)).find((item) => item.id === sessionID) ?? { id: sessionID, directory, title: "", time: { created: Date.now(), updated: Date.now() } }
 }
 
-export async function listTodos(directory: string, sessionID: string) {
-  return request<Todo[]>("GET", `/session/${sessionID}/todo`, { directory })
+export async function listTodos(_directory: string, _sessionID: string) {
+  return []
 }
 
 export async function listPermissions(directory: string) {
-  return request<PermissionRequest[]>("GET", "/permission", { directory })
+  const sessions = await listSessions(directory)
+  const lists = await Promise.all(
+    sessions.map(async (session) => {
+      const rows = await request<Record<string, unknown>[]>("GET", sessionPath(session.id, "/permission"), { directory })
+      return (Array.isArray(rows) ? rows : []).map(toPermission)
+    }),
+  )
+  return lists.flat()
 }
 
 export async function replyPermission(
   directory: string,
   requestID: string,
   reply: "once" | "always" | "reject",
+  sessionID?: string,
 ) {
-  return request<boolean>("POST", `/permission/${requestID}/reply`, {
+  if (!sessionID) return false
+  await request("POST", sessionPath(sessionID, `/permission/${encodeURIComponent(requestID)}/reply`), {
     directory,
-    body: { reply },
+    body: { decision: reply },
   })
+  return true
 }
 
-export async function listQuestions(directory: string) {
-  return request<QuestionRequest[]>("GET", "/question", { directory })
+export async function listQuestions(_directory: string) {
+  return []
 }
 
-export async function replyQuestion(directory: string, requestID: string, answers: string[][]) {
-  return request<boolean>("POST", `/question/${requestID}/reply`, {
-    directory,
-    body: { answers },
-  })
+export async function replyQuestion(_directory: string, _requestID: string, _answers: string[][]) {
+  return false
 }
 
-export async function rejectQuestion(directory: string, requestID: string) {
-  return request<boolean>("POST", `/question/${requestID}/reject`, { directory })
+export async function rejectQuestion(_directory: string, _requestID: string) {
+  return false
 }
 
 export type { TerminalInfo, TerminalLog } from "./terminal-contracts"
 export const isTerminalRunning = (info: TerminalInfo) => info.status === "starting" || info.status === "running"
-const terminalPath = (sessionID: string, id?: string) => `/session/${encodeURIComponent(sessionID)}/terminals${id ? `/${encodeURIComponent(id)}` : ""}`
-export const listTerminals = (directory: string, sessionID: string) => request<{ backendID: string; items: TerminalInfo[] }>("GET", terminalPath(sessionID), { directory })
-export const terminalControl = (directory: string, sessionID: string, id: string, action: "cancel" | "hide" | "show" | "resume") => request("POST", `${terminalPath(sessionID, id)}/control`, { directory, body: { action } })
-export const terminalLog = (directory: string, sessionID: string, id: string, cursor?: number, limit?: number) => request<TerminalLog>("GET", `${terminalPath(sessionID, id)}/log`, { directory, raw: true, extraQuery: { ...(cursor === undefined ? {} : { cursor: String(cursor) }), ...(limit === undefined ? {} : { limit: String(limit) }) } })
-export function terminalStreamURL(directory: string, sessionID: string, id: string, cursor: number) {
-  return withDirectory(`${terminalPath(sessionID, id)}/stream`, directory, { cursor: String(cursor) })
+export const listTerminals = (_directory: string, _sessionID: string) => Promise.resolve({ backendID: "v2", items: [] as TerminalInfo[] })
+export const terminalControl = async (_directory: string, _sessionID: string, _id: string, _action: "cancel" | "hide" | "show" | "resume") => false
+export const terminalLog = (_directory: string, _sessionID: string, _id: string, cursor = 0, _limit?: number): Promise<TerminalLog> => Promise.resolve({ data: "", start: cursor, cursor, baseCursor: 0, endCursor: cursor, truncated: false, status: "completed", ended: true })
+export function terminalStreamURL(_directory: string, _sessionID: string, _id: string, _cursor: number) {
+  return ""
 }

@@ -34,7 +34,7 @@ Coda 是精简客户端。从上游同步时，**不要重新加入**本项目�
 - 写死的默认模型或预置密钥
 - Overlay 标题栏等已经改掉的 UI
 
-设置里的 MCP 服务器管理是产品功能：同步上游时保留设置入口、`/mcp` 的删除与启用写入，以及 `patches/backend/mcp-config.patch`。不要把这套界面或补丁裁掉。
+设置里的 MCP 服务器管理是产品功能：同步上游时保留设置入口，以及把服务器写进配置文件的 `coda-config-write.patch`。不要把这套界面或补丁裁掉。
 
 若上游新增了 Coda 需要的能力，按 Coda 的交互和命名接入，而不是整包搬回。
 
@@ -59,29 +59,16 @@ git -C backend apply ../patches/backend/<name>.patch
 
 如果上游改动了相关代码导致 apply 失败，要**手工把同等语义合并进新代码**，然后重新生成补丁文件（`git -C backend diff > patches/backend/<name>.patch`），保持补丁与子模块实际改动一致。
 
-当前补丁清单：
+v1 时代的补丁系列随协议切换停用。当前补丁都相对 `v2.2.5`：
 
 | 补丁 | 位置 | 作用 |
 |---|---|---|
-| `session-permission-refresh-per-step.patch` | `packages/opencode/src/session/prompt.ts` 的 `runLoop` | 每个 step 循环开头重新 `sessions.get(sessionID)`，让前端**运行中**切换权限模式（PATCH `/session/:id/permission`）在下一个 step 立即生效，而不是等下一条消息。上游是在循环外只读一次快照。 |
-| `prompt-failure-surface.patch` | `prompt_async` 失败处理、`SystemPrompt` 引用/技能加载、`FileSystemSearch` 的 fff 探测、技能列表排序 | 安装版 sidecar 里 `prompt_async` 崩溃后只发 `session.error`、不写助手消息、会话像没反应；补丁会把错误写回最后一条未完成助手消息并置 idle（已完成的历史轮次不再误标，崩溃早于新消息时走会话级错误卡）。`SystemPrompt.environment` 加载引用失败时必须用 `Effect.as([])` 恢复，不能 `.pipe(Effect.succeed([]))`（那会把 Effect 对象当函数调用，打包后报 `t[0] is not a function`）。同时兜住 location/fff/技能列表里的空项。 |
-| `coda-model-config-prompt.patch` | `packages/opencode/src/session/system.ts` 的 `environment`、`prompt/coda-models.txt` | 系统提示写明当前是 Coda 桌面客户端、用户数据在 `~/.coda`，并给出把 OpenCode 风格 provider JSON 转成 Coda `models` 数组、同时合并进 `~/.coda/opencode.jsonc` 的步骤。避免会话里的模型把配置写到 OpenCode CLI 或 macOS Application Support。 |
-| `coda-home.patch` | `packages/core/src/global.ts` | 当 `OPENCODE_CLIENT=coda` 或设置了 `CODA_HOME` 时，把 sidecar 的 config/data/cache/state/log 全部收到 `~/.coda`（默认）而不是 `~/.config/opencode` 与 `~/.local/share/opencode`。 |
-| `managed-terminals.patch` | Shell、会话执行/恢复、终端 API 与桌面存活监测 | Coda 后端内持有 PTY 长任务，执行上限与分段等待分离；提供有界日志、游标流、取消及中断恢复，按工具调用去重，并在桌面退出时清理命令；会话结束前核对未完成 Todo，避免漏写计划状态（不自动将未验证事项标为完成）。 |
+| `coda-home.patch` | `packages/util/src/global-roots.ts`、`packages/util/src/global.ts` | `CODA_HOME` 或 `CODA_CLIENT=coda` 时，把 config/data 收到 `~/.coda`，cache/state 放在其子目录。配置目录同时接受 `CODA_CONFIG_DIR`。 |
+| `coda-directory.patch` | `packages/server/src/location.ts` | 定位目录时接受 `x-coda-directory`，并继续接受上游头。 |
+| `coda-env.patch` | `packages/cli/src/database-path.ts` | 数据库路径优先读 `CODA_DB`、`CODA_CHANNEL`。 |
+| `coda-config-write.patch` | 配置补丁类型与 `Config.update` | 全局配置写入可以合并 `provider` 和 `mcp`，并按名字删除 MCP 服务器。模型设置和 MCP 管理都靠这一条落盘。 |
 
-新增补丁（接在 `managed-terminals.patch` 之后）：
-
-| 补丁 | 位置 | 作用 |
-|---|---|---|
-| `desktop-contracts.patch` | core 环境变量、构建入口、终端 HTTP Schema 与测试 | 优先读取 Coda 环境变量并兼容旧名；为终端信息、日志和控制响应建立明确契约，使用共享测试样本验证跨语言结构。 |
-| `shell-output-drain.patch` | `packages/opencode/src/tool/shell.ts` 与工具测试 | 快速命令退出后，在有界等待内排空输出流，避免进程已成功但最后一段输出丢失。 |
-| `session-runtime-stability.patch` | 全局配置 HTTP、会话重试、托管终端与回归测试 | 配置写入返回前完成实例清理，防止延迟清理中断新回复；供应商重试等待每次最多一分钟；无人交互终端禁用分页器并提供有效 TERM；上下文整理前后按真实用户轮次关联终端、停止和恢复。 |
-| `terminal-progress.patch` | Shell 工具提示、托管终端环境与回归测试 | 长任务优先输出真实进度、阶段或增量日志；下载避免静默参数，Python 默认关闭输出缓冲，不伪造进度，不为补进度重跑已有任务。 |
-| `mcp-config.patch` | MCP 运行时与 `/mcp` HTTP | 删除服务器时从实际配置文件去掉条目，避免合并写入把 `undefined` 丢掉后服务器又出现；连接和断开时把 `enabled` 写回已有配置。 |
-
-`terminal-progress.patch` 的后续同步规则：默认保留并重新应用进度输出指引和 Python 输出缓冲改动，避免被后端升级冲掉。若远程更新直接调整了相同的进度输出或 Python 缓冲逻辑，**对应项以远程实现为准**，删除或缩减本地补丁中被替代的部分，不再强行覆盖远程实现；远程未涉及的其他部分继续保留。逐项检查实际逻辑，不能仅因同一文件有变化就丢掉整个补丁。这是本补丁对上述冲突合并流程的例外；调整后同步更新补丁清单，并通过 `bun run backend:check` 和相关测试验证。
-
-`patches/backend/manifest.json` 记录补丁重建基准 `base`、已提交源码的 `revision`（省略时为 base）与补丁应用顺序。`bun run backend:prepare` 会在干净基准上应用这些补丁；已应用时核对内容，不覆盖未知改动。前四个历史补丁已包含在当前基准提交中，不重复应用。后端源码提交后保留 base 与补丁系列以验证内容，并将 revision 和父仓库 gitlink 更新到该提交；已含补丁的源码不会重复应用。启动和打包入口都执行这一检查，保证干净检出的发布源码与本地一致。升级后端时必须同步更新基准与清单。
+`patches/backend/manifest.json` 记录补丁重建基准 `base`、已提交源码的 `revision`（省略时为 base）与补丁应用顺序。`bun run backend:prepare` 会在干净基准上应用这些补丁；已应用时核对内容，不覆盖未知改动。后端源码提交后保留 base 与补丁系列以验证内容，并将 revision 和父仓库 gitlink 更新到该提交；已含补丁的源码不会重复应用。启动和打包入口都执行这一检查，保证干净检出的发布源码与本地一致。升级后端时必须同步更新基准与清单。
 
 以后对 `backend/` 的任何行为性修改（非第 1 条的关键字替换），都要同样落成 `patches/backend/` 下的补丁并登记到这张表里。
 
@@ -99,11 +86,11 @@ bash ./scripts/install-hooks.sh
 bash ./scripts/sync-backend-mirror.sh
 ```
 
-本地同步上游仍用 `anomalyco/opencode`（可加 remote 名 `upstream`），桌面端 sidecar 跟 **`upstream/v1`**。`upstream/dev` 已经换成 `/api/*` 协议，和当前客户端的 `/global/health`、`/session`、`prompt_async` 不兼容，不要直接同步 dev。流程：同步 → 打补丁 / 关键字替换 → 更新父仓库 gitlink → 推父仓库（hook 会推镜像）。未装 hook 时，推 `main` 前务必先跑一遍 `sync-backend-mirror.sh`，否则 Pack 会在 submodule 步骤以 exit 128 失败。
+本地同步上游仍用 `anomalyco/opencode`（可加 remote 名 `upstream`）。桌面端 sidecar 从 **2.0.0** 起跟 **`v2` 标签**（当前 `v2.2.5`），客户端走 `/api/*`。不要再同步 `upstream/v1`。流程：同步 → 打补丁 / 关键字替换 → 更新父仓库 gitlink → 推父仓库（hook 会推镜像）。未装 hook 时，推 `main` 前务必先跑一遍 `sync-backend-mirror.sh`，否则 Pack 会在 submodule 步骤以 exit 128 失败。
 
 ## 5. 版本号
 
-当前软件版本是 **1.7.0**。下面四处必须保持同一个 `x.y.z`，改一处就要一起改：
+当前软件版本是 **2.0.0**。下面四处必须保持同一个 `x.y.z`，改一处就要一起改：
 
 | 文件 | 字段 |
 |---|---|

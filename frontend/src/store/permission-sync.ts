@@ -56,7 +56,7 @@ export async function autoReplyPending(handle: StoreHandle, mode: PermissionMode
     if (!directory) continue
     const current = sessionLifetime(handle.state, item.sessionID)
     try {
-      await handle.client.replyPermission(directory, item.id, reply)
+      await handle.client.replyPermission(directory, item.id, reply, item.sessionID)
       if (!current()) continue
       handle.setState(
         produce((draft) => {

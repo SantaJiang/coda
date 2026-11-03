@@ -58,6 +58,7 @@ function preferPart(local: Part, incoming: Part): Part {
     const localDone = local.state.status === "completed" || local.state.status === "error"
     const incomingDone = incoming.state.status === "completed" || incoming.state.status === "error"
     if (localDone && !incomingDone) return local
+    return { ...incoming, tool: incoming.tool || local.tool, callID: incoming.callID || local.callID }
   }
   return incoming
 }

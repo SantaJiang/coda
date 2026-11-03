@@ -128,25 +128,11 @@ describe("session terminal ownership", () => {
   })
 })
 describe("terminal output response", () => {
-  it("preserves a log payload with a data field instead of unwrapping it as an API envelope", async () => {
-    const frame = {
-      data: "5L2g5aW9",
-      start: 0,
-      cursor: 6,
-      baseCursor: 0,
-      endCursor: 6,
-      truncated: false,
-      status: "running",
-    }
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(frame), {
-          headers: { "content-type": "application/json" },
-        }),
-      ),
-    )
-    expect(await terminalLog("/tmp/project", "one", "first")).toEqual(frame)
+  it("does not call the retired per-session terminal log route", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    expect(await terminalLog("/tmp/project", "one", "first")).toMatchObject({ data: "", status: "completed", ended: true })
+    expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
 })

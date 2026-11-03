@@ -713,7 +713,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const current = sessionLifetime(state, permission.sessionID)
       replying.add(lock)
       try {
-        await client.replyPermission(project.path, id, reply)
+        await client.replyPermission(project.path, id, reply, permission.sessionID)
         if (!current()) return
         setState(
           produce((draft) => {

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FRONTEND="$ROOT/frontend"
 BACKEND="$ROOT/backend"
-PKG="$BACKEND/packages/opencode"
+PKG="$BACKEND/packages/cli"
 BIN_DIR="$FRONTEND/src-tauri/binaries"
 
 if [[ ! -f "$PKG/src/index.ts" || ! -f "$PKG/script/build.ts" ]]; then
@@ -62,7 +62,7 @@ if [[ -z "$CODA_VERSION" ]]; then
   exit 1
 fi
 echo "==> sidecar 版本 ${CODA_VERSION}（channel=local）"
-CODA_CHANNEL=local CODA_VERSION="$CODA_VERSION" bun run --cwd "$PKG" script/build.ts --single --skip-embed-web-ui --skip-install
+CODA_CHANNEL=local CODA_VERSION="$CODA_VERSION" bun run --cwd "$PKG" script/build.ts --single --skip-web-ui --skip-install
 
 if [[ ! -f "$SRC_BIN" ]]; then
   echo "后端编译完成，但找不到二进制：$SRC_BIN"

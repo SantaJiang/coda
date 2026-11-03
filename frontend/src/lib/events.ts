@@ -1,5 +1,6 @@
 import { API_BASE } from "./config"
 import type { EventEnvelope, GlobalEvent } from "./types"
+import { translateWireEvent } from "./v2-events"
 
 export type ParsedEvent = {
   directory?: string
@@ -10,24 +11,7 @@ const STALE_STREAM_MS = 25_000
 const RETRY_DELAY_MS = 1_500
 
 export function unwrapEvent(raw: GlobalEvent): ParsedEvent | null {
-  if (raw.payload && typeof raw.payload === "object" && "type" in raw.payload) {
-    return {
-      directory: raw.directory,
-      event: raw.payload,
-    }
-  }
-  if (raw.type) {
-    return {
-      directory: raw.directory,
-      event: {
-        id: raw.id,
-        type: raw.type,
-        properties: raw.properties,
-        data: raw.data,
-      },
-    }
-  }
-  return null
+  return translateWireEvent(raw)[0] ?? null
 }
 
 function emitFrames(buffer: string, final: boolean, onEvent: (parsed: ParsedEvent) => void) {
@@ -44,8 +28,9 @@ function emitFrames(buffer: string, final: boolean, onEvent: (parsed: ParsedEven
     if (!dataLine) continue
     try {
       const raw = JSON.parse(dataLine) as GlobalEvent
-      const parsed = unwrapEvent(raw)
-      if (parsed?.event.type && parsed.event.type !== "server.heartbeat") onEvent(parsed)
+      for (const parsed of translateWireEvent(raw)) {
+        if (parsed.event.type && parsed.event.type !== "server.heartbeat" && parsed.event.type !== "server.connected") onEvent(parsed)
+      }
     } catch {
       // ignore malformed frames
     }
@@ -74,7 +59,7 @@ export function subscribeEvents(onEvent: (parsed: ParsedEvent) => void, onStatus
       }
       bumpStale()
       try {
-        const response = await fetch(`${API_BASE}/global/event`, {
+        const response = await fetch(`${API_BASE}/api/event`, {
           headers: { Accept: "text/event-stream" },
           signal: attempt.signal,
         })

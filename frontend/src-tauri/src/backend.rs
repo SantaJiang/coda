@@ -172,7 +172,7 @@ fn healthy(port: &str) -> bool {
     let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
     let _ = stream.set_write_timeout(Some(Duration::from_millis(400)));
     if stream
-        .write_all(b"GET /global/health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .write_all(b"GET /api/info HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
         .is_err()
     {
         return false;
@@ -183,7 +183,7 @@ fn healthy(port: &str) -> bool {
     }
     let text = String::from_utf8_lossy(&buf);
     let ok = text.starts_with("HTTP/1.1 200") || text.starts_with("HTTP/1.0 200");
-    ok && (text.contains("\"healthy\":true") || text.contains("\"healthy\": true"))
+    ok && text.contains("\"version\"")
 }
 
 #[cfg(unix)]
@@ -213,10 +213,10 @@ mod tests {
             let mut request = [0u8; 1024];
             let _ = stream.read(&mut request).unwrap();
             stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 16\r\nConnection: close\r\n\r\n")
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 14\r\nConnection: close\r\n\r\n")
                 .unwrap();
             std::thread::sleep(Duration::from_millis(10));
-            stream.write_all(br#"{"healthy":true}"#).unwrap();
+            stream.write_all(br#"{"version":"2"}"#).unwrap();
         });
         assert!(healthy(&port.to_string()));
         server.join().unwrap();

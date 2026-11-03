@@ -89,9 +89,12 @@ const upsertSession: EventHandler = (draft, { props, directory }) => {
   if (!info || !sessionID || info.parentID) return
   const path = ownerPath(draft, sessionID, directory || info.directory)
   if (!path) return
+  const previous = (draft.sessionsByProject[path] ?? []).find((item) => item.id === sessionID)
   draft.sessionsByProject[path] = upsertById(draft.sessionsByProject[path] ?? [], {
+    ...previous,
     ...info,
     directory: path,
+    time: { ...previous?.time, ...info.time },
   })
 }
 
