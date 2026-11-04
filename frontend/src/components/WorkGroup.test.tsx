@@ -13,7 +13,12 @@ const assistant = (done = false): AssistantMessage => ({ id: "a1", sessionID: "s
 const part = (id: string, type: "text" | "reasoning", text: string): Part => ({ id, type, text, sessionID: "s1", messageID: "a1" })
 const tool: Part = { id: "t1", type: "tool", tool: "read", callID: "t1", sessionID: "s1", messageID: "a1", state: { status: "completed", input: { filePath: "app.ts" }, output: "contents" } }
 
-afterEach(() => { vi.useRealTimers(); window.getSelection()?.removeAllRanges(); while (cleanups.length) cleanups.pop()?.() })
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+  window.getSelection()?.removeAllRanges()
+  while (cleanups.length) cleanups.pop()?.()
+})
 function setup(initial: Part[] = [], completed = false, extra: Partial<AssistantMessage> = {}) {
   return createRoot((disposeRoot) => {
   const [parts, setParts] = createSignal(initial)
@@ -76,7 +81,7 @@ describe("streaming turn presentation", () => {
     expect(container.querySelector(".tool-details")?.textContent).toMatch(/git status|clean/)
   })
 
-  it("closes as a single Thinking row and lays markdown out when the pure group opens", () => {
+  it("closes as a single Thinking row and expands Thought body only after a click", () => {
     const { container, setParts } = setup()
     expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Planning next moves")
@@ -88,7 +93,9 @@ describe("streaming turn presentation", () => {
     // Cursor: pure Thinking already owns the status — no second Thinking line.
     expect(container.querySelector(".turn-status")).toBeNull()
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
-    expect(container.querySelector(".thinking-line")).toBeNull()
+    expect(container.querySelector(".thinking-line")?.textContent).toMatch(/Thinking|Thought/)
+    expect(container.querySelector(".thinking-body")).toBeNull()
+    ;(container.querySelector(".thinking-line .work-step-head") as HTMLButtonElement).click()
     expect(container.querySelector(".thinking-body")?.textContent).toContain("思考原文")
     expect(container.querySelector(".turn-status")).toBeNull()
     expect(container.querySelector(".work-preview")).toBeNull()
@@ -234,12 +241,40 @@ describe("streaming turn presentation", () => {
     const thought = part("r1", "reasoning", "原来的思考内容")
     const { container, setParts } = setup([thought])
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
-    expect(container.querySelector(".thinking-body")?.textContent).toContain("原来的思考内容")
+    ;(container.querySelector(".thinking-line .work-step-head") as HTMLButtonElement).click()
+    expect(container.querySelector(".thinking-line.open .thinking-body")?.textContent).toContain("原来的思考内容")
     setParts([thought, tool])
     expect(container.querySelectorAll(".work-group.open")).toHaveLength(1)
     expect(container.querySelector(".thinking-line.open .thinking-body")?.textContent).toContain("原来的思考内容")
     ;(container.querySelector('[data-entry-key="a1:r1"] .work-step-head') as HTMLButtonElement).click()
     expect(container.querySelector(".thinking-body")).toBeNull()
+  })
+
+  it("does not leave finished thoughts expanded after tools join", () => {
+    const thought = { ...part("r1", "reasoning", "已经想完的内容"), time: { start: 1, end: 3 } } as Part
+    const { container, setParts } = setup([thought])
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    // Finished thoughts stay collapsed until the Thought row is clicked.
+    expect(container.querySelector(".thinking-body")).toBeNull()
+    expect(container.querySelector(".thinking-line")?.textContent).toContain("Thought")
+    setParts([thought, tool])
+    expect(container.querySelectorAll(".work-group.open")).toHaveLength(1)
+    expect(container.querySelector(".thinking-line")?.textContent).toContain("Thought")
+    expect(container.querySelector(".thinking-body")).toBeNull()
+    expect(container.querySelector(".thinking-line.open")).toBeNull()
+  })
+
+  it("eases a live Thinking body closed instead of unmounting it instantly", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: false, addListener() {}, removeListener() {} }))
+    const live = { ...part("r1", "reasoning", "正在看的思考"), time: { start: 1 } } as Part
+    const { container, setParts } = setup([tool, live])
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    ;(container.querySelector(".thinking-line .work-step-head") as HTMLButtonElement).click()
+    expect(container.querySelector(".thinking-collapse.open .thinking-body")?.textContent).toContain("正在看的思考")
+    setParts([tool, { ...live, time: { start: 1, end: 4 } } as Part])
+    expect(container.querySelector(".thinking-line.closing")).toBeTruthy()
+    expect(container.querySelector(".thinking-collapse.closing .thinking-body")?.textContent).toContain("正在看的思考")
+    expect(container.querySelector(".thinking-line.open")).toBeNull()
   })
 
   it("never shows Thought chrome, ThinkingLine, and live Thinking together", () => {
@@ -266,6 +301,7 @@ describe("streaming turn presentation", () => {
     const { container } = setup([doneThought])
     expect(container.querySelector(".turn-status [role=\"status\"]")?.textContent).toContain("Planning next moves")
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    ;(container.querySelector(".thinking-line .work-step-head") as HTMLButtonElement).click()
     expect(container.querySelector(".thinking-body")?.textContent).toContain("上一轮想完了")
     // Completed open group must not hide the planning gap status (Glass Oja).
     expect(container.querySelector(".turn-status [role=\"status\"]")?.textContent).toContain("Planning next moves")
@@ -276,8 +312,10 @@ describe("streaming turn presentation", () => {
     const real = { ...part("r2", "reasoning", "真正的思考"), time: { start: 3, end: 5 } } as Part
     const { container } = setup([hollow, real])
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    expect(container.querySelectorAll(".thinking-line")).toHaveLength(1)
+    expect(container.querySelector(".thinking-body")).toBeNull()
+    ;(container.querySelector(".thinking-line .work-step-head") as HTMLButtonElement).click()
     expect([...container.querySelectorAll(".thinking-body")].map((node) => node.textContent?.trim())).toEqual(["真正的思考"])
-    expect(container.querySelectorAll(".thinking-line")).toHaveLength(0)
     expect(container.textContent).not.toMatch(/(^|\n)\s*>\s*(\n|$)/)
   })
 

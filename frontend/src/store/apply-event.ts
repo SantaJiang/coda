@@ -107,8 +107,11 @@ function attachSessionError(draft: AppState, sessionID: string, error: Assistant
 const upsertSession: EventHandler = (draft, { props, directory }) => {
   const info = props.info as Session | undefined
   const sessionID = (props.sessionID as string) ?? info?.id
-  if (!info || !sessionID || info.parentID) return
-  const path = ownerPath(draft, sessionID, directory || info.directory)
+  if (!info || !sessionID) return
+  // Child (subagent) sessions stay in the store for open/back navigation, but the
+  // sidebar only lists roots (`!parentID`).
+  const path = ownerPath(draft, sessionID, directory || info.directory) ||
+    (info.parentID ? ownerPath(draft, info.parentID, directory || info.directory) : undefined)
   if (!path) return
   const previous = (draft.sessionsByProject[path] ?? []).find((item) => item.id === sessionID)
   draft.sessionsByProject[path] = upsertById(draft.sessionsByProject[path] ?? [], {

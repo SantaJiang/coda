@@ -61,9 +61,11 @@ function shellLikeTool(part: ToolPart) {
 /** Tools that still block the turn from becoming done while the session is live. */
 function unresolvedTool(part: Part, sessionIdle: boolean): boolean {
   if (!runningTool(part)) return false
-  // Background shells keep running in the terminal dock after the agent step ends.
+  // Background shells / subagents keep running in docks after the agent step ends.
   // Counting them as unresolved made idle turns show a false "回复已中断".
   if (sessionIdle && shellLikeTool(part)) return false
+  const name = part.tool.toLowerCase()
+  if (sessionIdle && (name === "subagent" || name === "task")) return false
   if (sessionIdle) {
     const meta = "metadata" in part.state ? part.state.metadata : undefined
     if (meta && typeof meta === "object" && (meta.terminalID || meta.shellID)) return false
@@ -85,6 +87,10 @@ export function toolActivity(part: ToolPart) {
   if (name === "question") return "处理提问"
   if (["todowrite", "todo"].includes(name)) return "更新任务列表"
   if (name === "skill") return "加载技能"
+  if (name === "task" || name === "subagent") {
+    const desc = String(input.description ?? "").trim()
+    return desc ? `执行任务 ${desc}` : "执行子代理任务"
+  }
   return `执行 ${part.tool}`
 }
 

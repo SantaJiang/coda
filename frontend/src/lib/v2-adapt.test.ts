@@ -4,16 +4,22 @@ import { conversationTurns } from "./conversation"
 import { formToQuestion, sessionStatuses, shellOutputToLog, shellToTerminal, todosFromMessages, toTranscript, toV2Rules } from "./v2-map"
 
 describe("v2 feature adapters", () => {
-  it("treats finished outcomes as idle even when busy stamps are newer", () => {
+  it("treats a newer busy stamp as busy even when the previous idle outcome remains", () => {
+    // Continue-after-interrupt: Execution.Started updates busy but leaves idle_outcome.
     expect(sessionStatuses([{
       id: "ses_1",
       outcome: "interrupted",
       time: { created: 1, updated: 3, busy: 3, idle: 2 },
-    }]).ses_1).toEqual({ type: "idle" })
+    }]).ses_1).toEqual({ type: "busy" })
     expect(sessionStatuses([{
       id: "ses_2",
+      outcome: "interrupted",
+      time: { created: 1, updated: 3, busy: 2, idle: 3 },
+    }]).ses_2).toEqual({ type: "idle" })
+    expect(sessionStatuses([{
+      id: "ses_3",
       time: { created: 1, updated: 3, busy: 3, idle: 2 },
-    }]).ses_2).toEqual({ type: "busy" })
+    }]).ses_3).toEqual({ type: "busy" })
   })
 
   it("keeps reasoning collapsed by giving it the v1 start and end times", () => {

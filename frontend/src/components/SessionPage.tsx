@@ -11,6 +11,7 @@ import { MessageTimeline } from "./MessageTimeline"
 import { PermissionDock } from "./PermissionDock"
 import { QuestionDock } from "./QuestionDock"
 import { QueueDock } from "./QueueDock"
+import { ChildSessionBar, SubagentDock } from "./SubagentDock"
 import { TodoDock } from "./TodoDock"
 import { ChromeDrag, WindowControls } from "./WindowChrome"
 import { Icon } from "./Icon"
@@ -162,11 +163,13 @@ export function SessionPage() {
               <WindowControls />
             </Show>
           </ChromeDrag>
+          <ChildSessionBar />
           <Show when={projects.error()}>
             <div class="session-error">{projects.error()}</div>
           </Show>
           <Show when={!isDraftView()}><MessageTimeline /></Show>
           <div class="composer-region" classList={{ "draft-composer-region": isDraftView() }}>
+            <SubagentDock />
             <QuestionDock />
             <PermissionDock />
             <QueueDock />

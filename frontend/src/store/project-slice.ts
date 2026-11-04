@@ -81,16 +81,17 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       const localAfter = state.sessionsByProject[project.path] ?? []
       const localById = new Map(localAfter.map((session) => [session.id, session]))
       const removedDuring = new Set([...known].filter((id) => !localById.has(id)))
-      const roots = filterProjectSessions(sessions ?? [], project.path)
+      // Keep subagent children in the store so Task cards can open them; the sidebar
+      // filters to roots only (`!parentID`).
+      const listed = filterProjectSessions(sessions ?? [], project.path)
         .filter(
           (session) =>
-            !session.parentID &&
             !session.time.archived &&
             !removedDuring.has(session.id) &&
             !state.removedSessions[session.id],
         )
         .map((session) => ({ ...session, directory: project.path }))
-      const merged = roots.map((remote) => {
+      const merged = listed.map((remote) => {
         const local = localById.get(remote.id)
         if (!local) return remote
         const localUpdated = local.time?.updated ?? 0
@@ -99,9 +100,17 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
           return { ...remote, ...local, directory: project.path }
         return remote
       })
-      const rootIds = new Set(roots.map((session) => session.id))
-      const arrived = localAfter.filter((session) => !known.has(session.id) && !rootIds.has(session.id))
-      const next = [...arrived, ...merged]
+      const listedIds = new Set(listed.map((session) => session.id))
+      const arrived = localAfter.filter((session) => !known.has(session.id) && !listedIds.has(session.id))
+      // Keep child stubs / in-flight subagent sessions until the API lists them.
+      const retainedChildren = localAfter.filter(
+        (session) =>
+          Boolean(session.parentID) &&
+          !listedIds.has(session.id) &&
+          !removedDuring.has(session.id) &&
+          !state.removedSessions[session.id],
+      )
+      const next = [...arrived, ...retainedChildren, ...merged]
       setState("sessionsByProject", project.path, next)
       rememberSessions(project, next)
     } catch (error) {
@@ -412,6 +421,15 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
         return
       }
       const local = isLocalDraft(session)
+      // Subagent stubs / children opened from a Task card must exist in the
+      // project list or selectedSessionOf() returns undefined after select.
+      if (!local && project) {
+        const path = project.path
+        const list = state.sessionsByProject[path] ?? []
+        if (!list.some((item) => item.id === session.id)) {
+          setState("sessionsByProject", path, [{ ...session, directory: path }, ...list])
+        }
+      }
       setState({
         selectedSessionId: session.id,
         selectedProjectId: project?.id ?? state.selectedProjectId,

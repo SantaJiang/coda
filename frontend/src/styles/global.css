@@ -1500,6 +1500,50 @@ button.ctx-pill:hover {
   line-height: inherit;
 }
 
+/*
+ * Cursor Glass collapsible close: grid 1fr→0fr + fade over --cursor-duration-slow (200ms),
+ * ease-sharp. Keeps the Thought header as the eye anchor while the body eases away.
+ */
+.thinking-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+}
+
+.thinking-collapse.open {
+  grid-template-rows: 1fr;
+}
+
+.thinking-collapse.closing {
+  animation: thinking-collapse-rows 200ms cubic-bezier(0.165, 0.84, 0.44, 1) both;
+}
+
+.thinking-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.thinking-collapse.closing .thinking-body {
+  animation: thinking-collapse-fade 200ms cubic-bezier(0.165, 0.84, 0.44, 1) both;
+}
+
+@keyframes thinking-collapse-rows {
+  from { grid-template-rows: 1fr; }
+  to { grid-template-rows: 0fr; }
+}
+
+@keyframes thinking-collapse-fade {
+  from { opacity: 0.5; }
+  to { opacity: 0.08; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-collapse.closing,
+  .thinking-collapse.closing .thinking-body {
+    animation: none;
+  }
+}
+
+
 .worked-for {
   margin: 0 0 12px;
 }
@@ -1678,6 +1722,165 @@ button.ctx-pill:hover {
 
 .diff-line.meta {
   color: var(--text-faint);
+}
+
+.child-session-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  width: min(840px, calc(100% - 48px));
+  margin: 0 auto 8px;
+  min-width: 0;
+  color: var(--chat-secondary);
+  font-size: 12px;
+}
+
+.child-session-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--chat-text);
+  font: inherit;
+  padding: 4px 2px;
+  cursor: pointer;
+}
+
+.child-session-back:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.child-session-back:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.child-session-back-icon {
+  font-size: 11px;
+}
+
+.child-session-kind {
+  color: var(--text-muted);
+}
+
+.subagent-dock {
+  border-radius: 10px;
+  padding: 6px 8px 8px;
+  min-width: 0;
+  background: color-mix(in srgb, var(--chat-text) 4%, var(--chat-bg));
+  border: 1px solid color-mix(in srgb, var(--chat-text) 10%, transparent);
+  color: var(--chat-secondary);
+}
+
+.subagent-dock-label {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  padding: 2px 4px 6px;
+}
+
+.subagent-dock-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.subagent-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+
+.subagent-chip:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--chat-text) 6%, transparent);
+  color: var(--chat-text);
+}
+
+.subagent-chip:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.subagent-chip.running {
+  color: var(--chat-text);
+}
+
+.subagent-chip.failed {
+  color: var(--danger, #d94848);
+}
+
+.subagent-chip-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--chat-text) 25%, transparent);
+  border-top-color: var(--accent);
+  animation: subagent-spin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
+
+@keyframes subagent-spin {
+  to { transform: rotate(360deg); }
+}
+
+.subagent-chip-icon,
+.subagent-chip-open {
+  font-size: 11px;
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+
+.subagent-chip-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.subagent-chip-state {
+  color: var(--text-muted);
+}
+
+.subagent-chip.running .subagent-chip-state {
+  color: var(--accent);
+}
+
+.subagent-chip-title {
+  color: inherit;
+}
+
+.work-step.subagent .step-open-child {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.subagent-open-link {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  padding: 0 0 6px;
+  cursor: pointer;
 }
 
 .composer-region {

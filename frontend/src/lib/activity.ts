@@ -421,9 +421,9 @@ function liveStepLabel(part: ToolPart, now: number) {
     const action = title !== "Terminal task" ? title : headline || commandAction(command)
     return withDetail("Running", action)
   }
-  if (name === "task") {
+  if (name === "task" || name === "subagent") {
     const desc = headline || String(input.description ?? "")
-    return withDetail("Running", desc)
+    return withDetail("Working on task", desc)
   }
   if (name === "skill") return withDetail("Loading", headline || String(input.name ?? input.skill ?? ""))
   if (name === "question") return "Asking questions"
@@ -540,6 +540,10 @@ export function stepPresentation(part: Part, opts: { live?: boolean } = {}): Ste
     return { action: live ? "Asking" : "Asked", detail: detail ? truncate(detail, 64) : "a question" }
   }
   if (name === "todowrite" || name === "todo") return { action: live ? "Checking" : "Checked", detail: "to-do list" }
+  if (name === "task" || name === "subagent") {
+    const desc = String(input.description ?? title ?? "").trim()
+    return { action: live ? "Working on task" : "Completed task", detail: desc ? truncate(desc, 64) : undefined }
+  }
   if (title) return { action: capitalize(tool.tool), detail: String(title) }
   return { action: capitalize(tool.tool) }
 }

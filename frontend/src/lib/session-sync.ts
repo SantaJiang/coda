@@ -121,6 +121,10 @@ export function resolveSessionStatus(
 ) {
   if (live) {
     const fromLive = live[sessionID] ?? { type: "idle" as const }
+    // Prompt sets busy before Execution.Started projects a newer time.busy.
+    // A lagging list idle must not wipe that optimistic busy while the latest
+    // transcript row is still the just-sent user message.
+    if (current?.type === "busy" && fromLive.type === "idle" && lastRole === "user") return current
     return fromLive
   }
   // Message completion only closes an individual model step, never an active run.

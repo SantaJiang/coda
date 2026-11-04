@@ -255,9 +255,11 @@ export function Sidebar() {
             {(project) => {
               const [showAllSessions, setShowAllSessions] = createSignal(false)
               const sessions = createMemo((previous: Session[] = []) => {
-                const sorted = [...projects.sessionsFor(project().path)].sort(
-                  (a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0),
-                )
+                // Subagent child sessions stay in the store for navigation, but only
+                // roots appear in the project tree (Cursor Agents Tray pattern).
+                const sorted = [...projects.sessionsFor(project().path)]
+                  .filter((session) => !session.parentID)
+                  .sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))
                 if (!editingId()) return sorted
                 // Moving a focused input in the DOM can blur it and commit a
                 // partial rename. Defer recency reordering until editing ends.

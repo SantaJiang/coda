@@ -169,6 +169,15 @@ describe("applyDerivedStatus", () => {
     ).toEqual({ type: "busy" })
   })
 
+  it("keeps optimistic busy when list idle lags behind a just-sent user turn", () => {
+    expect(
+      resolveSessionStatus("s1", { s1: { type: "idle" } }, { type: "busy" }, { type: "idle" }, true, "user"),
+    ).toEqual({ type: "busy" })
+    expect(
+      resolveSessionStatus("s1", { s1: { type: "idle" } }, { type: "busy" }, { type: "idle" }, true, "assistant"),
+    ).toEqual({ type: "idle" })
+  })
+
   it("preserves live busy when only an assistant step has completed", () => {
     expect(resolveRacingSessionStatus({ type: "busy" }, { type: "idle" }, "assistant")).toEqual({ type: "busy" })
   })

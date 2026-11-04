@@ -274,9 +274,13 @@ function BlockList(props: {
             if (keys.some((key) => opened[key] !== true)) runtime.updateTimelineView({ stepOpen: { ...opened, ...Object.fromEntries(keys.map((key) => [key, true])) } })
           }}
           onCollapseStep={(stepKey) => {
-            if (runtime.timelineView().stepOpen[stepKey] === true) {
-              runtime.updateTimelineView({ stepOpen: { ...runtime.timelineView().stepOpen, [stepKey]: false } })
-            }
+            if (runtime.timelineView().stepOpen[stepKey] !== true) return
+            // Anchor scroll before height animates away so the eye can follow Thought → next step.
+            const row = document.querySelector<HTMLElement>(`[data-entry-key="${CSS.escape(stepKey)}"]`)
+            props.onInspect?.()
+            props.beforeLayout?.(row ?? undefined)
+            runtime.updateTimelineView({ stepOpen: { ...runtime.timelineView().stepOpen, [stepKey]: false } })
+            props.afterLayout?.()
           }}
           onToggleStep={(stepKey, target) => inspect(target, () => runtime.updateTimelineView({ stepOpen: { ...runtime.timelineView().stepOpen, [stepKey]: runtime.timelineView().stepOpen[stepKey] !== true } }))} />
       </div>

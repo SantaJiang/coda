@@ -67,11 +67,9 @@ export function sessionStatuses(rows: Rec[]): Record<string, SessionStatus> {
     const busy = typeof time?.busy === "number" ? time.busy : 0
     const idle = typeof time?.idle === "number" ? time.idle : 0
     const id = String(row.id ?? "")
-    // v2 can leave time.busy newer than time.idle after interrupt/failure.
-    // A finished outcome means the session is idle even when those stamps disagree.
-    const outcome = typeof row.outcome === "string" ? row.outcome : ""
-    const finished = outcome === "interrupted" || outcome === "succeeded" || outcome === "failed"
-    if (id) status[id] = !finished && busy > idle ? { type: "busy" } : { type: "idle" }
+    // Execution.Started bumps time.busy but leaves the previous idle_outcome in place.
+    // Trust the stamps: a newer busy means the session has restarted after interrupt/success.
+    if (id) status[id] = busy > idle ? { type: "busy" } : { type: "idle" }
   }
   return status
 }
