@@ -55,7 +55,6 @@ export type BackendProviderConfig = {
       tool_call?: boolean
       reasoning?: boolean
       temperature?: boolean
-      attachment?: boolean
       modalities?: { input: string[]; output: string[] }
       limit?: { context: number; output: number }
     }
@@ -285,9 +284,10 @@ export function toSelectable(model: ConfiguredModel): SelectableModel {
     name: model.name,
     source: "coda",
     variants: [],
-    // Undeclared inputs are text-only: discovery data for custom providers may come from the backend's
-    // image-by-default capabilities rather than a real catalog, which 400s on text-only models.
-    input: inputFromMedia(model.inputModalities ?? []),
+    // Declared inputs stay authoritative; undeclared ones defer to the backend's resolved
+    // capabilities — image by default, like the OpenCode client — with text-only as the
+    // fallback when discovery has no data for the provider.
+    input: model.inputModalities ? inputFromMedia(model.inputModalities) : undefined,
   }
 }
 
@@ -334,7 +334,7 @@ export function mergeSelectables(configured: ConfiguredModel[], discovered: Sele
   const extras = new Map(discovered.map((item) => [item.key, item]))
   const merged = coda.map((item) => {
     const extra = extras.get(item.key)
-    return { ...item, ...(extra?.variants.length ? { variants: extra.variants } : {}), input: item.input ?? extra?.input, adapter: "@ai-sdk/openai-compatible" }
+    return { ...item, ...(extra?.variants.length ? { variants: extra.variants } : {}), input: item.input ?? extra?.input ?? inputFromMedia([]), adapter: "@ai-sdk/openai-compatible" }
   })
   const seen = new Set(merged.map((item) => item.key))
   return [...merged, ...discovered.filter((item) => !seen.has(item.key))]
@@ -369,7 +369,6 @@ export function toBackendPatch(models: ConfiguredModel[], selectedKey: string | 
       tool_call: true,
       reasoning: true,
       temperature: true,
-      attachment: true,
       ...(model.inputModalities ? { modalities: { input: ["text", ...model.inputModalities], output: ["text"] } } : {}),
     }
     provider[model.providerID] = current

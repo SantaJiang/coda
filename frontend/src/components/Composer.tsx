@@ -1,6 +1,6 @@
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { isTauri } from "../lib/platform-detect"
-import { attachmentModelError } from "../lib/model-input"
+import { attachmentFormatError, attachmentInputWarning } from "../lib/model-input"
 import { isNewlineHotkey, isSendHotkey } from "../lib/settings"
 import { useChrome, useModels, useProjects, useRuntime } from "../store/app"
 import { isLocalProject } from "../lib/persist"
@@ -22,7 +22,9 @@ export function Composer() {
   let composing = false
   let root!: HTMLDivElement
   const [dragging, setDragging] = createSignal(false)
-  const attachmentError = () => attachmentModelError(runtime.attachments(), models.selectedModel()?.input, models.selectedModel()?.adapter)
+  // 输入能力不足只提示不拦截：附件照发，后端会把读不了的媒体替换成模型可转述的说明。
+  const attachmentError = () => attachmentFormatError(runtime.attachments(), models.selectedModel()?.adapter)
+  const attachmentWarning = () => attachmentInputWarning(runtime.attachments(), models.selectedModel()?.input)
 
   const placeholder = () => {
     if (!projects.selectedProject()) return "先添加一个项目文件夹"
@@ -186,7 +188,7 @@ export function Composer() {
       }}>
       <AttachmentStrip />
       <Show when={runtime.attachmentsLoading()}><div class="attachment-notice" role="status">正在读取附件…</div></Show>
-      <Show when={attachmentError()}><div class="attachment-notice warning" role="status">{attachmentError()} <button type="button" class="text-btn" onClick={() => models.openModelSettings()}>配置模型</button></div></Show>
+      <Show when={attachmentError() || attachmentWarning()}><div class="attachment-notice warning" role="status">{attachmentError() || attachmentWarning()} <button type="button" class="text-btn" onClick={() => models.openModelSettings()}>配置模型</button></div></Show>
       <textarea
         ref={area}
         rows={1}

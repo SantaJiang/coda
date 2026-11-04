@@ -3,6 +3,8 @@ import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import { StoreProviders } from "../store/ctx"
 import type { ChromeApi, ModelApi, ProjectApi, RuntimeApi } from "../store/contracts"
+import { inputFromMedia } from "../lib/model-input"
+import type { ComposerAttachment } from "../lib/attachments"
 import { Composer } from "./Composer"
 
 const native = vi.hoisted(() => ({ active: false }))
@@ -16,7 +18,7 @@ vi.mock("./PermissionMenu", () => ({ PermissionMenu: () => <div /> }))
 const cleanups: (() => void)[] = []
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); native.active = false })
 
-function setup(importAttachments = vi.fn().mockResolvedValue(false), overrides: Partial<RuntimeApi> = {}) {
+function setup(importAttachments = vi.fn().mockResolvedValue(false), overrides: Partial<RuntimeApi> = {}, model: Record<string, unknown> = {}) {
   const [text, setText] = createSignal("before after")
   const [session, setSession] = createSignal<string | null>("s1")
   const runtime = { composer: text, setComposer: setText, attachments: () => [], attachmentsLoading: () => false, blocked: () => false, stopping: () => false, busy: () => false, importAttachments, ...overrides } as unknown as RuntimeApi
@@ -24,7 +26,7 @@ function setup(importAttachments = vi.fn().mockResolvedValue(false), overrides: 
   document.body.append(container)
   const dispose = render(() => <StoreProviders runtime={runtime}
     projects={{ selectedProject: () => ({ id: "p1", path: "/tmp/app" }), selectedSessionId: session } as ProjectApi}
-    models={{ selectedModel: () => ({ name: "text model" }) } as ModelApi}
+    models={{ selectedModel: () => ({ name: "text model", ...model }) } as ModelApi}
     chrome={{ overlayOpen: () => false, planMode: () => false } as ChromeApi}><Composer /></StoreProviders>, container)
   cleanups.push(() => { dispose(); container.remove() })
   const area = container.querySelector("textarea")!
@@ -64,6 +66,27 @@ it("keeps the stop button usable while files are still being read", () => {
   expect(button.disabled).toBe(false)
   button.click()
   expect(abort).toHaveBeenCalledOnce()
+})
+
+it("warns about image attachments on text-input models but keeps them sendable", () => {
+  const send = vi.fn().mockResolvedValue(undefined)
+  const attachments: ComposerAttachment[] = [{ id: "att1", filename: "shot.png", mime: "image/png", kind: "file", url: "file:///tmp/shot.png", label: "PNG" }]
+  const { container } = setup(undefined, { attachments: () => attachments, send }, { input: inputFromMedia([]) })
+  const button = container.querySelector<HTMLButtonElement>(".send-btn")!
+  expect(button.disabled).toBe(false)
+  expect(container.querySelector(".attachment-notice.warning")?.textContent).toContain("图片")
+  button.click()
+  expect(send).toHaveBeenCalledOnce()
+})
+
+it("blocks sending media the compatible adapter cannot carry", () => {
+  const send = vi.fn().mockResolvedValue(undefined)
+  const attachments: ComposerAttachment[] = [{ id: "att1", filename: "clip.mp4", mime: "video/mp4", kind: "file", url: "file:///tmp/clip.mp4", label: "MP4" }]
+  const { container } = setup(undefined, { attachments: () => attachments, send }, { input: inputFromMedia(["video"]) })
+  const button = container.querySelector<HTMLButtonElement>(".send-btn")!
+  expect(button.disabled).toBe(true)
+  expect(container.querySelector(".attachment-notice.warning")?.textContent).toContain("无法发送")
+  expect(send).not.toHaveBeenCalled()
 })
 
 it("does not stop a session for an Escape already consumed by a menu", () => {

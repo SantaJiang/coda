@@ -3,7 +3,7 @@ import { draftKey } from "../lib/draft"
 import { isEmptyDraftContent, isLocalDraft } from "../lib/draft-session"
 import { PLAN_AGENT, DEFAULT_AGENT } from "../lib/config"
 import { attachmentFromBrowserFile, preparePathAttachment, clipboardAttachments, type ComposerAttachment } from "../lib/attachments"
-import { attachmentModelError, inputFromMedia } from "../lib/model-input"
+import { attachmentFormatError } from "../lib/model-input"
 import { rulesetForProject } from "../lib/permissions"
 import {
   isLocalProject,
@@ -171,11 +171,11 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
   const modelAttachmentError = (files: ComposerAttachment[], model: { providerID: string; modelID: string }) => {
     const selected = state.configuredModels.find((item) => item.providerID === model.providerID && item.modelID === model.modelID)
     const discovered = state.discoveredModels.find((item) => item.providerID === model.providerID && item.modelID === model.modelID)
-    // A configured model trusts only its own checked inputs: discovered capabilities for custom providers
-    // default to image support server-side, so falling back to them sends images to text-only models.
-    const capability = selected ? inputFromMedia(selected.inputModalities ?? []) : discovered?.input
     const adapter = selected ? undefined : discovered?.adapter
-    return attachmentModelError(files, capability, adapter)
+    // Input-capability mismatches no longer block delivery: the backend replaces media a model
+    // cannot read with a notice the model relays, like the OpenCode client. Only media the
+    // adapter cannot carry at all fails here.
+    return attachmentFormatError(files, adapter)
   }
 
   const busy = () => {

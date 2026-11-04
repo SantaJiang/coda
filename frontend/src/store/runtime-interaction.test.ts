@@ -181,31 +181,37 @@ describe("delivery, stop and idle reconciliation", () => {
     expect(state.drafts["session:s1"]).toBeUndefined()
     expect(state.attachmentImports["session:s1"]).toBeUndefined()
   })
-  it("preserves the draft on unsupported media and sends it after switching to a capable model", async () => {
-    const { runtime, state, setState, client } = setup()
+  it("sends image attachments to text-input models instead of blocking the draft", async () => {
+    const { runtime, state, client } = setup()
     const image = { name: "capture.png", type: "image/png", size: 4, arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer } as File
     await runtime.importAttachments({ files: [image] })
+    await runtime.send()
+    expect(client.promptAsync).toHaveBeenCalledWith("/tmp/app", "s1", expect.objectContaining({ files: [expect.objectContaining({ mime: "image/png", filename: "capture.png" })] }))
+    expect(runtime.attachments()).toEqual([])
+    expect(state.error).toBeNull()
+  })
+  it("blocks media the adapter cannot carry and preserves the draft until it is removed", async () => {
+    const { runtime, state, client } = setup()
+    const video = { name: "clip.mp4", type: "video/mp4", size: 4, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer } as File
+    await runtime.importAttachments({ files: [video] })
     await runtime.send()
     expect(client.promptAsync).not.toHaveBeenCalled()
     expect(runtime.composer()).toBe("请检查")
     expect(runtime.attachments()).toHaveLength(1)
-    expect(state.error).toContain("图片")
-    setState("configuredModels", 0, "inputModalities", ["image"])
+    expect(state.error).toContain("无法发送")
+    await runtime.removeAttachment(runtime.attachments()[0]!.id)
     await runtime.send()
-    expect(client.promptAsync).toHaveBeenCalledWith("/tmp/app", "s1", expect.objectContaining({ files: [expect.objectContaining({ mime: "image/png", filename: "capture.png" })] }))
+    expect(client.promptAsync).toHaveBeenCalledWith("/tmp/app", "s1", expect.objectContaining({ files: [] }))
     expect(runtime.attachments()).toEqual([])
   })
-  it("blocks images on an undeclared custom model even when discovery reports image support", async () => {
+  it("sends images on an undeclared custom model when discovery reports image support", async () => {
     const { runtime, state, setState, client } = setup()
     setState("discoveredModels", [{ key: "test/model", providerID: "test", modelID: "model", name: "model", source: "discovered", variants: [], input: { text: true, image: true } }])
     const image = { name: "capture.png", type: "image/png", size: 4, arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer } as File
     await runtime.importAttachments({ files: [image] })
     await runtime.send()
-    expect(client.promptAsync).not.toHaveBeenCalled()
-    expect(state.error).toContain("图片")
-    setState("configuredModels", 0, "inputModalities", ["image"])
-    await runtime.send()
     expect(client.promptAsync).toHaveBeenCalledWith("/tmp/app", "s1", expect.objectContaining({ files: [expect.objectContaining({ mime: "image/png", filename: "capture.png" })] }))
+    expect(state.error).toBeNull()
   })
   it("keeps valid files in a mixed paste and reports unsupported binary files", async () => {
     const { runtime, state } = setup()

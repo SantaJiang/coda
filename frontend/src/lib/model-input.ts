@@ -21,12 +21,20 @@ export function inputFromMedia(types: InputMedia[]): ModelInput {
 
 export const COMPATIBLE_ADAPTER = "@ai-sdk/openai-compatible"
 
-export function attachmentModelError(files: { filename: string; mime: string }[], input?: ModelInput, adapter = COMPATIBLE_ADAPTER) {
-  if (adapter === COMPATIBLE_ADAPTER) {
-    const rejected = files.filter((file) => file.mime.startsWith("video/") || (file.mime.startsWith("audio/") && !["audio/wav", "audio/mpeg", "audio/mp3"].includes(file.mime)))
-    if (rejected.length) return `当前兼容接口无法发送这些媒体格式：${rejected.map((file) => file.filename).join("、")}。音频请使用 MP3 或 WAV；视频请先提取为图片或文本。`
-  }
+/** Media the selected adapter cannot carry at all; the backend drops them from the model context. */
+export function attachmentFormatError(files: { filename: string; mime: string }[], adapter = COMPATIBLE_ADAPTER) {
+  if (adapter !== COMPATIBLE_ADAPTER) return ""
+  const rejected = files.filter((file) => file.mime.startsWith("video/") || (file.mime.startsWith("audio/") && !["audio/wav", "audio/mpeg", "audio/mp3"].includes(file.mime)))
+  if (rejected.length) return `当前兼容接口无法发送这些媒体格式：${rejected.map((file) => file.filename).join("、")}。音频请使用 MP3 或 WAV；视频请先提取为图片或文本。`
+  return ""
+}
+
+/**
+ * Media the selected model has not declared as input. The prompt still sends — the backend
+ * replaces unreadable media with a notice the model relays — so this warns instead of blocking.
+ */
+export function attachmentInputWarning(files: { filename: string; mime: string }[], input?: ModelInput) {
   const unsupported = files.filter((file) => { const type = mediaInput(file.mime); return type && !input?.[type] })
   if (!unsupported.length) return ""
-  return `当前模型未启用 ${[...new Set(unsupported.map((file) => INPUT_LABELS[mediaInput(file.mime)!]))].join("、")} 输入：${unsupported.map((file) => file.filename).join("、")}。请切换支持的模型，或在模型设置中核对附件能力。`
+  return `当前模型未启用 ${[...new Set(unsupported.map((file) => INPUT_LABELS[mediaInput(file.mime)!]))].join("、")} 输入：${unsupported.map((file) => file.filename).join("、")}。附件仍会随消息发送，由模型说明能否读取。`
 }

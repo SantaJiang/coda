@@ -42,13 +42,14 @@ describe("toBackendPatch", () => {
     const [disabled] = parseModelConfigFile(serializeModelConfig([{ ...model, inputModalities: [] }]))
     expect(toBackendPatch([disabled], "fixture/vision")?.provider?.fixture.models?.vision.modalities?.input).toEqual(["text"])
   })
-  it("treats configured models without declared inputs as text-only even when discovery claims image support", () => {
-    const [model] = parseModelConfigFile(JSON.stringify({ models: [{ providerID: "fixture", providerName: "Fixture", modelID: "text-only", baseURL: "https://example.com/v1", apiKey: "fixture" }] }))
-    const discovered = discoveredFromProviderList({ all: [{ id: "fixture", name: "Fixture", models: { "text-only": { capabilities: { input: { text: true, image: true } } } } }], connected: ["fixture"], default: {} })
-    const merged = mergeSelectables([model], discovered)[0]
-    expect(merged.input).toEqual({ text: true, image: false, pdf: false, audio: false, video: false })
+  it("defers configured models without declared inputs to discovered capabilities", () => {
+    const [model] = parseModelConfigFile(JSON.stringify({ models: [{ providerID: "fixture", providerName: "Fixture", modelID: "undeclared", baseURL: "https://example.com/v1", apiKey: "fixture" }] }))
+    const discovered = discoveredFromProviderList({ all: [{ id: "fixture", name: "Fixture", models: { undeclared: { capabilities: { input: { text: true, image: true } } } } }], connected: ["fixture"], default: {} })
+    expect(mergeSelectables([model], discovered)[0].input?.image).toBe(true)
+    // Without discovery data the fallback is text-only, matching the OpenCode client.
+    expect(mergeSelectables([model], [])[0].input).toEqual({ text: true, image: false, pdf: false, audio: false, video: false })
   })
-  it("marks configured models as attachment-capable and does not invent token limits", () => {
+  it("does not write legacy attachment flags or invent token limits", () => {
     const patch = toBackendPatch(
       [
         {
@@ -63,7 +64,7 @@ describe("toBackendPatch", () => {
       ],
       "openai/gpt-4",
     )
-    expect(patch?.provider?.openai?.models?.["gpt-4"]?.attachment).toBe(true)
+    expect((patch?.provider?.openai?.models?.["gpt-4"] as Record<string, unknown> | undefined)?.attachment).toBeUndefined()
     expect(patch?.provider?.openai?.models?.["gpt-4"]?.limit).toBeUndefined()
   })
 

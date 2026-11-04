@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { attachmentFromBrowserFile, attachmentMime, MAX_ATTACHMENT_BYTES, preparePathAttachment, toFileUrl } from "./attachments"
-import { attachmentModelError, inputFromMedia } from "./model-input"
+import { attachmentFormatError, attachmentInputWarning, inputFromMedia } from "./model-input"
 
 const native = vi.hoisted(() => ({ active: false, invoke: vi.fn() }))
 vi.mock("./platform-detect", () => ({ isTauri: () => native.active }))
@@ -57,16 +57,15 @@ describe("attachment ingestion", () => {
 })
 
 describe("model input validation", () => {
-  it("allows text for text models and requires declared media input", () => {
-    expect(attachmentModelError([{ filename: "code.ts", mime: "text/plain" }])).toBe("")
-    expect(attachmentModelError([{ filename: "scan.png", mime: "image/png" }])).toContain("图片")
-    expect(attachmentModelError([{ filename: "scan.png", mime: "image/png" }, { filename: "book.pdf", mime: "application/pdf" }], inputFromMedia(["image", "pdf"]))).toBe("")
+  it("allows text for text models and warns about undeclared media input", () => {
+    expect(attachmentFormatError([{ filename: "code.ts", mime: "text/plain" }])).toBe("")
+    expect(attachmentInputWarning([{ filename: "scan.png", mime: "image/png" }])).toContain("图片")
+    expect(attachmentInputWarning([{ filename: "scan.png", mime: "image/png" }, { filename: "book.pdf", mime: "application/pdf" }], inputFromMedia(["image", "pdf"]))).toBe("")
   })
   it("checks the actual adapter limits as well as model capabilities", () => {
-    const input = inputFromMedia(["audio", "video"])
-    expect(attachmentModelError([{ filename: "voice.mp3", mime: "audio/mpeg" }], input)).toBe("")
-    expect(attachmentModelError([{ filename: "voice.flac", mime: "audio/flac" }], input)).toContain("MP3 或 WAV")
-    expect(attachmentModelError([{ filename: "video.mp4", mime: "video/mp4" }], input)).toContain("无法发送")
-    expect(attachmentModelError([{ filename: "video.mp4", mime: "video/mp4" }], input, "@ai-sdk/google")).toBe("")
+    expect(attachmentFormatError([{ filename: "voice.mp3", mime: "audio/mpeg" }])).toBe("")
+    expect(attachmentFormatError([{ filename: "voice.flac", mime: "audio/flac" }])).toContain("MP3 或 WAV")
+    expect(attachmentFormatError([{ filename: "video.mp4", mime: "video/mp4" }])).toContain("无法发送")
+    expect(attachmentFormatError([{ filename: "video.mp4", mime: "video/mp4" }], "@ai-sdk/google")).toBe("")
   })
 })
