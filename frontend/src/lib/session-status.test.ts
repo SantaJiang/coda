@@ -91,6 +91,9 @@ describe("session status", () => {
     expect(isAbortError({ name: "MessageAbortedError", data: { message: "Aborted" } })).toBe(true)
     expect(isAbortError({ data: { message: "Aborted" } })).toBe(true)
     expect(isAbortError("Aborted")).toBe(true)
+    expect(isAbortError({ data: { message: "Step interrupted" } })).toBe(true)
+    expect(isAbortError({ name: "aborted", data: { message: "Tool execution interrupted" } })).toBe(true)
+    expect(isAbortError({ type: "aborted", message: "Step interrupted" } as never)).toBe(true)
     expect(isAbortError({ name: "APIError", data: { message: "boom" } })).toBe(false)
     expect(isAbortError(undefined)).toBe(false)
     expect(

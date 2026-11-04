@@ -227,12 +227,36 @@ export function activitySummary(parts: Part[]) {
   return capitalize(bits.join(", "))
 }
 
+function toolStartedAt(part: ToolPart) {
+  const meta = "metadata" in part.state ? asRecord(part.state.metadata) : undefined
+  const fromMeta = Number(meta?.terminalStartedAt)
+  if (Number.isFinite(fromMeta)) return fromMeta
+  const fromState = "time" in part.state ? Number(part.state.time?.start) : Number.NaN
+  return Number.isFinite(fromState) ? fromState : Number.NaN
+}
+
 function waitLabelFor(part: ToolPart, now: number) {
-  const deadline = "metadata" in part.state ? Number(part.state.metadata?.nextCheckAt) : Number.NaN
-  if (!Number.isFinite(deadline)) return ""
-  const started = "metadata" in part.state ? Number(part.state.metadata?.terminalStartedAt ?? part.state.time?.start) : Number.NaN
-  if (Number.isFinite(started) && now - started < LONG_TERMINAL_MS) return ""
-  return shellWaitLabel(deadline - now)
+  const meta = "metadata" in part.state ? asRecord(part.state.metadata) : undefined
+  const started = toolStartedAt(part)
+  const nextCheck = Number(meta?.nextCheckAt)
+  if (Number.isFinite(nextCheck)) {
+    if (Number.isFinite(started) && now - started < LONG_TERMINAL_MS) return ""
+    return shellWaitLabel(nextCheck - now)
+  }
+  // Silent foreground shells often only declare input.timeout — surface that after the
+  // short-command grace period so the UI does not freeze on "Planning next moves".
+  const timeout = Number(part.state.input?.timeout)
+  if (!Number.isFinite(timeout) || timeout <= 0 || !Number.isFinite(started)) return ""
+  if (now - started < LONG_TERMINAL_MS) return ""
+  return shellWaitLabel(started + timeout - now)
+}
+
+/** True when a live shell should advertise its remaining wait instead of vanishing into Planning. */
+export function liveShellWaitLabel(part: ToolPart, now = Date.now()) {
+  const name = part.tool.toLowerCase()
+  if (!["bash", "shell", "shell_wait", "shell_status", "shell_cancel"].includes(name)) return ""
+  if (part.state.status !== "pending" && part.state.status !== "running") return ""
+  return waitLabelFor(part, now)
 }
 
 function withDetail(verb: string, detail: string) {
@@ -280,6 +304,51 @@ function commandAction(command: string) {
   const bin = basename(tokens[0] ?? "")
   const arg = tokens.find((token, index) => index > 0 && !token.startsWith("-")) ?? ""
   return knownCommandAction(bin, arg) || (arg && !looksLikePath(arg) ? humanizePhrase(arg) : truncate(stripped, 42))
+}
+
+function looksLikeRawShell(text: string) {
+  return /[|;&><]|&&|\|\||\$\(|`/.test(text) || /\s-\S/.test(text) || text.includes("/") || text.includes("\\")
+}
+
+/** Human label for a long-running shell — never dump argv the way Cursor Glass avoids. */
+export function terminalDisplayTitle(command: string, description?: string) {
+  const hint = description?.trim()
+  if (hint && hint !== command.trim() && !looksLikeRawShell(hint)) return truncate(hint, 72)
+
+  const compact = command.replace(/\s+/g, " ").trim()
+  if (!compact) return "Terminal task"
+
+  // Prefer intent labels before argv parsing — flags like `+x` are not human titles.
+  if (/\b(pkill|killall|kill)\b/.test(compact)) return "Stop background process"
+  if (/\bxcodebuild\b/i.test(compact)) return "Xcode build"
+  if (/\b(downloadComponent|metal)\b/i.test(compact)) return "Download build components"
+  if (/\bchmod\b/.test(compact) && /\.sh\b/.test(compact)) return "Prepare script"
+  if (/\b(tauri|vite)\b/i.test(compact) && /\bdev\b/i.test(compact)) return "Launch app in dev mode"
+  if (/\b(npm|pnpm|yarn|bunx?)\b/.test(compact) && /\b(dev|start|serve)\b/.test(compact)) return "Start dev server"
+  if (/\b(npm|pnpm|yarn|bunx?)\b/.test(compact) && /\b(test|vitest|jest)\b/.test(compact)) return "Run tests"
+  if (/\b(npm|pnpm|yarn|bunx?)\b/.test(compact) && /\b(build|pack)\b/.test(compact)) return "Build project"
+  if (/\b(grep|rg|tr)\b/.test(compact)) return "Inspect output"
+  if (/\b(tail|less|cat)\b/.test(compact) && /\.log\b/.test(compact)) return "Watch logs"
+  if (/\b(curl|wget)\b/.test(compact)) return "Download file"
+  if (/\bsleep\b/.test(compact)) return "Wait"
+
+  const action = commandAction(compact)
+  if (
+    action &&
+    !looksLikeRawShell(action) &&
+    !/^[-+]/.test(action) &&
+    action !== truncate(compact) &&
+    action !== truncate(compact, 42)
+  ) {
+    return truncate(capitalize(action), 72)
+  }
+
+  const stripped = compact.replace(/^(?:[A-Z_][A-Z0-9_]*=\S+\s+)+/, "")
+  const bin = basename(stripped.split(" ")[0] ?? "")
+  if (bin && !looksLikePath(bin) && !["sh", "bash", "zsh", "cmd", "powershell"].includes(bin.toLowerCase())) {
+    return truncate(humanizePhrase(bin), 72)
+  }
+  return "Terminal task"
 }
 
 function toolHeadline(part: ToolPart) {
@@ -346,9 +415,10 @@ function liveStepLabel(part: ToolPart, now: number) {
     return withDetail("Editing", file)
   }
   if (["bash", "shell", "shell_wait", "shell_status", "shell_cancel"].includes(name)) {
-    const action = headline || commandAction(command)
     const waiting = waitLabelFor(part, now)
     if (waiting) return waiting
+    const title = terminalDisplayTitle(command, headline)
+    const action = title !== "Terminal task" ? title : headline || commandAction(command)
     return withDetail("Running", action)
   }
   if (name === "task") {
@@ -376,9 +446,24 @@ export function reasoningDurationMs(parts: Part[]) {
   return found ? duration : null
 }
 
+function thoughtHeadline(parts: Part[]) {
+  const text = parts.find((part) => part.type === "reasoning" && part.text.trim())
+  const value = text && text.type === "reasoning" ? text.text : ""
+  const bold = value.match(/^\s*\*\*([^*\n]+)\*\*/)
+  if (bold?.[1]?.trim()) return bold[1].trim()
+  const heading = value.match(/^\s*#{1,6}\s+(\S.*)/)
+  if (heading?.[1]?.trim()) return heading[1].trim()
+  return "Thought"
+}
+
+function formatThoughtDetail(ms: number) {
+  return ms < 500 ? "briefly" : formatDuration(ms)
+}
+
 function thoughtLabel(parts: Part[]) {
   const duration = reasoningDurationMs(parts)
-  return duration !== null ? `Thought ${formatDuration(duration)}` : "Thought"
+  const headline = thoughtHeadline(parts)
+  return duration !== null ? `${headline} ${formatThoughtDetail(duration)}` : headline
 }
 
 export type StepPresentation = {
@@ -387,13 +472,17 @@ export type StepPresentation = {
   context?: string
 }
 
-export function stepPresentation(part: Part): StepPresentation {
+export function stepPresentation(part: Part, opts: { live?: boolean } = {}): StepPresentation {
   if (part.type === "reasoning") {
+    if (opts.live || !Number.isFinite((part as ReasoningPart).time?.end)) {
+      return { action: "Thinking" }
+    }
     const duration = reasoningDurationMs([part])
-    return { action: "Thought", detail: duration !== null ? formatDuration(duration) : undefined }
+    return { action: thoughtHeadline([part]), detail: duration !== null ? formatThoughtDetail(duration) : undefined }
   }
   if (part.type !== "tool") return { action: "" }
   const tool = part as ToolPart
+  const live = opts.live === true
   const name = tool.tool.toLowerCase()
   const input = tool.state.input ?? {}
   const path = String(input.path ?? input.file_path ?? input.filePath ?? input.target_file ?? input.targetFile ?? input.file ?? "")
@@ -411,44 +500,46 @@ export function stepPresentation(part: Part): StepPresentation {
     const display = asRecord(metadata?.display)
     const shownStart = Number(display?.lineStart)
     const shownEnd = Number(display?.lineEnd)
+    const action = live ? "Reading" : "Read"
     if (file && Number.isFinite(shownStart) && shownStart >= 1 && Number.isFinite(shownEnd) && shownEnd >= shownStart) {
-      return { action: "Read", detail: `${file} L${shownStart}-${shownEnd}` }
+      return { action, detail: `${file} L${shownStart}-${shownEnd}` }
     }
     const offset = Number(input.offset ?? input.start_line ?? Number.NaN)
     const limit = Number(input.limit ?? Number.NaN)
     if (file && Number.isFinite(offset) && offset >= 1 && Number.isFinite(limit) && limit >= 1) {
-      return { action: "Read", detail: `${file} L${offset}-${offset + limit - 1}` }
+      return { action, detail: `${file} L${offset}-${offset + limit - 1}` }
     }
-    return { action: "Read", detail: file || "file" }
+    return { action, detail: file || "file" }
   }
   if (name === "glob") {
-    return { action: "Searched files", detail: pattern ? truncate(pattern, 64) : undefined, context: suffix }
+    return { action: live ? "Searching files" : "Searched files", detail: pattern ? truncate(pattern, 64) : undefined, context: suffix }
   }
   if (name === "grep") {
-    return { action: "Grepped", detail: pattern ? truncate(pattern, 64) : undefined, context: suffix }
+    return { action: live ? "Grepping" : "Grepped", detail: pattern ? truncate(pattern, 64) : undefined, context: suffix }
   }
-  if (name === "list" || name === "ls") return { action: "Listed", detail: stepLocation(path) || "directory" }
-  if (name === "edit" || name === "multiedit") return { action: "Edited", detail: file || "file" }
-  if (name === "write") return { action: "Wrote", detail: file || "file" }
+  if (name === "list" || name === "ls") return { action: live ? "Listing" : "Listed", detail: stepLocation(path) || "directory" }
+  if (name === "edit" || name === "multiedit") return { action: live ? "Editing" : "Edited", detail: file || "file" }
+  if (name === "write") return { action: live ? "Writing" : "Wrote", detail: file || "file" }
   if (name === "apply_patch" || name === "applypatch") {
-    return file ? { action: "Patched", detail: file } : { action: "Applied patch" }
+    return file
+      ? { action: live ? "Patching" : "Patched", detail: file }
+      : { action: live ? "Applying patch" : "Applied patch" }
   }
   if (["bash", "shell", "shell_wait", "shell_status", "shell_cancel"].includes(name)) {
     const titled = title && String(title).trim() !== command.trim() ? String(title).trim() : ""
     const described = String(input.description ?? input.title ?? "").trim()
-    const action = described || titled || commandAction(command)
-    if (action && action !== truncate(command) && action !== truncate(command, 42)) return { action: "Ran", detail: action }
-    return { action: "Ran", detail: command ? truncate(command) : "command" }
+    const detail = terminalDisplayTitle(command, described || titled)
+    return { action: live ? "Running" : "Ran", detail }
   }
-  if (name === "webfetch") return { action: "Fetched", detail: url ? hostFromUrl(url) : "page" }
-  if (name === "websearch") return { action: "Searched", detail: query ? truncate(query) : "web" }
+  if (name === "webfetch") return { action: live ? "Fetching" : "Fetched", detail: url ? hostFromUrl(url) : "page" }
+  if (name === "websearch") return { action: live ? "Searching" : "Searched", detail: query ? truncate(query) : "web" }
   if (name === "question") {
     const questions = Array.isArray(input.questions) ? input.questions : []
     const first = asRecord(questions[0])
     const detail = String(first?.header ?? first?.question ?? "").trim()
-    return { action: "Asked", detail: detail ? truncate(detail, 64) : "a question" }
+    return { action: live ? "Asking" : "Asked", detail: detail ? truncate(detail, 64) : "a question" }
   }
-  if (name === "todowrite" || name === "todo") return { action: "Checked", detail: "to-do list" }
+  if (name === "todowrite" || name === "todo") return { action: live ? "Checking" : "Checked", detail: "to-do list" }
   if (title) return { action: capitalize(tool.tool), detail: String(title) }
   return { action: capitalize(tool.tool) }
 }

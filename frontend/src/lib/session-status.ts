@@ -27,12 +27,19 @@ export function formatSessionErrorMessage(raw?: string | null) {
   return text
 }
 
+function looksLikeAbortText(raw: string) {
+  const text = raw.trim().toLowerCase()
+  if (!text) return false
+  return text === "aborted" || /\b(abort|interrupted|interrupt|cancelled|canceled)\b/.test(text)
+}
+
 export function isAbortError(error?: AssistantError | string | null) {
   if (!error) return false
-  if (typeof error === "string") return error.trim().toLowerCase() === "aborted"
-  const name = (error.name ?? "").toLowerCase()
-  if (name === "messageabortederror" || name === "aborterror") return true
-  return (error.data?.message ?? "").trim().toLowerCase() === "aborted"
+  if (typeof error === "string") return looksLikeAbortText(error)
+  const row = error as AssistantError & { type?: string; message?: string }
+  const name = (row.name ?? row.type ?? "").toLowerCase()
+  if (name === "messageabortederror" || name === "aborterror" || name === "aborted") return true
+  return looksLikeAbortText(row.data?.message ?? row.message ?? "")
 }
 
 export function hasFailingAssistant(messages: Message[]): boolean {

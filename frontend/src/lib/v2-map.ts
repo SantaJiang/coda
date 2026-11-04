@@ -2,7 +2,7 @@ import type { McpConfigEntry, McpServerConfig, McpStatusMap } from "./mcp"
 import type { PermissionRule } from "./permissions"
 import type { ModelInput } from "./model-input"
 import type { ProviderList } from "./models"
-import type { AssistantMessage, BackendProject, MessageWithParts, Part, PermissionRequest, QuestionRequest, Session, SessionStatus, Todo, UserMessage } from "./types"
+import type { AssistantError, AssistantMessage, BackendProject, MessageWithParts, Part, PermissionRequest, QuestionRequest, Session, SessionStatus, Todo, UserMessage } from "./types"
 import type { TerminalInfo, TerminalLog } from "./terminal-contracts"
 
 type Rec = Record<string, unknown>
@@ -67,7 +67,11 @@ export function sessionStatuses(rows: Rec[]): Record<string, SessionStatus> {
     const busy = typeof time?.busy === "number" ? time.busy : 0
     const idle = typeof time?.idle === "number" ? time.idle : 0
     const id = String(row.id ?? "")
-    if (id) status[id] = busy > idle ? { type: "busy" } : { type: "idle" }
+    // v2 can leave time.busy newer than time.idle after interrupt/failure.
+    // A finished outcome means the session is idle even when those stamps disagree.
+    const outcome = typeof row.outcome === "string" ? row.outcome : ""
+    const finished = outcome === "interrupted" || outcome === "succeeded" || outcome === "failed"
+    if (id) status[id] = !finished && busy > idle ? { type: "busy" } : { type: "idle" }
   }
   return status
 }
@@ -89,16 +93,41 @@ function textOf(value: unknown): string {
   const item = rec(value)
   if (!item) return ""
   if (typeof item.text === "string") return item.text
+  if (typeof item.message === "string") return item.message
   if ("content" in item) return textOf(item.content)
   return ""
+}
+
+/** Map v2 `{ type, message }` failures without dropping interrupt/abort identity. */
+function assistantError(value: unknown): AssistantError | undefined {
+  if (!value) return undefined
+  if (typeof value === "string") {
+    const message = value.trim()
+    return message ? { data: { message } } : undefined
+  }
+  const item = rec(value)
+  if (!item) return undefined
+  const type = typeof item.type === "string" ? item.type : typeof item.name === "string" ? item.name : ""
+  const message = textOf(item).trim() || (type === "aborted" ? "Aborted" : "")
+  if (!message && !type) return undefined
+  const name = type === "aborted" || type.toLowerCase() === "messageabortederror" || type.toLowerCase() === "aborterror"
+    ? "MessageAbortedError"
+    : type || undefined
+  return { ...(name ? { name } : {}), data: { message } }
 }
 
 function partsFromAssistant(sessionID: string, messageID: string, content: unknown[]): Part[] {
   return content.flatMap((item, index): Part[] => {
     const part = rec(item)
     if (!part) return []
-    if (part.type === "text" || part.type === "reasoning") {
-      return [{ id: `${messageID}:${part.type}:${index}`, sessionID, messageID, type: part.type, text: typeof part.text === "string" ? part.text : "" }]
+    if (part.type === "text") {
+      return [{ id: `${messageID}:text:${index}`, sessionID, messageID, type: "text", text: typeof part.text === "string" ? part.text : "" }]
+    }
+    if (part.type === "reasoning") {
+      const time = rec(part.time)
+      const start = typeof time?.created === "number" ? time.created : 0
+      const end = typeof time?.completed === "number" ? time.completed : start
+      return [{ id: `${messageID}:reasoning:${index}`, sessionID, messageID, type: "reasoning", text: typeof part.text === "string" ? part.text : "", time: { start, end } }]
     }
     if (part.type !== "tool") return []
     const state = rec(part.state)
@@ -107,7 +136,25 @@ function partsFromAssistant(sessionID: string, messageID: string, content: unkno
     const base = { id: String(part.id ?? index), sessionID, messageID, type: "tool" as const, callID: String(part.id ?? index), tool: typeof part.name === "string" ? part.name : "" }
     if (status === "completed") return [{ ...base, state: { status: "completed", input, output: textOf(state?.content), metadata: rec(state?.metadata) } }]
     if (status === "error") return [{ ...base, state: { status: "error", input, error: textOf(state?.error) || "工具失败", metadata: rec(state?.metadata) } }]
-    if (status === "running") return [{ ...base, state: { status: "running", input, metadata: rec(state?.metadata) } }]
+    if (status === "running") {
+      const time = rec(part.time)
+      const start = typeof time?.ran === "number" ? time.ran : typeof time?.created === "number" ? time.created : undefined
+      const timeout = typeof input?.timeout === "number" ? input.timeout : undefined
+      const metadata = {
+        ...(rec(state?.metadata) ?? {}),
+        ...(start !== undefined ? { terminalStartedAt: start } : {}),
+        ...(start !== undefined && timeout && timeout > 0 ? { nextCheckAt: start + timeout } : {}),
+      }
+      return [{
+        ...base,
+        state: {
+          status: "running",
+          input,
+          metadata,
+          ...(start !== undefined ? { time: { start } } : {}),
+        },
+      }]
+    }
     return [{ ...base, state: { status: "pending", input: typeof state?.input === "string" ? undefined : input, raw: typeof state?.input === "string" ? state.input : undefined } }]
   })
 }
@@ -178,7 +225,7 @@ export function toTranscript(sessionID: string, rows: Rec[]): MessageWithParts[]
       providerID: typeof model?.providerID === "string" ? model.providerID : undefined,
       modelID: typeof model?.id === "string" ? model.id : undefined,
       finish: typeof row.finish === "string" ? row.finish : undefined,
-      error: rec(row.error) ? { data: { message: textOf(row.error) } } : undefined,
+      error: assistantError(row.error),
     }
     messages.push({ info, parts: partsFromAssistant(sessionID, id, Array.isArray(row.content) ? row.content : []) })
   }
@@ -342,6 +389,8 @@ export function shellToTerminal(row: Rec, sessionID: string, hidden = false): Te
   const startedAt = num(time?.started, 0)
   const status = shellStatus(row.status, row.exit)
   const endedAt = status === "running" ? undefined : num(time?.completed, startedAt)
+  const timeout = typeof row.timeout === "number" ? row.timeout : typeof metadata?.timeout === "number" ? metadata.timeout : undefined
+  const nextCheckAt = status === "running" && startedAt && timeout && timeout > 0 ? startedAt + timeout : undefined
   return {
     id,
     sessionID,
@@ -352,6 +401,7 @@ export function shellToTerminal(row: Rec, sessionID: string, hidden = false): Te
     lastOutputAt: status === "running" ? Date.now() : endedAt ?? startedAt,
     ...(endedAt !== undefined ? { endedAt } : {}),
     ...(typeof row.exit === "number" ? { exitCode: row.exit } : {}),
+    ...(nextCheckAt !== undefined ? { nextCheckAt } : {}),
     status,
     ...(hidden ? { hidden: true } : {}),
     cursor: 1,

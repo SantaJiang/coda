@@ -63,13 +63,21 @@ function assistant(messageID: string, sessionID: string): AssistantMessage {
   return { id: messageID, sessionID, role: "assistant", time: { created: Date.now() } }
 }
 
-function prose(kind: "text" | "reasoning", messageID: string, sessionID: string, ordinal: unknown, text: string): Part {
+function prose(
+  kind: "text" | "reasoning",
+  messageID: string,
+  sessionID: string,
+  ordinal: unknown,
+  text: string,
+  time?: { start?: number; end?: number },
+): Part {
   return {
     id: `${messageID}:${kind}:${String(ordinal ?? 0)}`,
     sessionID,
     messageID,
     type: kind,
     text,
+    ...(kind === "reasoning" && time ? { time } : {}),
   }
 }
 
@@ -119,9 +127,10 @@ export function translateWireEvent(raw: Wire): ParsedEvent[] {
   }
   if (type === "session.text.started" || type === "session.reasoning.started") {
     const kind = type === "session.reasoning.started" ? "reasoning" : "text"
+    const now = Date.now()
     return [
       emit("message.updated", { info: assistant(messageID, sessionID) }),
-      emit("message.part.updated", { part: prose(kind, messageID, sessionID, data.ordinal, "") }),
+      emit("message.part.updated", { part: prose(kind, messageID, sessionID, data.ordinal, "", kind === "reasoning" ? { start: now } : undefined) }),
     ]
   }
   if (type === "session.text.delta" || type === "session.reasoning.delta") {
@@ -136,7 +145,11 @@ export function translateWireEvent(raw: Wire): ParsedEvent[] {
   }
   if (type === "session.text.ended" || type === "session.reasoning.ended") {
     const kind = type === "session.reasoning.ended" ? "reasoning" : "text"
-    return [emit("message.part.updated", { part: prose(kind, messageID, sessionID, data.ordinal, typeof data.text === "string" ? data.text : "") })]
+    const now = Date.now()
+    return [emit("message.part.updated", { part: prose(kind, messageID, sessionID, data.ordinal, typeof data.text === "string" ? data.text : "", kind === "reasoning" ? { end: now } : undefined) })]
+  }
+  if (type === "session.execution.succeeded" || type === "session.execution.interrupted") {
+    return [emit("session.idle", { sessionID })]
   }
   if (type === "session.tool.input.started") {
     return [

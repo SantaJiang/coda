@@ -1,8 +1,32 @@
 import { describe, expect, it } from "vitest"
 import { translateWireEvent } from "./v2-events"
-import { formToQuestion, shellOutputToLog, shellToTerminal, todosFromMessages, toTranscript, toV2Rules } from "./v2-map"
+import { formToQuestion, sessionStatuses, shellOutputToLog, shellToTerminal, todosFromMessages, toTranscript, toV2Rules } from "./v2-map"
 
 describe("v2 feature adapters", () => {
+  it("treats finished outcomes as idle even when busy stamps are newer", () => {
+    expect(sessionStatuses([{
+      id: "ses_1",
+      outcome: "interrupted",
+      time: { created: 1, updated: 3, busy: 3, idle: 2 },
+    }]).ses_1).toEqual({ type: "idle" })
+    expect(sessionStatuses([{
+      id: "ses_2",
+      time: { created: 1, updated: 3, busy: 3, idle: 2 },
+    }]).ses_2).toEqual({ type: "busy" })
+  })
+
+  it("keeps reasoning collapsed by giving it the v1 start and end times", () => {
+    const started = translateWireEvent({ type: "session.reasoning.started", data: { sessionID: "ses_1", assistantMessageID: "msg_a", ordinal: 0 } })
+    const part = (started[1]?.event.properties?.part ?? {}) as { type?: string; time?: { start?: number; end?: number } }
+    expect(part.type).toBe("reasoning")
+    expect(part.time?.start).toEqual(expect.any(Number))
+    expect(part.time?.end).toBeUndefined()
+    const [ended] = translateWireEvent({ type: "session.reasoning.ended", data: { sessionID: "ses_1", assistantMessageID: "msg_a", ordinal: 0, text: "先看结构" } })
+    const done = (ended?.event.properties?.part ?? {}) as { type?: string; text?: string; time?: { end?: number } }
+    expect(done).toMatchObject({ type: "reasoning", text: "先看结构" })
+    expect(done.time?.end).toEqual(expect.any(Number))
+  })
+
   it("reads the latest completed plan from the transcript", () => {
     expect(todosFromMessages([
       { type: "assistant", content: [{ type: "tool", name: "todowrite", state: { status: "completed", input: { todos: [{ content: "old", status: "pending" }] } } }] },
@@ -21,6 +45,23 @@ describe("v2 feature adapters", () => {
     const [event] = translateWireEvent({ type: "form.created", data: { form } })
     expect(event?.event.type).toBe("question.asked")
     expect(event?.event.properties).toMatchObject({ id: "frm_1", sessionID: "ses_1" })
+  })
+
+  it("keeps interrupt errors identifiable instead of an empty failure blob", () => {
+    const [row] = toTranscript("ses_1", [{
+      id: "msg_a",
+      type: "assistant",
+      finish: "error",
+      error: { type: "aborted", message: "Step interrupted" },
+      time: { created: 1, completed: 2 },
+      content: [{ type: "text", text: "half" }],
+    }])
+    expect(row?.info).toMatchObject({
+      role: "assistant",
+      finish: "error",
+      error: { name: "MessageAbortedError", data: { message: "Step interrupted" } },
+    })
+    expect(row?.parts[0]).toMatchObject({ type: "text", text: "half" })
   })
 
   it("keeps user files on the transcript and maps old permission names", () => {

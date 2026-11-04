@@ -75,6 +75,12 @@ describe("mergeParts", () => {
     expect(mergeParts(local, incoming).map((item) => item.id)).toEqual(["p1", "p2"])
   })
 
+  it("drops an optimistic text clone when the server ack uses another id", () => {
+    const local: Part[] = [text("prt_local", "继续")]
+    const incoming: Part[] = [text("prt_server0001", "继续")]
+    expect(mergeParts(local, incoming).map((item) => item.id)).toEqual(["prt_server0001"])
+  })
+
   it("keeps completed reasoning timing when a resync snapshot is stale", () => {
     const local: Part[] = [
       {

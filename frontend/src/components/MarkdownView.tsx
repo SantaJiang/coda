@@ -1,7 +1,7 @@
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { renderMarkdown } from "../lib/markdown"
 
-export function MarkdownView(props: { text: string }) {
+export function MarkdownView(props: { text: string; streaming?: boolean }) {
   const html = createMemo(() => renderMarkdown(props.text || ""))
   let displayed = ""
   let root!: HTMLDivElement
@@ -14,6 +14,12 @@ export function MarkdownView(props: { text: string }) {
     template.innerHTML = next
     syncChildren(root, template.content)
     displayed = next
+    const node = props.streaming ? root.lastElementChild : undefined
+    if (node && !["PRE", "SVG", "MATH"].includes(node.tagName)) {
+      node.classList.remove("sd-fade")
+      void (node as HTMLElement).offsetWidth
+      node.classList.add("sd-fade")
+    }
   }
   createEffect(flush)
   onMount(() => {

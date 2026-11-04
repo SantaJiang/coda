@@ -277,6 +277,29 @@ describe("delivery, stop and idle reconciliation", () => {
     expect(runtime.stopping()).toBe(false)
     expect(state.stoppedTurnBySession.s1).toBe("u1")
   })
+  it("releases a stuck stop when interrupt reports nothing was running", async () => {
+    const { runtime, state, setState, client } = setup({
+      abortSession: vi.fn().mockResolvedValue(false),
+      listSessionStatuses: vi.fn().mockResolvedValue({ s1: { type: "busy" } }),
+    })
+    setState("messages", "s1", [{ id: "u1", role: "user", sessionID: "s1", time: { created: 1 } }])
+    setState("status", "s1", { type: "busy" })
+    await runtime.abort()
+    expect(runtime.stopping()).toBe(false)
+    expect(state.status.s1.type).toBe("idle")
+    expect(state.stoppedTurnBySession.s1).toBe("u1")
+    expect(client.abortSession).toHaveBeenCalledTimes(1)
+  })
+  it("lets a second stop click force-release a stuck stopping state", async () => {
+    const { runtime, state, setState, client } = setup({ abortSession: vi.fn().mockResolvedValue(false) })
+    setState("messages", "s1", [{ id: "u1", role: "user", sessionID: "s1", time: { created: 1 } }])
+    setState("status", "s1", { type: "busy" })
+    setState("stoppingBySession", "s1", true)
+    await runtime.abort()
+    expect(runtime.stopping()).toBe(false)
+    expect(state.status.s1.type).toBe("idle")
+    expect(client.abortSession).toHaveBeenCalledTimes(1)
+  })
   it("restores the running status if the stop request fails", async () => {
     const { runtime, state, setState } = setup({ abortSession: vi.fn().mockRejectedValue(new Error("cannot stop")) })
     setState("status", "s1", { type: "busy" })

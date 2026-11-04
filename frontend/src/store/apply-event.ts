@@ -52,6 +52,26 @@ function ownerPath(draft: AppState, sessionID: string | undefined, rawPath?: str
   return owner?.path ?? rawPath
 }
 
+function finishOpenAssistant(draft: AppState, sessionID: string) {
+  const messages = draft.messages[sessionID] ?? []
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role !== "assistant" || message.time.completed) continue
+    const now = Date.now()
+    message.time = { ...message.time, completed: now }
+    draft.parts[message.id] = (draft.parts[message.id] ?? []).map((part) => {
+      if (part.type === "reasoning" && !Number.isFinite(part.time?.end)) {
+        return { ...part, time: { start: part.time?.start ?? now, end: now } }
+      }
+      if (part.type === "tool" && (part.state.status === "pending" || part.state.status === "running")) {
+        return { ...part, state: { status: "completed", input: "input" in part.state ? part.state.input : undefined, output: "" } }
+      }
+      return part
+    })
+    return
+  }
+}
+
 function asPermission(props: Record<string, unknown>): PermissionRequest | undefined {
   const direct = props as unknown as PermissionRequest
   if (direct?.id) return direct
@@ -216,12 +236,14 @@ const handlers: Record<string, EventHandler> = {
         list[index] = { ...current, text: `${current.text ?? ""}${delta}` }
       }
     } else {
+      const reasoning = partID.includes(":reasoning:")
       list.push({
         id: partID,
         sessionID: (props.sessionID as string) ?? "",
         messageID,
-        type: "text",
+        type: reasoning ? "reasoning" : "text",
         text: delta,
+        ...(reasoning ? { time: { start: Date.now() } } : {}),
       })
     }
     draft.parts[messageID] = list.slice()
@@ -233,6 +255,7 @@ const handlers: Record<string, EventHandler> = {
       draft.statusRevision[sessionID] = (draft.statusRevision[sessionID] ?? 0) + 1
       draft.status[sessionID] = status
       if (status.type === "idle") {
+        finishOpenAssistant(draft, sessionID)
         draft.settlingBySession[sessionID] = true
         // Some backends only publish session.status, without the legacy idle event.
         effects.idleSessions.push(sessionID)
@@ -244,6 +267,7 @@ const handlers: Record<string, EventHandler> = {
     if (!sessionID) return
     draft.statusRevision[sessionID] = (draft.statusRevision[sessionID] ?? 0) + 1
     draft.status[sessionID] = { type: "idle" }
+    finishOpenAssistant(draft, sessionID)
     draft.settlingBySession[sessionID] = true
     effects.idleSessions.push(sessionID)
     if (draft.selectedSessionId !== sessionID) draft.attention[sessionID] = true

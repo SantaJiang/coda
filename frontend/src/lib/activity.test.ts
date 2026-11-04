@@ -7,6 +7,7 @@ import {
   activitySummary,
   formatDuration,
   stepPresentation,
+  terminalDisplayTitle,
 } from "./activity"
 import type { Part, ToolPart } from "./types"
 
@@ -28,13 +29,16 @@ function tool(
 }
 
 describe("activity presentation", () => {
-  it("uses the server check deadline without treating the execution timeout as a wait estimate", () => {
+  it("uses the server check deadline when present", () => {
     const waiting = tool("wait", "shell_wait", { timeout: 120000 }, {
       status: "running", metadata: { nextCheckAt: 1_700_000_090_000 },
     })
     expect(activityStatus([waiting], 1_700_000_000_000)).toBe("Waiting up to 1m 30s for shell")
     expect(activityStatus([waiting], 1_700_000_100_000)).toBe("Waiting up to 0m 0s for shell")
-    const running = tool("run", "bash", { command: "bun install", timeout: 120000 }, { status: "running" })
+    const running = tool("run", "bash", { command: "bun install", timeout: 120000 }, {
+      status: "running",
+      time: { start: 1_700_000_000_000 },
+    })
     expect(activityStatus([running], 1_700_000_000_000)).not.toContain("Waiting")
   })
 
@@ -43,6 +47,18 @@ describe("activity presentation", () => {
     const command = tool("short", "bash", { command: "git status" }, { status: "running", metadata: { terminalStartedAt: start, nextCheckAt: start + 30000 } })
     expect(activityStatus([command], start + 9999)).not.toContain("Waiting up to")
     expect(activityStatus([command], start + 10000)).toBe("Waiting up to 0m 20s for shell")
+  })
+
+  it("falls back to the tool timeout so silent waits are not blank Planning next moves", () => {
+    const start = 1_700_000_000_000
+    const waiting = tool(
+      "device",
+      "shell",
+      { command: "for i in $(seq 1 40); do sleep 15; done", timeout: 720_000 },
+      { status: "running", time: { start }, metadata: { terminalStartedAt: start } },
+    )
+    expect(activityStatus([waiting], start + 9_999)).toMatch(/^Running /)
+    expect(activityStatus([waiting], start + 10_000)).toBe("Waiting up to 11m 50s for shell")
   })
 
   it("separates file reads from searches and keeps other action counts", () => {
@@ -66,7 +82,7 @@ describe("activity presentation", () => {
       { id: "t1", sessionID: "s1", messageID: "a1", type: "text", text: "progress" },
       tool("r2", "grep"),
     ]
-    expect(conversationBlocks(parts.map((part) => ({ kind: "part", key: part.id, part }))).map((block) => block.key)).toEqual(["work:r1", "content:t1", "work:r2"])
+    expect(conversationBlocks(parts.map((part) => ({ kind: "part", key: part.id, part }))).map((block) => block.key)).toEqual(["work:r1"])
   })
 
   it("shows accurate read ranges and search locations", () => {
@@ -119,7 +135,7 @@ describe("activity presentation", () => {
     })
     expect(stepPresentation(tool("b1", "bash", { command: "npm test" }))).toEqual({
       action: "Ran",
-      detail: "tests",
+      detail: "Run tests",
     })
   })
 
@@ -132,7 +148,7 @@ describe("activity presentation", () => {
       text: "done",
       time: { start: 1_000, end: 1_000 },
     }
-    expect(stepPresentation(reasoning)).toEqual({ action: "Thought", detail: "1s" })
+    expect(stepPresentation(reasoning)).toEqual({ action: "Thought", detail: "briefly" })
   })
 
   it("returns to thinking when reasoning starts after a completed tool", () => {
@@ -170,5 +186,22 @@ describe("activity presentation", () => {
     expect(activitySummary([todo, tool("r1", "read", { filePath: "/repo/a.ts" })])).toBe(
       "Explored 1 file",
     )
+  })
+
+  it("labels long shell tasks without dumping raw argv", () => {
+    expect(terminalDisplayTitle("bun run tauri dev", "Launch Coda Tauri desktop app in dev mode")).toBe(
+      "Launch Coda Tauri desktop app in dev mode",
+    )
+    expect(terminalDisplayTitle("chmod +x /tmp/omnibox_autobuild.sh && /tmp/omnibox_autobuild.sh")).toBe(
+      "Prepare script",
+    )
+    expect(terminalDisplayTitle("pkill -f 'xcodebuild -downloadComponent'; sleep 3")).toBe(
+      "Stop background process",
+    )
+    expect(terminalDisplayTitle("p1=$(tr '\\r' '\\n' < /tmp/metal_dl4.log | tail -5)")).toBe("Inspect output")
+    expect(stepPresentation(tool("sh", "shell", { command: "pkill -f xcodebuild" }))).toEqual({
+      action: "Ran",
+      detail: "Stop background process",
+    })
   })
 })

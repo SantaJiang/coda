@@ -580,7 +580,49 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const pending = [...pendingSends].filter((item) => item.sessionID === session.id)
       if (isLocalDraft(session) && !pending.length) return
       const current = sessionLifetime(state, session.id)
-      if (state.stoppingBySession[session.id]) return
+      const releaseStop = () => {
+        if (!state.stoppingBySession[session.id]) return
+        setState(
+          produce((draft) => {
+            if (!draft.stoppingBySession[session.id]) return
+            if (draft.status[session.id]?.type !== "idle") draft.status[session.id] = { type: "idle" }
+            const user = [...(draft.messages[session.id] ?? [])]
+              .reverse()
+              .find((message) => {
+                const parts = draft.parts[message.id] ?? []
+                return (
+                  message.role === "user" &&
+                  !parts.some((part) => part.type === "compaction") &&
+                  !(parts.length && parts.every((part) => part.type === "text" && part.synthetic))
+                )
+              })
+            if (user) {
+              draft.stoppedTurnBySession[session.id] = user.id
+              draft.stoppedTurns[user.id] = true
+            }
+            delete draft.stoppingBySession[session.id]
+          }),
+        )
+        refs.skipQueueFlush[session.id] = false
+      }
+      // A previous stop can stick if the backend left busy timestamps after interrupt.
+      // Clicking stop again forces another interrupt and always releases the UI.
+      if (state.stoppingBySession[session.id]) {
+        if (isLocalDraft(session)) {
+          releaseStop()
+          return
+        }
+        try {
+          const interrupted = await client.abortSession(project.path, session.id)
+          if (!current()) return
+          if (!interrupted) setState("status", session.id, { type: "idle" })
+          await settleSession(session.id)
+        } catch {
+          // Still release below.
+        }
+        if (current()) releaseStop()
+        return
+      }
       for (const item of pending) item.cancelled = true
       setState("stoppingBySession", session.id, true)
       refs.skipQueueFlush[session.id] = true
@@ -589,9 +631,12 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       delete refs.sendAfterIdle[session.id]
       if (isLocalDraft(session)) return
       try {
-        await client.abortSession(project.path, session.id)
+        const interrupted = await client.abortSession(project.path, session.id)
         if (!current()) return
+        // interrupted=false means nothing was running; don't wait on a stale busy stamp.
+        if (!interrupted) setState("status", session.id, { type: "idle" })
         await settleSession(session.id)
+        if (current()) releaseStop()
       } catch (error) {
         if (!current()) return
         setState("stoppingBySession", session.id, false)
@@ -656,9 +701,14 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       for (const pending of pendingSends) if (pending.sessionID === session.id) pending.cancelled = true
       setState("stoppingBySession", session.id, true)
       try {
-        await client.abortSession(project.path, session.id)
+        const interrupted = await client.abortSession(project.path, session.id)
         if (!current()) return
+        if (!interrupted) setState("status", session.id, { type: "idle" })
         await settleSession(session.id)
+        if (current() && state.stoppingBySession[session.id]) {
+          setState("status", session.id, { type: "idle" })
+          setState("stoppingBySession", session.id, false)
+        }
       } catch (error) {
         if (!current()) return
         setState("stoppingBySession", session.id, false)

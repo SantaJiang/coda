@@ -40,6 +40,40 @@ it("keeps manual recovery available for a short interrupted command without a te
   expect(action).toHaveBeenCalledWith("short", "resume")
 })
 
+it("expands the terminal card with human titles instead of raw shell argv", () => {
+  const open = vi.fn()
+  const start = 1_700_000_000_000
+  const info = {
+    id: "long",
+    command: "chmod +x /tmp/omnibox_autobuild.sh && /tmp/omnibox_autobuild.sh",
+    status: "running",
+    startedAt: start,
+    lastOutputAt: start,
+  }
+  const t = {
+    items: () => [info],
+    visible: () => [info],
+    selected: () => undefined,
+    view: () => ({ open: false }),
+    waiting: () => undefined,
+    error: () => "",
+    now: () => start + 26_000,
+    open,
+    action: vi.fn(),
+  } as unknown as Terminals
+  const host = document.createElement("div")
+  document.body.appendChild(host)
+  cleanups.push(() => host.remove())
+  cleanups.push(render(() => <TerminalDock terminals={t} />, host))
+  ;(host.querySelector(".terminal-pill") as HTMLButtonElement).click()
+  expect(host.querySelector(".terminal-card-label")?.textContent).toContain("1 Terminal")
+  expect(host.querySelector(".terminal-card-title")?.textContent).toBe("Prepare script")
+  expect(host.textContent).not.toContain("chmod +x")
+  expect(host.querySelector(".terminal-card-time")?.textContent).toBe("26s")
+  ;(host.querySelector(".terminal-card-open") as HTMLButtonElement).click()
+  expect(open).toHaveBeenCalledWith("long")
+})
+
 it("shows the same minute/second shell countdown in place across the minute boundary", () => {
   const start = 1_700_000_000_000
   const [now, setNow] = createSignal(start)

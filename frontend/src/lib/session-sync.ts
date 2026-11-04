@@ -43,7 +43,9 @@ function preferPart(local: Part, incoming: Part): Part {
     const incomingText = incoming.text ?? ""
     const localDone = Number.isFinite(Number(local.time?.end))
     const incomingDone = Number.isFinite(Number(incoming.time?.end))
-    const time = localDone && !incomingDone ? local.time : (incoming.time ?? local.time)
+    const start = local.time?.start ?? incoming.time?.start
+    const end = incoming.time?.end ?? local.time?.end
+    const time = localDone && !incomingDone ? local.time : start !== undefined || end !== undefined ? { ...(start !== undefined ? { start } : {}), ...(end !== undefined ? { end } : {}) } : undefined
     return {
       ...incoming,
       text: localText.length > incomingText.length ? localText : incomingText,
@@ -69,6 +71,26 @@ function preferPart(local: Part, incoming: Part): Part {
   return incoming
 }
 
+/** Collapse adjacent identical text clones (optimistic id + server id for the same body). */
+export function dedupeAdjacentIdenticalText(parts: Part[]): Part[] {
+  const out: Part[] = []
+  for (const part of parts) {
+    const prev = out[out.length - 1]
+    if (
+      part.type === "text" &&
+      prev?.type === "text" &&
+      prev.messageID === part.messageID &&
+      prev.text === part.text
+    ) {
+      // Keep the later copy — usually the acknowledged server part appended after local.
+      out[out.length - 1] = part
+      continue
+    }
+    out.push(part)
+  }
+  return out
+}
+
 export function mergeParts(local: Part[], incoming: Part[]): Part[] {
   const incomingById = new Map(incoming.map((item) => [item.id, item]))
   const merged = local.map((item) => incomingById.has(item.id) ? preferPart(item, incomingById.get(item.id)!) : item)
@@ -76,7 +98,7 @@ export function mergeParts(local: Part[], incoming: Part[]): Part[] {
   for (const item of incoming) if (!seen.has(item.id)) merged.push(item)
   // Production IDs encode creation order. An update must never move a tool ahead of earlier prose.
   if (merged.every((part) => /^prt_[0-9a-f]{12}/.test(part.id))) merged.sort((a, b) => a.id.localeCompare(b.id))
-  return merged
+  return dedupeAdjacentIdenticalText(merged)
 }
 
 export function applyDerivedStatus(

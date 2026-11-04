@@ -214,7 +214,7 @@ it.each(["wheel", "touch", "keyboard", "pointer"])("never shows jump-latest for 
   } finally { scene.dispose() }
 })
 
-it.each([0, 400, 640, 679])("hides jump-latest without a scroll event when content shrinks to %i pixels", (height) => {
+it.each([0, 400, 600, 603])("hides jump-latest without a scroll event when content shrinks to %i pixels", (height) => {
   const scene = mountScrollScenario({ height: 1400 })
   try {
     scene.send()

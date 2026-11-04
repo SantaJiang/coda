@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { version as bundledVersion } from "../../package.json"
+import { conversationDensity, setConversationDensity, type DensityChoice } from "../lib/density"
 import { modifierLabel, type CloseBehavior, type SendShortcut, type StopBehavior, type TaskRecovery } from "../lib/settings"
 import { useChrome } from "../store/app"
 import { useTheme } from "../store/theme"
@@ -28,6 +29,38 @@ function Segment<T extends string>(props: {
             </button>
           )}
         </For>
+      </div>
+    </div>
+  )
+}
+
+const DENSITY_STOPS: DensityChoice[] = ["compact-all-grouped", "compact-ungrouped", "detailed"]
+
+function densityChoice(): DensityChoice {
+  const value = conversationDensity()
+  return value === "detailed" || value === "compact-ungrouped" ? value : "compact-all-grouped"
+}
+
+/** Cursor Glass exposes three stops on one slider: Compact · Balanced · Detailed. */
+function DensitySlider() {
+  const index = () => Math.max(0, DENSITY_STOPS.indexOf(densityChoice()))
+  return (
+    <div class="settings-row settings-density-row">
+      <div class="settings-row-label">会话流详细程度</div>
+      <div class="settings-density">
+        <span class="settings-density-end">Compact</span>
+        <input
+          type="range"
+          class="settings-density-slider"
+          min={0}
+          max={2}
+          step={1}
+          value={index()}
+          aria-label="Conversation density"
+          aria-valuetext={densityChoice() === "compact-all-grouped" ? "Compact" : densityChoice() === "compact-ungrouped" ? "Balanced" : "Detailed"}
+          onInput={(event) => setConversationDensity(DENSITY_STOPS[Number(event.currentTarget.value)] ?? "compact-all-grouped")}
+        />
+        <span class="settings-density-end">Detailed</span>
       </div>
     </div>
   )
@@ -116,6 +149,7 @@ export function Settings() {
               ]}
               onChange={chrome.setStopBehavior}
             />
+            <DensitySlider />
             <Segment<CloseBehavior>
               label="关闭窗口"
               value={chrome.closeBehavior()}

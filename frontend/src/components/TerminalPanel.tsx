@@ -2,6 +2,7 @@ import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid
 import type { Terminal as GhosttyTerminal } from "ghostty-web"
 import wasmURL from "ghostty-web/ghostty-vt.wasm?url"
 import { isTerminalRunning } from "../lib/api"
+import { terminalDisplayTitle } from "../lib/activity"
 import type { TerminalInfo, TerminalLog } from "../lib/terminal-contracts"
 import { defaultTerminalClient, type TerminalClient } from "../lib/terminal-client"
 import { terminalStatusLabel, type Terminals } from "../lib/terminals"
@@ -11,27 +12,38 @@ export default function TerminalPanel(props: { terminals: Terminals; directory: 
   const t = props.terminals
   return (
     <div class="terminal-panel">
-      <div class="terminal-list">
-        <For each={t.visible().map((info) => info.id)}>
-          {(id) => {
-            const initial = t.visible().find((item) => item.id === id)!
-            const info = () => t.visible().find((item) => item.id === id) ?? initial
-            return (
-              <div class="terminal-list-item" classList={{ selected: t.selected()?.id === id }}>
-                <button class="terminal-list-select" onClick={() => t.patch({ selected: id })} title={info().command}>
-                  <span class="truncate">{info().command}</span>
-                  <span class="terminal-small-status">{terminalStatusLabel(info())}</span>
-                </button>
-                <Show when={!isTerminalRunning(info())}>
-                  <button class="icon-btn" aria-label="从终端条移除" onClick={() => void t.action(id, "hide")}>
-                    ×
+      <Show when={t.visible().length > 1}>
+        <div class="terminal-list" role="tablist" aria-label="终端列表">
+          <For each={t.visible().map((info) => info.id)}>
+            {(id) => {
+              const initial = t.visible().find((item) => item.id === id)!
+              const info = () => t.visible().find((item) => item.id === id) ?? initial
+              const title = () => terminalDisplayTitle(info().command)
+              return (
+                <div class="terminal-list-item" classList={{ selected: t.selected()?.id === id }}>
+                  <button
+                    type="button"
+                    class="terminal-list-select"
+                    role="tab"
+                    aria-selected={t.selected()?.id === id}
+                    onClick={() => t.patch({ selected: id })}
+                    title={title()}
+                  >
+                    <span class="terminal-list-glyph" aria-hidden="true">&gt;_</span>
+                    <span class="truncate">{title()}</span>
+                    <span class="terminal-small-status">{terminalStatusLabel(info())}</span>
                   </button>
-                </Show>
-              </div>
-            )
-          }}
-        </For>
-      </div>
+                  <Show when={!isTerminalRunning(info())}>
+                    <button type="button" class="icon-btn" aria-label={`移除 ${title()}`} onClick={() => void t.action(id, "hide")}>
+                      ×
+                    </button>
+                  </Show>
+                </div>
+              )
+            }}
+          </For>
+        </div>
+      </Show>
       <Show when={t.error()}>
         <div class="terminal-notice" role="alert">
           {t.error()}
@@ -41,20 +53,23 @@ export default function TerminalPanel(props: { terminals: Terminals; directory: 
         {(_id) => {
           const info = () => t.selected()!
           return (
-            <>
-              <TerminalOutput
-                client={t.client}
-                directory={props.directory}
-                sessionID={props.sessionID}
-                info={info()}
-                scroll={t.view().scroll[info().id] ?? 0}
-                onScroll={(scroll) =>
-                  t.patch({
-                    scroll: { ...t.view().scroll, [info().id]: scroll },
-                  })
-                }
-              />
-            </>
+            <TerminalOutput
+              client={t.client}
+              directory={props.directory}
+              sessionID={props.sessionID}
+              info={info()}
+              scroll={t.view().scroll[info().id] ?? 0}
+              onScroll={(scroll) =>
+                t.patch({
+                  scroll: { ...t.view().scroll, [info().id]: scroll },
+                })
+              }
+              onHide={
+                t.visible().length === 1 && !isTerminalRunning(info())
+                  ? () => void t.action(info().id, "hide")
+                  : undefined
+              }
+            />
           )
         }}
       </Show>
@@ -69,6 +84,7 @@ export function TerminalOutput(props: {
   info: TerminalInfo
   scroll: number
   onScroll: (value: number) => void
+  onHide?: () => void
 }) {
   let host!: HTMLDivElement
   let terminal: GhosttyTerminal | undefined
@@ -260,18 +276,33 @@ export function TerminalOutput(props: {
     onCleanupSafe?.()
     terminal?.dispose()
   })
+  const title = () => terminalDisplayTitle(props.info.command)
+  const banner = () =>
+    isTerminalRunning(props.info)
+      ? "Agent is using this terminal. It's read-only."
+      : "This terminal is read-only."
   return (
     <div class="terminal-output">
-      <pre class="terminal-command">$ {props.info.command}</pre>
+      <div class="terminal-readonly-banner" role="status">
+        <span class="terminal-readonly-text">{banner()}</span>
+        <span class="terminal-readonly-meta">
+          <span class="terminal-readonly-glyph" aria-hidden="true" title={title()}>&gt;_</span>
+          <Show when={props.onHide}>
+            <button type="button" class="terminal-readonly-hide" aria-label={`移除 ${title()}`} onClick={() => props.onHide?.()}>
+              ×
+            </button>
+          </Show>
+        </span>
+      </div>
       <Show when={!error() && !hasOutput()}>
         <div class="terminal-notice" role="status">
           {!ready() ? "正在加载终端输出…" : isTerminalRunning(props.info)
-            ? "命令运行中，暂未产生输出（静默命令不会显示进度）"
-            : `${terminalStatusLabel(props.info)}，命令未产生输出`}
+            ? "运行中，暂未产生输出"
+            : `${terminalStatusLabel(props.info)}，暂无输出`}
         </div>
       </Show>
       <Show when={earlier()}>
-        <button class="terminal-earlier" disabled={loading()} onClick={() => void loadEarlier()}>
+        <button type="button" class="terminal-earlier" disabled={loading()} onClick={() => void loadEarlier()}>
           {loading() ? "加载中…" : "加载更早日志"}
         </button>
       </Show>
@@ -283,6 +314,7 @@ export function TerminalOutput(props: {
       <div ref={host} class="terminal-canvas" aria-label="只读终端输出" />
       <Show when={!following()}>
         <button
+          type="button"
           class="terminal-follow"
           onClick={() => {
             setFollowing(true)

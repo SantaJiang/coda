@@ -36,7 +36,7 @@ function SessionTimeline(props: { sessionID: string }) {
     const selection = window.getSelection()
     return Boolean(scroller && selection && !selection.isCollapsed && selection.rangeCount && selection.getRangeAt(0).intersectsNode(scroller))
   }
-  const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+  const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 4
   // Inspection pauses following even on a single screen. Show the shortcut
   // only while the viewport actually leaves content below, and remeasure on
   // layout changes because rollback/collapse need not dispatch a scroll event.
@@ -147,6 +147,6 @@ function SessionTimeline(props: { sessionID: string }) {
       </div>
     </div>
     <button type="button" class="jump-latest" classList={{ "is-visible": showLatest() }}
-      disabled={!showLatest()} aria-hidden={!showLatest()} onClick={latest}>回到最新 ↓</button>
+      disabled={!showLatest()} aria-hidden={!showLatest()} aria-label="Scroll to bottom" onClick={latest}>Scroll to bottom</button>
   </div>
 }

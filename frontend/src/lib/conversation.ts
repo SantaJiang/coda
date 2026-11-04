@@ -1,23 +1,19 @@
 import { basename } from "./path"
 import { activityFailureCount, activityStatus, formatDuration, workDurationMs } from "./activity"
+import type { ConversationDensity } from "./density"
+import { groupEntries } from "./step-grouping"
 import { formatSessionErrorMessage, isAbortError } from "./session-status"
-import type { AssistantMessage, Message, Part, SessionStatus, ToolPart, UserMessage } from "./types"
+import { reasoningVisible } from "./thinking"
+import type { AssistantMessage, Message, Part, ReasoningPart, SessionStatus, ToolPart, UserMessage } from "./types"
 
+export type { ConversationBlock } from "./step-grouping"
 export type TurnPhase = "sending" | "waiting" | "running" | "permission" | "question" | "retry" | "stopping" | "settling" | "done" | "failed" | "stopped" | "interrupted"
 export type CompactionEntry = { kind: "compaction"; key: string; status: "running" | "done" | "failed" | "interrupted"; summary: string; error?: string }
 export type ConversationEntry = { kind: "part"; key: string; part: Part } | CompactionEntry
-export type ConversationBlock = { kind: "work" | "content" | "system"; key: string; entries: ConversationEntry[] }
 
-/** Narration separates activity groups; completed steps stay in their original group. */
-export function conversationBlocks(entries: ConversationEntry[]): ConversationBlock[] {
-  const blocks: ConversationBlock[] = []
-  for (const entry of entries) {
-    const kind = entry.kind === "compaction" ? "system" : entry.part.type === "tool" || entry.part.type === "reasoning" ? "work" : "content"
-    const previous = blocks[blocks.length - 1]
-    if (previous && previous.kind === kind && kind !== "system") previous.entries.push(entry)
-    else blocks.push({ kind, key: `${kind}:${entry.key}`, entries: [entry] })
-  }
-  return blocks
+/** Group steps the way the session stream shows them. Default density is Compact. */
+export function conversationBlocks(entries: ConversationEntry[], density: ConversationDensity = "compact-all-grouped") {
+  return groupEntries(entries, density)
 }
 export type ConversationTurn = {
   id: string
@@ -48,12 +44,31 @@ export type ConversationContext = {
 }
 
 export function visibleConversationPart(part: Part) {
-  if (part.type === "text") return !part.synthetic && !part.ignored
-  return ["tool", "reasoning", "file", "agent"].includes(part.type)
+  if (part.type === "text") return !part.synthetic && !part.ignored && Boolean(part.text.trim())
+  if (part.type === "reasoning") return reasoningVisible(part as ReasoningPart)
+  return ["tool", "file", "agent"].includes(part.type)
 }
 
 export function runningTool(part: Part): part is ToolPart {
   return part.type === "tool" && (part.state.status === "pending" || part.state.status === "running")
+}
+
+function shellLikeTool(part: ToolPart) {
+  const name = part.tool.toLowerCase()
+  return ["bash", "shell", "shell_wait", "shell_status", "shell_cancel"].includes(name)
+}
+
+/** Tools that still block the turn from becoming done while the session is live. */
+function unresolvedTool(part: Part, sessionIdle: boolean): boolean {
+  if (!runningTool(part)) return false
+  // Background shells keep running in the terminal dock after the agent step ends.
+  // Counting them as unresolved made idle turns show a false "回复已中断".
+  if (sessionIdle && shellLikeTool(part)) return false
+  if (sessionIdle) {
+    const meta = "metadata" in part.state ? part.state.metadata : undefined
+    if (meta && typeof meta === "object" && (meta.terminalID || meta.shellID)) return false
+  }
+  return true
 }
 
 export function toolActivity(part: ToolPart) {
@@ -83,19 +98,31 @@ function statusLabel(phase: TurnPhase, entries: ConversationEntry[], ctx: Conver
     const seconds = retry?.next ? Math.max(0, Math.ceil((retry.next - (ctx.now ?? Date.now())) / 1000)) : 0
     return `Retrying${seconds ? ` in ${seconds}s` : ""}${retry?.attempt ? ` · attempt ${retry.attempt}` : ""}`
   }
+  const parts = entries.flatMap((entry) => entry.kind === "part" ? [entry.part] : [])
+  const running = parts.filter(runningTool)
+  // Prefer the live shell/tool explanation over the generic waiting placeholder.
+  if (running.length && (phase === "running" || phase === "waiting" || phase === "sending" || phase === "settling")) {
+    return `${activityStatus(running, ctx.now)}${running.length > 1 ? ` · ${running.length} 项运行中` : ""}`
+  }
   if (labels[phase]) return labels[phase]!
-  const running = entries.flatMap((entry) => entry.kind === "part" && runningTool(entry.part) ? [entry.part] : [])
   if (running.length) return `${activityStatus(running, ctx.now)}${running.length > 1 ? ` · ${running.length} 项运行中` : ""}`
   const last = entries[entries.length - 1]
   if (last?.kind === "compaction" && last.status === "running") return "Compacting context"
   if (last?.kind === "part" && last.part.type === "text") return "Writing response"
-  const parts = entries.flatMap((entry) => entry.kind === "part" ? [entry.part] : [])
   const activity = activityStatus(parts, ctx.now)
   return activity === "Thought" ? "Planning next moves" : activity
 }
 
 function successfulEnd(message?: AssistantMessage) {
-  return !!message && Boolean(message.time.completed) && !message.error && (!message.finish || !["tool-calls", "unknown", "error", "length", "content-filter"].includes(message.finish))
+  // `tool-calls` / `unknown` only mean "more steps may follow" while the session is busy.
+  // Once the assistant message is completed and the session is idle, that loop has ended —
+  // treat it as done so background shells don't surface a false "回复已中断".
+  return (
+    !!message &&
+    Boolean(message.time.completed) &&
+    !message.error &&
+    (!message.finish || !["error", "length", "content-filter"].includes(message.finish))
+  )
 }
 
 /** One projection for live events, snapshots and history. Components never infer completion. */
@@ -167,13 +194,33 @@ export function conversationTurns(messages: Message[], partsByMessage: Record<st
     const stopped = isAbortError(last?.error) || ctx.stoppedTurnID === turn.id || Boolean(ctx.stoppedTurns?.[turn.id])
     const finalEntry = entries[entries.length - 1]
     const compactFailure = finalEntry?.kind === "compaction" && finalEntry.status === "failed" ? finalEntry : undefined
-    const finishError = last?.finish === "length" ? "回复达到模型输出上限，内容未完整生成" : last?.finish === "content-filter" ? "模型供应商阻止了本次回复" : last?.finish === "error" ? "本轮回复失败" : ""
-    const error = (!stopped ? formatSessionErrorMessage(last?.error?.data?.message) || (last?.error ? "本轮回复失败" : "") : "") || compactFailure?.error || (tail ? ctx.sessionError : undefined) || (!tail || ctx.status?.type === "idle" ? finishError : "")
-    const unresolved = parts.some(runningTool) || entries.some((entry) => entry.kind === "compaction" && entry.status === "running")
+    // Manual stop / interrupt must not surface as a mysterious "reply failed" card.
+    const finishError = stopped
+      ? ""
+      : last?.finish === "length"
+        ? "回复达到模型输出上限，内容未完整生成"
+        : last?.finish === "content-filter"
+          ? "模型供应商阻止了本次回复"
+          : last?.finish === "error"
+            ? "生成未完成"
+            : ""
+    const error =
+      (!stopped ? formatSessionErrorMessage(last?.error?.data?.message) || (last?.error ? "生成未完成" : "") : "") ||
+      compactFailure?.error ||
+      (tail && !stopped ? ctx.sessionError : undefined) ||
+      (!tail || ctx.status?.type === "idle" ? finishError : "")
+    const sessionIdle = !ctx.status || ctx.status.type === "idle"
+    const unresolved =
+      parts.some((part) => unresolvedTool(part, sessionIdle)) ||
+      entries.some((entry) => entry.kind === "compaction" && entry.status === "running")
     let phase: TurnPhase
     if (turn.user?.delivery === "sending") phase = "sending"
     else if (turn.user?.delivery === "failed" || turn.user?.delivery === "uncertain") phase = "failed"
-    else if (error || (last?.error && !stopped) || (tail && ctx.status?.type === "idle" && ["error", "length", "content-filter"].includes(last?.finish ?? ""))) phase = "failed"
+    else if (
+      error ||
+      (last?.error && !stopped) ||
+      (!stopped && tail && sessionIdle && ["error", "length", "content-filter"].includes(last?.finish ?? ""))
+    ) phase = "failed"
     else if (tail && ctx.stopping) phase = "stopping"
     else if (stopped) phase = "stopped"
     else if (tail && ctx.permissionCount) phase = "permission"

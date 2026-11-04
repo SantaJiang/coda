@@ -85,17 +85,67 @@ describe("conversation event sequences", () => {
     expect(project(messages, {}, status, { now: 3000 })[0].label).toBe("Retrying in 2s · attempt 2")
   })
 
-  it("preserves output on failure, stop and interrupted legacy history", () => {
+  it("preserves output on failure, stop and incomplete idle history", () => {
     for (const [patch, expected] of [
       [{ error: { name: "APIError", data: { message: "provider down" } } }, "failed"],
       [{ error: { name: "MessageAbortedError", data: { message: "Aborted" } } }, "stopped"],
-      [{ finish: "tool-calls", time: { created: 2, completed: 3 } }, "interrupted"],
+      [{ time: { created: 2 } }, "interrupted"],
     ] as const) {
       const turn = project([user(), assistant("a1", "u1", 2, patch)], { a1: [text("p1", "partial")] })[0]
       expect(turn.phase).toBe(expected)
       expect(turn.entries).toHaveLength(1)
       expect(turn.answer).toEqual([])
     }
+  })
+
+  it("does not call a finished tool-calls step interrupted once the session is idle", () => {
+    const turn = project(
+      [user(), assistant("a1", "u1", 2, { finish: "tool-calls", time: { created: 2, completed: 3 } })],
+      {
+        a1: [
+          text("p1", "构建在后台继续"),
+          {
+            id: "sh1",
+            type: "tool",
+            tool: "shell",
+            callID: "sh1",
+            messageID: "a1",
+            sessionID: "s1",
+            state: {
+              status: "running",
+              input: { command: "bash install_to_device.sh" },
+              metadata: { terminalID: "term-1" },
+            },
+          } as Part,
+        ],
+      },
+      { type: "idle" },
+    )[0]
+    expect(turn.phase).toBe("done")
+    expect(turn.label).not.toBe("回复已中断")
+    expect(turn.entries.length).toBeGreaterThan(0)
+  })
+
+  it("keeps a manually stopped turn as stopped even when the server finished with error", () => {
+    const turn = project(
+      [user(), assistant("a1", "u1", 2, { finish: "error", time: { created: 2, completed: 3 }, error: { data: { message: "Step interrupted" } } })],
+      { a1: [text("p1", "已经写到一半")] },
+      { type: "idle" },
+      { stoppedTurns: { u1: true } },
+    )[0]
+    expect(turn.phase).toBe("stopped")
+    expect(turn.error).toBeFalsy()
+    expect(turn.entries).toHaveLength(1)
+    expect(turn.label).toBe("已停止")
+  })
+
+  it("treats v2 abort-shaped interruptions as a stop, not a cryptic failure", () => {
+    const turn = project(
+      [user(), assistant("a1", "u1", 2, { finish: "error", time: { created: 2, completed: 3 }, error: { name: "MessageAbortedError", data: { message: "Step interrupted" } } })],
+      { a1: [text("p1", "partial")] },
+    )[0]
+    expect(turn.phase).toBe("stopped")
+    expect(turn.error).toBeFalsy()
   })
 
   it("uses parent IDs even when updates arrive after a newer user", () => {

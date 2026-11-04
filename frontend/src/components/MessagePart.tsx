@@ -1,8 +1,10 @@
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
 import { KeyedList } from "./KeyedList"
-import { changedFiles, formatDuration } from "../lib/activity"
-import type { CompactionEntry, ConversationEntry, ConversationTurn } from "../lib/conversation"
-import { conversationBlocks, visibleConversationPart as isVisiblePart } from "../lib/conversation"
+import { changedFiles, formatDuration, liveShellWaitLabel } from "../lib/activity"
+import type { CompactionEntry, ConversationBlock, ConversationEntry, ConversationTurn } from "../lib/conversation"
+import { conversationBlocks, runningTool, visibleConversationPart as isVisiblePart } from "../lib/conversation"
+import type { ToolPart } from "../lib/types"
+import { conversationDensity } from "../lib/density"
 import type {
   AgentPart,
   FilePart,
@@ -15,7 +17,7 @@ import type {
 import { useModels, useRuntime } from "../store/app"
 import { MarkdownView } from "./MarkdownView"
 import { WorkGroup } from "./WorkGroup"
-import { StatusText, useStatusLine, type StatusLine } from "./StatusText"
+import { StatusText, useStatusLine } from "./StatusText"
 import { ChangedFiles } from "./ChangedFiles"
 import { Icon } from "./Icon"
 
@@ -103,11 +105,11 @@ function useModelName() {
   return (providerID?: string, modelID?: string) => models.nameFor(providerID, modelID)
 }
 
-function MessagePartView(props: { part: Part; plain?: boolean }) {
+function MessagePartView(props: { part: Part; plain?: boolean; streaming?: boolean }) {
   return (
     <Switch>
       <Match when={props.part.type === "text"}>
-        <Show when={props.plain} fallback={<MarkdownView text={(props.part as TextPart).text} />}>
+        <Show when={props.plain} fallback={<MarkdownView text={(props.part as TextPart).text} streaming={props.streaming} />}>
           <div class="user-text">{(props.part as TextPart).text}</div>
         </Show>
       </Match>
@@ -125,7 +127,17 @@ function MessagePartView(props: { part: Part; plain?: boolean }) {
 }
 
 function UserBubble(props: { message: Message; parts: Part[] }) {
-  const parts = createMemo(() => (props.parts ?? []).filter(isVisiblePart))
+  // Optimistic send + server ack can briefly leave two text parts with the same body.
+  const parts = createMemo(() => {
+    const visible = (props.parts ?? []).filter(isVisiblePart)
+    const out: Part[] = []
+    for (const part of visible) {
+      const prev = out[out.length - 1]
+      if (part.type === "text" && prev?.type === "text" && prev.text === part.text) continue
+      out.push(part)
+    }
+    return out
+  })
   const modelNameOf = useModelName()
   const runtime = useRuntime()
   const [confirmOpen, setConfirmOpen] = createSignal(false)
@@ -189,9 +201,10 @@ function UserBubble(props: { message: Message; parts: Part[] }) {
   )
 }
 
-function EntryList(props: { entries: ConversationEntry[]; onInspect?: () => void; beforeLayout?: (target?: HTMLElement) => void; afterLayout?: () => void }) {
+function EntryList(props: { entries: ConversationEntry[]; fade?: boolean; onInspect?: () => void; beforeLayout?: (target?: HTMLElement) => void; afterLayout?: () => void }) {
   const runtime = useRuntime()
   const map = createMemo(() => new Map(props.entries.map((entry) => [entry.key, entry])))
+  const fadeKey = () => props.fade ? [...props.entries].reverse().find((entry) => entry.kind === "part" && entry.part.type === "text")?.key : undefined
   return <For each={props.entries.map((entry) => entry.key)}>{(key) => {
     const entry = () => map().get(key)!
     const open = () => runtime.timelineView().stepOpen[key] === true
@@ -203,7 +216,7 @@ function EntryList(props: { entries: ConversationEntry[]; onInspect?: () => void
     }
     return <div class="conversation-entry" data-entry-key={key}>
       <Show when={entry().kind === "part"} fallback={<CompactionRow entry={entry() as CompactionEntry} open={open()} onToggle={toggle} />}>
-        <MessagePartView part={(entry() as { part: Part }).part} />
+        <MessagePartView part={(entry() as { part: Part }).part} streaming={fadeKey() === key} />
       </Show>
     </div>
   }}</For>
@@ -212,13 +225,18 @@ function EntryList(props: { entries: ConversationEntry[]; onInspect?: () => void
 function BlockList(props: {
   entries: ConversationEntry[]
   active: boolean
-  statusLine: StatusLine
   onInspect?: () => void
   beforeLayout?: (target?: HTMLElement) => void
   afterLayout?: () => void
 }) {
   const runtime = useRuntime()
-  const blocks = createMemo(() => conversationBlocks(props.entries))
+  let held: ReturnType<typeof conversationBlocks> = []
+  const blocks = createMemo(() => {
+    const next = conversationBlocks(props.entries, conversationDensity())
+    if (!next.length && props.active && held.length) return held
+    held = next
+    return next
+  })
   const map = createMemo(() => new Map(blocks().map((block) => [block.key, block])))
   const inspect = (target: HTMLElement, change: () => void) => {
     props.onInspect?.()
@@ -228,17 +246,23 @@ function BlockList(props: {
   }
   return <For each={blocks().map((block) => block.key)}>{(key) => {
     const block = () => map().get(key)!
-    const open = () => runtime.timelineView().groupOpen?.[key] === true
+    const card = () => block().shape === "card"
+    const open = () => card() ? runtime.timelineView().groupOpen?.[key] !== false : runtime.timelineView().groupOpen?.[key] === true
     return <Show when={block().kind === "work"} fallback={
-      <EntryList entries={block().entries} onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
+      <EntryList entries={block().entries} fade={props.active} onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
     }>
       <div class="conversation-work-block" data-block-key={key} data-scroll-key={key}>
-        <WorkGroup entries={block().entries} open={open()} onToggle={(target) => inspect(target, () => runtime.updateTimelineView({ groupOpen: { ...runtime.timelineView().groupOpen, [key]: !open() } }))}
-          inactive={!props.active} active={props.active && blocks()[blocks().length - 1]?.key === key} statusLine={props.statusLine}
+        <WorkGroup entries={block().entries} shape={block().shape} open={open()} onToggle={(target) => inspect(target, () => runtime.updateTimelineView({ groupOpen: { ...runtime.timelineView().groupOpen, [key]: !open() } }))}
+          inactive={!props.active} active={props.active && blocks()[blocks().length - 1]?.key === key}
           stepOpen={runtime.timelineView().stepOpen}
           onRevealThoughts={(keys) => {
             const opened = runtime.timelineView().stepOpen
             if (keys.some((key) => opened[key] !== true)) runtime.updateTimelineView({ stepOpen: { ...opened, ...Object.fromEntries(keys.map((key) => [key, true])) } })
+          }}
+          onCollapseStep={(stepKey) => {
+            if (runtime.timelineView().stepOpen[stepKey] === true) {
+              runtime.updateTimelineView({ stepOpen: { ...runtime.timelineView().stepOpen, [stepKey]: false } })
+            }
           }}
           onToggleStep={(stepKey, target) => inspect(target, () => runtime.updateTimelineView({ stepOpen: { ...runtime.timelineView().stepOpen, [stepKey]: runtime.timelineView().stepOpen[stepKey] !== true } }))} />
       </div>
@@ -303,6 +327,62 @@ export function ChatTurnView(props: {
   const files = createMemo(() => changedFiles(parts()))
   const last = () => props.turn.assistants[props.turn.assistants.length - 1]
   const copyText = () => partsPlainText((props.turn.answer.length ? props.turn.answer : props.turn.entries).flatMap((entry) => entry.kind === "part" ? [entry.part] : []))
+  const liveBlocks = createMemo(() => conversationBlocks(props.turn.entries, conversationDensity()))
+  const tailWork = createMemo((): ConversationBlock | undefined => {
+    const tail = liveBlocks()[liveBlocks().length - 1]
+    return tail?.kind === "work" ? tail : undefined
+  })
+  const tailWorkOpen = createMemo(() => {
+    const tail = tailWork()
+    if (!tail) return false
+    const card = tail.shape === "card"
+    return card ? runtime.timelineView().groupOpen?.[tail.key] !== false : runtime.timelineView().groupOpen?.[tail.key] === true
+  })
+  // Glass: don't stack a second Thinking under a pure Thinking group, and suppress
+  // ordinary live status while the open group already shows that work — except shell
+  // wait countdowns, which otherwise collapse into a blank "Planning next moves".
+  const showTurnStatus = createMemo(() => {
+    if (props.turn.phase === "done" || props.turn.error) return false
+    if (!props.turn.active) return true
+    const tail = tailWork()
+    if (!tail) return true
+    const liveTool = tail.entries.some((entry) => entry.kind === "part" && entry.part.type === "tool" && runningTool(entry.part))
+    const liveThought = tail.entries.some(
+      (entry) => entry.kind === "part" && entry.part.type === "reasoning" && !Number.isFinite(entry.part.time?.end),
+    )
+    const hasTool = tail.entries.some((entry) => entry.kind === "part" && entry.part.type === "tool")
+    const shellWaiting = tail.entries.some(
+      (entry) => entry.kind === "part" && entry.part.type === "tool" && Boolean(liveShellWaitLabel(entry.part as ToolPart)),
+    )
+    // Closed/open pure Thinking row already is the status — Cursor hides the second line.
+    if (liveThought && !hasTool) return false
+    if (tailWorkOpen() && (liveTool || liveThought) && !shellWaiting) return false
+    return true
+  })
+  // Cursor: click the second-line status to expand/collapse the owning activity group.
+  const toggleTailWork = (target: HTMLElement) => {
+    const tail = tailWork()
+    if (!tail) return
+    const next = !tailWorkOpen()
+    props.onInspect?.()
+    props.beforeLayout?.(target)
+    const view = runtime.timelineView()
+    const groupOpen = { ...view.groupOpen, [tail.key]: next }
+    if (!next) {
+      runtime.updateTimelineView({ groupOpen })
+    } else {
+      const liveThoughts = tail.entries.flatMap((entry) =>
+        entry.kind === "part" && entry.part.type === "reasoning" && !Number.isFinite(entry.part.time?.end) ? [entry.key] : [],
+      )
+      runtime.updateTimelineView({
+        groupOpen,
+        ...(liveThoughts.length
+          ? { stepOpen: { ...view.stepOpen, ...Object.fromEntries(liveThoughts.map((key) => [key, true])) } }
+          : {}),
+      })
+    }
+    props.afterLayout?.()
+  }
   return <div class="conversation-turn" data-turn-id={props.turn.id} data-phase={props.turn.phase}>
     <Show when={props.turn.user}>{(user) => <UserBubble message={user()} parts={props.partsByMessage[user().id] ?? []} />}</Show>
     <Show when={!props.turn.user?.delivery}>
@@ -320,11 +400,17 @@ export function ChatTurnView(props: {
                 }} />
               </div>
             </Show>
-            <BlockList entries={props.turn.entries} active={props.turn.active} statusLine={statusLine()}
+            <BlockList entries={props.turn.entries} active={props.turn.active}
               onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
-            <Show when={props.turn.phase !== "done" && (!props.turn.active || conversationBlocks(props.turn.entries).slice(-1)[0]?.kind !== "work")}>
+            <Show when={showTurnStatus()}>
               <div class="turn-status" classList={{ live: props.turn.active, failed: props.turn.phase === "failed" }}>
-                <StatusText line={statusLine()} active={props.turn.active} />
+                <Show when={tailWork()} fallback={<StatusText line={statusLine()} active={props.turn.active} />}>
+                  <button type="button" class="work-status-head" aria-expanded={tailWorkOpen()}
+                    aria-label={tailWorkOpen() ? "收起活动" : "展开活动"}
+                    onClick={(event) => toggleTailWork(event.currentTarget)}>
+                    <StatusText line={statusLine()} active={props.turn.active} />
+                  </button>
+                </Show>
               </div>
             </Show>
           </>}>
@@ -332,7 +418,7 @@ export function ChatTurnView(props: {
               <div class="worked-for" classList={{ open: processOpen() }} data-scroll-key={`status:${props.turn.id}`}>
                 <WorkedSummary durationMs={props.turn.durationMs} failures={props.turn.failures} open={processOpen()} onToggle={toggleProcess} />
                 <Show when={processOpen()}><div class="worked-for-body">
-                  <BlockList entries={props.turn.process} active={false} statusLine={statusLine()} onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
+                  <BlockList entries={props.turn.process} active={false} onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
                 </div></Show>
               </div>
             </Show>

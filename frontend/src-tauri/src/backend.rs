@@ -43,9 +43,8 @@ pub fn supervise(app: AppHandle) {
 }
 
 pub fn ensure_running(app: &AppHandle) {
-    if cfg!(debug_assertions) {
-        return;
-    }
+    // Dev (`tauri dev`) used to skip the sidecar and assume an external backend.
+    // When that process is missing the UI sticks on “正在重连”; spawn locally instead.
     let port = port();
     if healthy(&port) {
         return;
