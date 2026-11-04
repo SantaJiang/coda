@@ -58,6 +58,35 @@ describe("streaming markdown selection", () => {
     setText("后续更新仍然有效")
     expect(container.textContent?.trim()).toBe("后续更新仍然有效")
   })
+  it("does not replay the fade while an existing block keeps growing", () => {
+    const [text, setText] = createSignal("正在输出")
+    const container = document.createElement("div")
+    const dispose = render(() => <MarkdownView text={text()} streaming />, container)
+    cleanups.push(dispose)
+    const paragraph = container.querySelector("p")!
+    expect(paragraph.classList.contains("sd-fade")).toBe(true)
+    paragraph.classList.remove("sd-fade")
+    setText("正在输出更多文字")
+    expect(container.querySelector("p")).toBe(paragraph)
+    expect(paragraph.classList.contains("sd-fade")).toBe(false)
+
+    const [listText, setListText] = createSignal("- 第一项")
+    const listHost = document.createElement("div")
+    const disposeList = render(() => <MarkdownView text={listText()} streaming />, listHost)
+    cleanups.push(disposeList)
+    const list = listHost.querySelector("ul")!
+    list.classList.remove("sd-fade")
+    setListText("- 第一项\n- 第二项")
+    expect(listHost.querySelector("ul")).toBe(list)
+    expect(list.classList.contains("sd-fade")).toBe(false)
+    expect(list.querySelectorAll("li")).toHaveLength(2)
+
+    setText("正在输出更多文字\n\n新的段落")
+    const added = container.querySelector(".markdown")!.lastElementChild!
+    expect(added).not.toBe(paragraph)
+    expect(added.classList.contains("sd-fade")).toBe(true)
+    expect(paragraph.classList.contains("sd-fade")).toBe(false)
+  })
   it("renders unfinished code fences safely while streaming", () => {
     const container = document.createElement("div")
     const dispose = render(() => <MarkdownView text={'```typescript\nconst a = "<script>"'} />, container)

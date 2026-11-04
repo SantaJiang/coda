@@ -989,8 +989,14 @@ button.ctx-pill:hover {
 }
 
 .turn[data-role="user"] {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   justify-content: flex-start;
+  width: 100%;
+  /* Opaque so the answer scrolling underneath the pinned prompt stays covered. */
+  background: var(--chat-bg);
 }
 
 .turn[data-role="assistant"] {
@@ -1007,13 +1013,19 @@ button.ctx-pill:hover {
   min-width: 0;
 }
 
+.turn[data-role="user"] .turn-stack {
+  width: 100%;
+  align-items: stretch;
+}
+
 .user-bubble {
-  width: fit-content;
-  max-width: 100%;
-  background: var(--chat-bubble);
-  border: none;
-  border-radius: 20px;
-  padding: 7px 16px;
+  box-sizing: border-box;
+  width: auto;
+  margin-inline: -14px;
+  background: var(--chat-bg);
+  border: 1px solid color-mix(in srgb, var(--chat-text) 16%, transparent);
+  border-radius: 8px;
+  padding: 8px 14px;
   color: var(--chat-text);
   font-size: 14px;
   line-height: 22px;

@@ -12,12 +12,13 @@ export function MarkdownView(props: { text: string; streaming?: boolean }) {
     if (!root || next === displayed) return
     const template = document.createElement("template")
     template.innerHTML = next
+    const previousLast = root.lastElementChild
     syncChildren(root, template.content)
     displayed = next
+    // Fade a block only the first time it appears. Restarting the animation on
+    // every token drops the growing paragraph or list back to opacity 0.
     const node = props.streaming ? root.lastElementChild : undefined
-    if (node && !["PRE", "SVG", "MATH"].includes(node.tagName)) {
-      node.classList.remove("sd-fade")
-      void (node as HTMLElement).offsetWidth
+    if (node && node !== previousLast && !["PRE", "SVG", "MATH"].includes(node.tagName)) {
       node.classList.add("sd-fade")
     }
   }
