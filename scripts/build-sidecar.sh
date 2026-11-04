@@ -56,13 +56,16 @@ fi
 echo "==> 编译内置后端 (当前平台 ${HOST})"
 # Channel 必须是 local，才会读写 opencode-local.db（与 run.sh 同源）。
 # 构建版本来自后端真实 semver；local channel 保持与开发版数据库一致。
-CODA_VERSION="$(bun -e 'console.log(JSON.parse(await Bun.file("package.json").text()).version)' --cwd "$PKG")"
-if [[ -z "$CODA_VERSION" ]]; then
+BACKEND_VERSION="$(bun -e 'console.log(JSON.parse(await Bun.file("package.json").text()).version)' --cwd "$PKG")"
+if [[ -z "$BACKEND_VERSION" ]]; then
   echo "无法从 $PKG/package.json 读取 version。"
   exit 1
 fi
-echo "==> sidecar 版本 ${CODA_VERSION}（channel=local）"
-CODA_CHANNEL=local CODA_VERSION="$CODA_VERSION" bun run --cwd "$PKG" script/build.ts --single --skip-web-ui --skip-install
+echo "==> sidecar 版本 ${BACKEND_VERSION}（channel=local）"
+# 上游构建脚本只认 OPENCODE_VERSION / OPENCODE_CHANNEL（构建入参，等价于 CLI 选项，
+# 不是运行时品牌变量）。Console 的免费额度按 User-Agent 里的版本号做门槛，必须把
+# 后端真实 semver 注进二进制，否则会被当成 0.0.0 拒绝。
+OPENCODE_CHANNEL=local OPENCODE_VERSION="$BACKEND_VERSION" bun run --cwd "$PKG" script/build.ts --single --skip-web-ui --skip-install
 
 if [[ ! -f "$SRC_BIN" ]]; then
   echo "后端编译完成，但找不到二进制：$SRC_BIN"
