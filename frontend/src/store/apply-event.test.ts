@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { applyClientEvent } from "./apply-event"
 import { initialState, type AppState } from "./state"
+import { translateWireEvent } from "../lib/v2-events"
+import { stepPresentation } from "../lib/activity"
 
 function draft(overrides: Partial<AppState> = {}): AppState {
   return {
@@ -281,6 +283,30 @@ describe("applyClientEvent", () => {
 })
 
 describe("stream event ordering", () => {
+  it("applies every translated tool-start event and deduplicates its replay", () => {
+    const state = draft()
+    const data = { sessionID: "s1", assistantMessageID: "a1", id: "call_1" }
+    const started = translateWireEvent({ id: "evt_start", type: "session.tool.input.started", data: { ...data, name: "shell" } })
+    for (const event of started) applyClientEvent(state, event)
+    expect(state.parts.a1?.[0]).toMatchObject({ tool: "shell", state: { status: "pending" } })
+    const revision = state.eventRevision.s1
+    for (const event of started) applyClientEvent(state, event)
+    expect(state.eventRevision.s1).toBe(revision)
+    for (const raw of [
+      { id: "evt_call", type: "session.tool.called", data: { ...data, input: { command: "git status" } } },
+      { id: "evt_done", type: "session.tool.success", data: { ...data, content: [{ type: "text", text: "clean" }] } },
+    ]) for (const event of translateWireEvent(raw)) applyClientEvent(state, event)
+    expect(state.parts.a1).toHaveLength(1)
+    expect(state.parts.a1[0]).toMatchObject({ tool: "shell", state: { status: "completed", input: { command: "git status" }, output: "clean" } })
+    expect(stepPresentation(state.parts.a1[0]).action).toBe("Ran")
+  })
+
+  it("keeps the reasoning start time from an identified start event", () => {
+    const state = draft()
+    for (const event of translateWireEvent({ id: "evt_reasoning", type: "session.reasoning.started", data: { sessionID: "s1", assistantMessageID: "a1", ordinal: 0 } })) applyClientEvent(state, event)
+    expect(state.parts.a1?.[0]).toMatchObject({ type: "reasoning", time: { start: expect.any(Number) } })
+  })
+
   it("deduplicates identified delta events without dropping legitimate repeated text", () => {
     const state = draft()
     const event = { id: "evt1", type: "message.part.delta", properties: { messageID: "a1", partID: "p1", sessionID: "s1", delta: "ha" } }

@@ -1486,9 +1486,11 @@ button.ctx-pill:hover {
   white-space: pre-wrap;
 }
 
-/* Opened thinking lays out fully (Glass: no closed 144px preview on activity groups). */
+/* Opened thinking is capped — long drafts with blank runs must not blow the transcript. */
 .thinking-body {
   margin: 2px 0 8px;
+  max-height: 12rem;
+  overflow: auto;
   opacity: 0.5;
   color: var(--text-muted);
   font-size: var(--font-chat);
@@ -1498,6 +1500,14 @@ button.ctx-pill:hover {
 .thinking-body .markdown {
   font-size: inherit;
   line-height: inherit;
+}
+
+.thinking-body .markdown p,
+.thinking-body .markdown pre,
+.thinking-body .markdown ul,
+.thinking-body .markdown ol {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
 }
 
 /*

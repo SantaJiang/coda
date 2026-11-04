@@ -13,9 +13,12 @@ export function meaningfulThought(text: string) {
     .trim()
 }
 
-/** Collapse Glass-style spacer runs so open thoughts don't look like empty rows. */
+/**
+ * Thought markdown is full of blank lines / fenced drafts that blow the transcript
+ * into "empty" walls. Collapse every blank run to a single newline for display.
+ */
 function compactThoughtSpacing(text: string) {
-  return text.replace(/\n{3,}/g, "\n\n").trim()
+  return text.replace(/[ \t]+\n/g, "\n").replace(/\n{2,}/g, "\n").trim()
 }
 
 export function thinkingBody(part: ReasoningPart) {

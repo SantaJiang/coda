@@ -25,6 +25,6 @@ describe("thinking visibility", () => {
   })
 
   it("keeps real thought text and collapses spacer runs", () => {
-    expect(thinkingBody(reasoning("先看结构\n\n\n\n再改", 2))).toBe("先看结构\n\n再改")
+    expect(thinkingBody(reasoning("先看结构\n\n\n\n再改", 2))).toBe("先看结构\n再改")
   })
 })

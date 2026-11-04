@@ -94,7 +94,10 @@ function toolPart(data: Record<string, unknown>, state: ToolState): Part {
 }
 
 function event(raw: Wire, type: string, properties: Record<string, unknown>, directory?: string): ParsedEvent {
-  return { directory, event: { id: raw.id, type, properties } }
+  // One wire record can produce both a message and a part update. Give each
+  // projection its own stable ID so store deduplication keeps both on first use
+  // and still drops both when the wire record is replayed.
+  return { directory, event: { id: raw.id ? `${raw.id}:${type}` : undefined, type, properties } }
 }
 
 /** Turn one v2 SSE record into the events the existing session store already applies. */

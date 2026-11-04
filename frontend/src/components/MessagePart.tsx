@@ -392,21 +392,9 @@ export function ChatTurnView(props: {
     const next = !tailWorkOpen()
     props.onInspect?.()
     props.beforeLayout?.(target)
-    const view = runtime.timelineView()
-    const groupOpen = { ...view.groupOpen, [tail.key]: next }
-    if (!next) {
-      runtime.updateTimelineView({ groupOpen })
-    } else {
-      const liveThoughts = tail.entries.flatMap((entry) =>
-        entry.kind === "part" && entry.part.type === "reasoning" && !Number.isFinite(entry.part.time?.end) ? [entry.key] : [],
-      )
-      runtime.updateTimelineView({
-        groupOpen,
-        ...(liveThoughts.length
-          ? { stepOpen: { ...view.stepOpen, ...Object.fromEntries(liveThoughts.map((key) => [key, true])) } }
-          : {}),
-      })
-    }
+    // Open/close the activity group only — never auto-expand Thought bodies (those
+    // dump multi-KB markdown with blank runs and recreate the empty-wall bug).
+    runtime.updateTimelineView({ groupOpen: { ...runtime.timelineView().groupOpen, [tail.key]: next } })
     props.afterLayout?.()
   }
   return <div class="conversation-turn" data-turn-id={props.turn.id} data-phase={props.turn.phase}>

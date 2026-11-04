@@ -495,6 +495,13 @@ export function stepPresentation(part: Part, opts: { live?: boolean } = {}): Ste
   const location = stepLocation(input.path ?? input.target_directory ?? input.directory)
   const suffix = location ? `in ${location}` : undefined
 
+  // A reconnect can miss the input-start event that carries the tool name.
+  // Keep that partial call readable until the transcript snapshot fills it in.
+  if (!name.trim()) return {
+    action: live ? "Running tool" : tool.state.status === "pending" ? "Preparing tool" : "Tool call",
+    detail: command ? terminalDisplayTitle(command) : undefined,
+  }
+
   if (name === "read") {
     const metadata = "metadata" in tool.state ? asRecord(tool.state.metadata) : undefined
     const display = asRecord(metadata?.display)

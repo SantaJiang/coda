@@ -59,28 +59,34 @@ export function WorkGroup(props: {
   const diff = createMemo(() => activityDiff(parts()))
   const map = createMemo(() => new Map(props.entries.map((entry) => [entry.key, entry])))
 
-  // Glass: opened live ThinkingLines collapse when that thought finishes or the turn goes
-  // inactive (interrupt). Also clear finished thoughts stuck open by older reveal logic —
-  // but never fight an explicit user expand.
-  const liveThought = new Map<string, boolean>()
+  // Thought bodies never auto-open. Stuck stepOpen from old live-reveal is forced shut.
+  // A click while streaming is a live preview and closes when that thought ends (Glass);
+  // a click on a finished Thought stays open until the user collapses it.
   const userOpened = new Set<string>()
+  const openedWhileLive = new Set<string>()
   createEffect(() => {
-    const turnLive = props.active
     for (const entry of props.entries) {
       if (entry.kind !== "part" || entry.part.type !== "reasoning") continue
-      const live = turnLive && !Number.isFinite(entry.part.time?.end)
-      const was = liveThought.get(entry.key)
-      liveThought.set(entry.key, live)
-      if (!live && props.stepOpen[entry.key] === true && !userOpened.has(entry.key) && (was === true || was === undefined || !turnLive)) {
+      if (props.stepOpen[entry.key] !== true) continue
+      const finished = Number.isFinite(entry.part.time?.end)
+      if (finished && openedWhileLive.has(entry.key)) {
+        openedWhileLive.delete(entry.key)
+        userOpened.delete(entry.key)
         props.onCollapseStep?.(entry.key)
+        continue
       }
+      if (!userOpened.has(entry.key)) props.onCollapseStep?.(entry.key)
     }
   })
   const toggleThought = (key: string, part: ReasoningPart, target: HTMLElement) => {
     const opening = props.stepOpen[key] !== true
-    // Remember explicit expands for finished thoughts; live ones always auto-collapse later.
-    if (opening && Number.isFinite(part.time?.end)) userOpened.add(key)
-    else if (!opening) userOpened.delete(key)
+    if (opening) {
+      userOpened.add(key)
+      if (!Number.isFinite(part.time?.end)) openedWhileLive.add(key)
+    } else {
+      userOpened.delete(key)
+      openedWhileLive.delete(key)
+    }
     props.onToggleStep(key, target)
   }
 
@@ -104,6 +110,8 @@ export function WorkGroup(props: {
       <div class="work-steps">
         <For each={props.entries.flatMap((entry) => {
           if (entry.kind !== "part") return []
+          // Always list Thought/Thinking rows (live and finished). Bodies stay collapsed
+          // unless the user clicks — never dump blank-heavy markdown into the stream.
           if (entry.part.type === "reasoning") return thinkingBody(entry.part) ? [entry.key] : []
           if (entry.part.type === "text") return meaningfulThought(entry.part.text) ? [entry.key] : []
           if (entry.part.type === "tool") return [entry.key]

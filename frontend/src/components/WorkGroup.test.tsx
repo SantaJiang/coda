@@ -35,7 +35,7 @@ function setup(initial: Part[] = [], completed = false, extra: Partial<Assistant
     <ChatTurnView turn={turn()} partsByMessage={map()} following={following()} />
   </StoreProviders>, container)
   cleanups.push(() => { dispose(); disposeRoot(); container.remove() })
-  return { container, setParts, setDone, setStatus, setFollowing }
+  return { container, setParts, setDone, setStatus, setFollowing, setView, view }
   })
 }
 
@@ -76,9 +76,22 @@ describe("streaming turn presentation", () => {
     for (const head of heads) {
       expect(head.disabled).toBe(false)
       expect(head.querySelector(".work-step-caret")).toBeTruthy()
+      expect(head.querySelector(".work-step-action")?.textContent).toMatch(/Ran|Read/)
     }
     heads[0]!.click()
     expect(container.querySelector(".tool-details")?.textContent).toMatch(/git status|clean/)
+  })
+
+  it("labels partial tool calls when a reconnect missed their names", () => {
+    const { container, setParts } = setup([{ ...tool, tool: "" }])
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    const head = container.querySelector<HTMLButtonElement>(".work-step-head")!
+    expect(head.textContent).toContain("Tool call")
+    head.click()
+    expect(container.querySelector(".tool-details")?.textContent).toContain("contents")
+    setParts([tool])
+    expect(container.querySelector(".work-step-head")).toBe(head)
+    expect(head.textContent).toContain("Read")
   })
 
   it("closes as a single Thinking row and expands Thought body only after a click", () => {
@@ -254,7 +267,7 @@ describe("streaming turn presentation", () => {
     const thought = { ...part("r1", "reasoning", "已经想完的内容"), time: { start: 1, end: 3 } } as Part
     const { container, setParts } = setup([thought])
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
-    // Finished thoughts stay collapsed until the Thought row is clicked.
+    // Finished Thought row stays visible but collapsed — no blank body wall.
     expect(container.querySelector(".thinking-body")).toBeNull()
     expect(container.querySelector(".thinking-line")?.textContent).toContain("Thought")
     setParts([thought, tool])
@@ -303,7 +316,6 @@ describe("streaming turn presentation", () => {
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
     ;(container.querySelector(".thinking-line .work-step-head") as HTMLButtonElement).click()
     expect(container.querySelector(".thinking-body")?.textContent).toContain("上一轮想完了")
-    // Completed open group must not hide the planning gap status (Glass Oja).
     expect(container.querySelector(".turn-status [role=\"status\"]")?.textContent).toContain("Planning next moves")
   })
 
@@ -329,8 +341,36 @@ describe("streaming turn presentation", () => {
     expect(status.textContent).not.toContain(">")
     status.click()
     expect(container.querySelector(".work-group.open")).toBeTruthy()
+    // Status only opens the group — Thought body stays collapsed until the row is clicked.
+    expect(container.querySelector(".thinking-body")).toBeNull()
+    ;(container.querySelector(".thinking-line .work-step-head") as HTMLButtonElement).click()
     expect(container.querySelector(".thinking-line.open .thinking-body")?.textContent).toContain("点状态展开")
     expect(container.querySelector(".turn-status")).toBeNull()
+  })
+
+  it("clears stuck auto-revealed Thought bodies without a user click", () => {
+    const doneThought = { ...part("r1", "reasoning", "不该自动摊开的长思考\n\n\n\n带空行"), time: { start: 1, end: 3 } } as Part
+    const { container, setView, view } = setup([doneThought])
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    // Legacy live-reveal left stepOpen true after the thought finished — force that state.
+    setView({ ...view(), stepOpen: { ...view().stepOpen, "a1:r1": true } })
+    expect(container.querySelector(".thinking-body")).toBeNull()
+    expect(view().stepOpen["a1:r1"]).not.toBe(true)
+  })
+
+  it("keeps finished Thought rows visible but collapsed while the turn is live", () => {
+    const doneThought = { ...part("r1", "reasoning", "上一轮想完了"), time: { start: 1, end: 3 } } as Part
+    const live = { ...part("r2", "reasoning", "还在想"), time: { start: 4 } } as Part
+    const { container, setView, view } = setup([doneThought, live, tool])
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    const labels = [...container.querySelectorAll(".work-step-action")].map((node) => node.textContent?.trim())
+    expect(labels.some((text) => text?.startsWith("Thought"))).toBe(true)
+    expect(labels).toContain("Thinking")
+    expect(labels).toContain("Read")
+    expect(container.querySelector(".thinking-body")).toBeNull()
+    // Stuck auto-reveal on a finished row must not reopen a blank wall.
+    setView({ ...view(), stepOpen: { ...view().stepOpen, "a1:r1": true } })
+    expect(container.querySelector(".thinking-body")).toBeNull()
   })
 
   it("auto-collapses a ThinkingLine after that thought finishes", () => {
