@@ -285,7 +285,9 @@ export function toSelectable(model: ConfiguredModel): SelectableModel {
     name: model.name,
     source: "coda",
     variants: [],
-    ...(model.inputModalities ? { input: inputFromMedia(model.inputModalities) } : {}),
+    // Undeclared inputs are text-only: discovery data for custom providers may come from the backend's
+    // image-by-default capabilities rather than a real catalog, which 400s on text-only models.
+    input: inputFromMedia(model.inputModalities ?? []),
   }
 }
 

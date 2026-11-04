@@ -171,7 +171,9 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
   const modelAttachmentError = (files: ComposerAttachment[], model: { providerID: string; modelID: string }) => {
     const selected = state.configuredModels.find((item) => item.providerID === model.providerID && item.modelID === model.modelID)
     const discovered = state.discoveredModels.find((item) => item.providerID === model.providerID && item.modelID === model.modelID)
-    const capability = selected?.inputModalities ? inputFromMedia(selected.inputModalities) : discovered?.input
+    // A configured model trusts only its own checked inputs: discovered capabilities for custom providers
+    // default to image support server-side, so falling back to them sends images to text-only models.
+    const capability = selected ? inputFromMedia(selected.inputModalities ?? []) : discovered?.input
     const adapter = selected ? undefined : discovered?.adapter
     return attachmentModelError(files, capability, adapter)
   }

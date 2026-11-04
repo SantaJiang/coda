@@ -42,6 +42,12 @@ describe("toBackendPatch", () => {
     const [disabled] = parseModelConfigFile(serializeModelConfig([{ ...model, inputModalities: [] }]))
     expect(toBackendPatch([disabled], "fixture/vision")?.provider?.fixture.models?.vision.modalities?.input).toEqual(["text"])
   })
+  it("treats configured models without declared inputs as text-only even when discovery claims image support", () => {
+    const [model] = parseModelConfigFile(JSON.stringify({ models: [{ providerID: "fixture", providerName: "Fixture", modelID: "text-only", baseURL: "https://example.com/v1", apiKey: "fixture" }] }))
+    const discovered = discoveredFromProviderList({ all: [{ id: "fixture", name: "Fixture", models: { "text-only": { capabilities: { input: { text: true, image: true } } } } }], connected: ["fixture"], default: {} })
+    const merged = mergeSelectables([model], discovered)[0]
+    expect(merged.input).toEqual({ text: true, image: false, pdf: false, audio: false, video: false })
+  })
   it("marks configured models as attachment-capable and does not invent token limits", () => {
     const patch = toBackendPatch(
       [

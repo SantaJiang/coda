@@ -195,6 +195,18 @@ describe("delivery, stop and idle reconciliation", () => {
     expect(client.promptAsync).toHaveBeenCalledWith("/tmp/app", "s1", expect.objectContaining({ files: [expect.objectContaining({ mime: "image/png", filename: "capture.png" })] }))
     expect(runtime.attachments()).toEqual([])
   })
+  it("blocks images on an undeclared custom model even when discovery reports image support", async () => {
+    const { runtime, state, setState, client } = setup()
+    setState("discoveredModels", [{ key: "test/model", providerID: "test", modelID: "model", name: "model", source: "discovered", variants: [], input: { text: true, image: true } }])
+    const image = { name: "capture.png", type: "image/png", size: 4, arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer } as File
+    await runtime.importAttachments({ files: [image] })
+    await runtime.send()
+    expect(client.promptAsync).not.toHaveBeenCalled()
+    expect(state.error).toContain("图片")
+    setState("configuredModels", 0, "inputModalities", ["image"])
+    await runtime.send()
+    expect(client.promptAsync).toHaveBeenCalledWith("/tmp/app", "s1", expect.objectContaining({ files: [expect.objectContaining({ mime: "image/png", filename: "capture.png" })] }))
+  })
   it("keeps valid files in a mixed paste and reports unsupported binary files", async () => {
     const { runtime, state } = setup()
     const makeFile = (name: string, data: number[]) => ({ name, type: "", size: data.length, arrayBuffer: async () => new Uint8Array(data).buffer }) as File
