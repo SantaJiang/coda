@@ -1,21 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-  LOCAL_COMPAT_API_KEY,
-  looksLikeLMStudio,
-  normalizeProviderBaseURL,
-  presetById,
-  PROVIDER_PRESETS,
-} from "./presets"
-
-describe("LM Studio preset", () => {
-  it("is listed with an OpenAI-compatible /v1 base URL", () => {
-    const preset = presetById("lmstudio")
-    expect(preset?.name).toBe("LM Studio")
-    expect(preset?.baseURL).toBe("http://127.0.0.1:1234/v1")
-    expect(preset?.apiKeyOptional).toBe(true)
-    expect(PROVIDER_PRESETS.some((item) => item.id === "lmstudio")).toBe(true)
-  })
-})
+import { LOCAL_COMPAT_API_KEY, looksLikeLMStudio, normalizeProviderBaseURL } from "./presets"
 
 describe("normalizeProviderBaseURL", () => {
   it("appends /v1 for LM Studio host:1234 URLs that omit it", () => {

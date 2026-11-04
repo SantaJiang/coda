@@ -13,23 +13,31 @@ import {
   type ModelForm,
 } from "../lib/models"
 import { openTextFile, saveTextFile } from "../lib/persist"
-import { CUSTOM_PRESET_ID, PROVIDER_PRESETS, normalizeProviderBaseURL, presetByBaseURL, presetById } from "../lib/presets"
-import { importedPresetId, parseImportedProviders, type ImportedProvider } from "../lib/provider-import"
+import { normalizeProviderBaseURL } from "../lib/presets"
+import { parseImportedProviders, type ImportedProvider } from "../lib/provider-import"
 import { listRemoteModels, type RemoteModel } from "../lib/remote-models"
+import { modelCatalog, type CatalogProvider } from "../lib/catalog"
 import { useModels } from "../store/app"
 import { Icon } from "./Icon"
 import { INPUT_MEDIA, INPUT_LABELS, type InputMedia } from "../lib/model-input"
 
+type Tab = "mine" | "catalog" | "custom"
+
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: "mine", label: "我的模型" },
+  { id: "catalog", label: "目录" },
+  { id: "custom", label: "自定义" },
+]
+
 export function ModelSettings() {
   const models = useModels()
+  const [tab, setTab] = createSignal<Tab>("mine")
   const [form, setForm] = createSignal<ModelForm>(emptyModelForm())
-  const [presetId, setPresetId] = createSignal<string>(CUSTOM_PRESET_ID)
   const [formError, setFormError] = createSignal<string | null>(null)
   const [saving, setSaving] = createSignal(false)
   const [loadingModels, setLoadingModels] = createSignal(false)
   const [remoteModels, setRemoteModels] = createSignal<RemoteModel[]>([])
   const [importedInputs, setImportedInputs] = createSignal<Record<string, InputMedia[]>>({})
-  const [expandedInput, setExpandedInput] = createSignal<string | null>(null)
   const [checked, setChecked] = createSignal<string[]>([])
   const [customModelID, setCustomModelID] = createSignal("")
   const [importText, setImportText] = createSignal("")
@@ -52,7 +60,6 @@ export function ModelSettings() {
     invalidateFetch()
     setForm(emptyModelForm())
     setImportedInputs({})
-    setPresetId(CUSTOM_PRESET_ID)
     setFormError(null)
     setRemoteModels([])
     setChecked([])
@@ -66,6 +73,7 @@ export function ModelSettings() {
     const open = models.modelSettingsOpen()
     if (open && !wasOpen) {
       resetForm()
+      setTab("mine")
     }
     if (!open) setPendingImport(null)
     return open
@@ -75,43 +83,14 @@ export function ModelSettings() {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  const applyPreset = (id: string) => {
-    setImportedInputs({})
-    invalidateFetch()
-    setPresetId(id)
-    setRemoteModels([])
-    setChecked([])
-    setCustomModelID("")
-    setFormError(null)
-    if (id === CUSTOM_PRESET_ID) {
-      setForm({
-        ...emptyModelForm(),
-        apiKey: form().apiKey,
-      })
-      return
-    }
-    const preset = presetById(id)
-    if (!preset) return
-    setForm({
-      name: preset.name,
-      providerID: preset.id,
-      providerName: preset.name,
-      modelID: "",
-      baseURL: preset.baseURL,
-      apiKey: form().apiKey,
-    })
-  }
-
   const startEdit = (id: string) => {
     setImportedInputs({})
     invalidateFetch()
     const model = models.configuredModels().find((item) => item.id === id)
     if (!model) return
     const siblings = models.configuredModels().filter((item) => item.providerID === model.providerID)
-    const matched = presetById(model.providerID) || presetByBaseURL(model.baseURL)
-    setPresetId(matched?.id ?? CUSTOM_PRESET_ID)
     setForm({
-      name: matched?.name || model.providerName || model.providerID,
+      name: model.providerName || model.providerID,
       providerID: model.providerID,
       providerName: model.providerName,
       modelID: "",
@@ -122,6 +101,7 @@ export function ModelSettings() {
     setRemoteModels(siblings.map((item) => ({ id: item.modelID, name: item.name })))
     setChecked(siblings.map((item) => item.modelID))
     setCustomModelID("")
+    setTab("custom")
   }
 
   const toggleChecked = (id: string) => {
@@ -131,12 +111,12 @@ export function ModelSettings() {
   const applyImported = (imported: ImportedProvider) => {
     invalidateFetch()
     const baseURL = normalizeProviderBaseURL(imported.form.baseURL, imported.form.providerID)
-    setPresetId(importedPresetId(imported))
     setForm({ ...imported.form, baseURL })
     setRemoteModels(imported.models)
     setImportedInputs(Object.fromEntries(imported.models.filter((model) => model.inputModalities).map((model) => [model.id, model.inputModalities!])))
     setChecked(imported.models.map((item) => item.id))
     setFormError(null)
+    setTab("custom")
   }
 
   const namesFor = (ids: string[]) => {
@@ -150,7 +130,7 @@ export function ModelSettings() {
   const fetchModels = async () => {
     const gen = ++fetchGen
     const current = form()
-    const baseURL = normalizeProviderBaseURL(current.baseURL, current.providerID || presetId())
+    const baseURL = normalizeProviderBaseURL(current.baseURL, current.providerID)
     if (baseURL !== current.baseURL) setForm({ ...current, baseURL })
     const error = validateFetchForm({ ...current, baseURL })
     if (error) {
@@ -221,7 +201,7 @@ export function ModelSettings() {
     const current = form()
     const next = {
       ...current,
-      baseURL: normalizeProviderBaseURL(current.baseURL, current.providerID || presetId()),
+      baseURL: normalizeProviderBaseURL(current.baseURL, current.providerID),
     }
     if (next.baseURL !== current.baseURL) setForm(next)
     const error = validateProviderForm(next)
@@ -327,9 +307,15 @@ export function ModelSettings() {
     if (apiKeyInput && apiKeyInput.value !== current.apiKey) apiKeyInput.value = current.apiKey
   })
 
-  const keyPlaceholder = () => presetById(presetId())?.keyPlaceholder ?? "sk-..."
-  const activePreset = () => presetById(presetId())
-  const addressPlaceholder = () => activePreset()?.baseURL || "https://api.openai.com/v1"
+  const inputEnabled = (model: ConfiguredModel, type: InputMedia) =>
+    model.inputModalities?.includes(type) ??
+    models.selectableModels().find((item) => item.key === `${model.providerID}/${model.modelID}`)?.input?.[type] ??
+    false
+
+  const toggleInput = (model: ConfiguredModel, type: InputMedia) => {
+    const next = INPUT_MEDIA.filter((item) => (item === type ? !inputEnabled(model, type) : inputEnabled(model, item)))
+    void models.setModelInput(model.id, next)
+  }
 
   return (
     <Show when={models.modelSettingsOpen()}>
@@ -348,94 +334,94 @@ export function ModelSettings() {
             </button>
           </header>
 
-          <section class="model-list">
-            <div class="model-list-head">
-              <div class="model-list-title">已添加</div>
-              <div class="model-list-file-actions">
-                <button type="button" class="text-btn" disabled={fileBusy()} onClick={() => void importConfig()}>
-                  导入
-                </button>
+          <div class="settings-tabs" role="tablist">
+            <For each={TABS}>
+              {(item) => (
                 <button
                   type="button"
-                  class="text-btn"
-                  disabled={fileBusy() || models.configuredModels().length === 0}
-                  onClick={() => void exportConfig()}
+                  role="tab"
+                  class="settings-tab"
+                  classList={{ active: tab() === item.id }}
+                  aria-selected={tab() === item.id}
+                  onClick={() => setTab(item.id)}
                 >
-                  导出
+                  {item.label}
                 </button>
-              </div>
-            </div>
-            <Show when={fileStatus()}>
-              <div class="field-hint">{fileStatus()}</div>
-            </Show>
-            <Show
-              when={models.configuredModels().length > 0}
-              fallback={<div class="model-list-empty">还没有配置任何模型</div>}
-            >
-              <For each={models.configuredModels()}>
-                {(model) => (
-                  <div class="model-row">
-                    <div class="model-row-main">
-                      <div class="model-row-name">{model.name}</div>
-                      <div class="model-row-meta">
-                        {model.providerName || model.providerID} / {model.modelID}
-                      </div>
-                      <details class="model-input-settings" open={expandedInput() === model.id} onToggle={(event) => {
-                        if (event.currentTarget.open) setExpandedInput(model.id)
-                        else if (expandedInput() === model.id) setExpandedInput(null)
-                      }}>
-                        <summary>输入附件</summary>
-                        <div class="field-hint">按模型实际能力勾选。兼容接口的音频限 MP3 / WAV，暂不支持视频。修改会刷新后端模型配置。</div>
-                        <div class="model-input-options">
-                          <For each={INPUT_MEDIA}>{(type) => {
-                            const enabled = () => model.inputModalities?.includes(type) ?? models.selectableModels().find((item) => item.key === `${model.providerID}/${model.modelID}`)?.input?.[type] ?? false
-                            return <label><input type="checkbox" checked={enabled()} disabled={type === "video"} onChange={(event) => {
-                              const selected = INPUT_MEDIA.filter((item) => item === type ? event.currentTarget.checked : (model.inputModalities?.includes(item) ?? models.selectableModels().find((entry) => entry.key === `${model.providerID}/${model.modelID}`)?.input?.[item] ?? false))
-                              void models.setModelInput(model.id, selected)
-                            }} />{INPUT_LABELS[type]}</label>
-                          }}</For>
-                        </div>
-                      </details>
-                    </div>
-                    <div class="model-row-actions">
-                      <button type="button" class="text-btn" onClick={() => startEdit(model.id)}>
-                        编辑
-                      </button>
-                      <button type="button" class="text-btn danger" onClick={() => void models.deleteConfiguredModel(model.id)}>
-                        删除
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </For>
-            </Show>
-          </section>
+              )}
+            </For>
+          </div>
 
-          <form class="model-form" onSubmit={submit}>
-            <div class="model-form-title">添加接口</div>
-            <div class="preset-row">
-              <For each={PROVIDER_PRESETS}>
-                {(preset) => (
+          <Show when={tab() === "mine"}>
+            <section class="model-list settings-pane">
+              <div class="model-list-head">
+                <div class="model-list-title">已添加 {models.configuredModels().length || ""}</div>
+                <div class="model-list-file-actions">
+                  <button type="button" class="text-btn" disabled={fileBusy()} onClick={() => void importConfig()}>
+                    导入
+                  </button>
                   <button
                     type="button"
-                    class="preset-chip"
-                    classList={{ active: presetId() === preset.id }}
-                    onClick={() => applyPreset(preset.id)}
+                    class="text-btn"
+                    disabled={fileBusy() || models.configuredModels().length === 0}
+                    onClick={() => void exportConfig()}
                   >
-                    {preset.name}
+                    导出
                   </button>
-                )}
-              </For>
-              <button
-                type="button"
-                class="preset-chip"
-                classList={{ active: presetId() === CUSTOM_PRESET_ID }}
-                onClick={() => applyPreset(CUSTOM_PRESET_ID)}
+                </div>
+              </div>
+              <Show when={fileStatus()}>
+                <div class="field-hint">{fileStatus()}</div>
+              </Show>
+              <Show
+                when={models.configuredModels().length > 0}
+                fallback={<div class="model-list-empty">还没有配置任何模型，从目录或自定义接口开始</div>}
               >
-                自定义
-              </button>
-            </div>
-            <Show when={presetId() === CUSTOM_PRESET_ID}>
+                <For each={models.configuredModels()}>
+                  {(model) => (
+                    <div class="model-row">
+                      <div class="model-row-main">
+                        <div class="model-row-name">{model.name}</div>
+                        <div class="model-row-meta">
+                          {model.providerName || model.providerID} / {model.modelID}
+                        </div>
+                        <div class="capability-pills">
+                          <For each={INPUT_MEDIA}>
+                            {(type) => (
+                              <button
+                                type="button"
+                                class="capability-pill"
+                                classList={{ on: inputEnabled(model, type) }}
+                                disabled={type === "video"}
+                                aria-pressed={inputEnabled(model, type)}
+                                title={`切换${INPUT_LABELS[type]}输入`}
+                                onClick={() => toggleInput(model, type)}
+                              >
+                                {INPUT_LABELS[type]}
+                              </button>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+                      <div class="model-row-actions">
+                        <button type="button" class="text-btn" onClick={() => startEdit(model.id)}>
+                          编辑
+                        </button>
+                        <button type="button" class="text-btn danger" onClick={() => void models.deleteConfiguredModel(model.id)}>
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </Show>
+            </section>
+          </Show>
+
+          <Show when={tab() === "catalog"}>
+            <CatalogPane models={models} />
+          </Show>
+          <Show when={tab() === "custom"}>
+            <form class="model-form settings-pane" onSubmit={submit}>
               <label class="field">
                 <span>接口名称</span>
                 <input
@@ -458,119 +444,116 @@ export function ModelSettings() {
                   }}
                 />
               </label>
-            </Show>
-            <Show when={activePreset()?.hint}>
-              <div class="field-hint">{activePreset()?.hint}</div>
-            </Show>
-            <label class="field">
-              <span>接口地址</span>
-              <input
-                ref={(element) => {
-                  baseURLInput = element
-                  element.value = form().baseURL
-                }}
-                placeholder={addressPlaceholder()}
-                onCompositionStart={() => {
-                  composingField = true
-                }}
-                onCompositionEnd={(event) => {
-                  composingField = false
-                  update("baseURL", event.currentTarget.value)
-                }}
-                onInput={(event) => update("baseURL", event.currentTarget.value)}
-              />
-            </label>
-            <label class="field">
-              <span>API Key</span>
-              <input
-                type="password"
-                ref={(element) => {
-                  apiKeyInput = element
-                  element.value = form().apiKey
-                }}
-                placeholder={keyPlaceholder()}
-                autocomplete="off"
-                onCompositionStart={() => {
-                  composingField = true
-                }}
-                onCompositionEnd={(event) => {
-                  composingField = false
-                  update("apiKey", event.currentTarget.value)
-                }}
-                onInput={(event) => update("apiKey", event.currentTarget.value)}
-              />
-            </label>
-            <div class="dialog-actions split">
-              <button type="button" class="ghost-btn" disabled={loadingModels()} onClick={() => void fetchModels()}>
-                {loadingModels() ? "获取中…" : "获取模型列表"}
-              </button>
-            </div>
-            <Show when={remoteModels().length > 0}>
-              <div class="model-pick-head">
-                <span>勾选要加入菜单的模型（{checked().length}）</span>
-                <button
-                  type="button"
-                  class="text-btn"
-                  onClick={() =>
-                    setChecked(
-                      checked().length === remoteModels().length ? [] : remoteModels().map((item) => item.id),
-                    )
-                  }
-                >
-                  {checked().length === remoteModels().length ? "取消全选" : "全选"}
-                </button>
-              </div>
-              <div class="model-pick-list">
-                <For each={remoteModels()}>
-                  {(model) => (
-                    <label class="model-pick-item">
-                      <input
-                        type="checkbox"
-                        checked={checked().includes(model.id)}
-                        onChange={() => toggleChecked(model.id)}
-                      />
-                      <span class="truncate">{model.name}</span>
-                    </label>
-                  )}
-                </For>
-              </div>
-            </Show>
-            <label class="field">
-              <span>手动添加模型 ID</span>
-              <div class="field-row">
+              <label class="field">
+                <span>接口地址</span>
                 <input
-                  value={customModelID()}
-                  placeholder="可选，接口未列出时手动填写"
-                  onInput={(event) => setCustomModelID(event.currentTarget.value)}
+                  ref={(element) => {
+                    baseURLInput = element
+                    element.value = form().baseURL
+                  }}
+                  placeholder="https://api.openai.com/v1"
+                  onCompositionStart={() => {
+                    composingField = true
+                  }}
+                  onCompositionEnd={(event) => {
+                    composingField = false
+                    update("baseURL", event.currentTarget.value)
+                  }}
+                  onInput={(event) => update("baseURL", event.currentTarget.value)}
                 />
-                <button type="button" class="ghost-btn" onClick={addCustomModel}>
-                  加入
-                </button>
-              </div>
-            </label>
-            <details class="import-json">
-              <summary>粘贴供应商 JSON</summary>
-              <textarea
-                value={importText()}
-                rows={6}
-                placeholder={'例如 "namo_hw": { "options": { "baseURL": "https://.../v1" }, "models": { "model-id": { "name": "显示名" } } }'}
-                onInput={(event) => setImportText(event.currentTarget.value)}
-              />
+              </label>
+              <label class="field">
+                <span>API Key</span>
+                <input
+                  type="password"
+                  ref={(element) => {
+                    apiKeyInput = element
+                    element.value = form().apiKey
+                  }}
+                  placeholder="sk-..."
+                  autocomplete="off"
+                  onCompositionStart={() => {
+                    composingField = true
+                  }}
+                  onCompositionEnd={(event) => {
+                    composingField = false
+                    update("apiKey", event.currentTarget.value)
+                  }}
+                  onInput={(event) => update("apiKey", event.currentTarget.value)}
+                />
+              </label>
               <div class="dialog-actions split">
-                <button type="button" class="ghost-btn" disabled={importing() || !importText().trim()} onClick={() => void importProviders()}>
-                  {importing() ? "解析中…" : "填入表单"}
+                <button type="button" class="ghost-btn" disabled={loadingModels()} onClick={() => void fetchModels()}>
+                  {loadingModels() ? "获取中…" : "获取模型列表"}
                 </button>
               </div>
-            </details>
-            <Show when={formError() || models.modelSettingsError()}>
-              <div class="dialog-error">{formError() || models.modelSettingsError()}</div>
-            </Show>
-            <div class="dialog-actions">
-              <button type="submit" class="send-btn" disabled={saving()}>
-                {saving() ? "保存中…" : "保存到菜单"}
-              </button>
-            </div>
-          </form>
+              <Show when={remoteModels().length > 0}>
+                <div class="model-pick-head">
+                  <span>勾选要加入菜单的模型（{checked().length}）</span>
+                  <button
+                    type="button"
+                    class="text-btn"
+                    onClick={() =>
+                      setChecked(
+                        checked().length === remoteModels().length ? [] : remoteModels().map((item) => item.id),
+                      )
+                    }
+                  >
+                    {checked().length === remoteModels().length ? "取消全选" : "全选"}
+                  </button>
+                </div>
+                <div class="model-pick-list">
+                  <For each={remoteModels()}>
+                    {(model) => (
+                      <label class="model-pick-item">
+                        <input
+                          type="checkbox"
+                          checked={checked().includes(model.id)}
+                          onChange={() => toggleChecked(model.id)}
+                        />
+                        <span class="truncate">{model.name}</span>
+                      </label>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <label class="field">
+                <span>手动添加模型 ID</span>
+                <div class="field-row">
+                  <input
+                    value={customModelID()}
+                    placeholder="接口未列出时填写"
+                    onInput={(event) => setCustomModelID(event.currentTarget.value)}
+                  />
+                  <button type="button" class="ghost-btn" onClick={addCustomModel}>
+                    加入
+                  </button>
+                </div>
+              </label>
+              <details class="import-json">
+                <summary>粘贴供应商 JSON</summary>
+                <textarea
+                  value={importText()}
+                  rows={6}
+                  placeholder={'例如 "namo_hw": { "options": { "baseURL": "https://.../v1" }, "models": { "model-id": { "name": "显示名" } } }'}
+                  onInput={(event) => setImportText(event.currentTarget.value)}
+                />
+                <div class="dialog-actions split">
+                  <button type="button" class="ghost-btn" disabled={importing() || !importText().trim()} onClick={() => void importProviders()}>
+                    {importing() ? "解析中…" : "填入表单"}
+                  </button>
+                </div>
+              </details>
+              <Show when={formError() || models.modelSettingsError()}>
+                <div class="dialog-error">{formError() || models.modelSettingsError()}</div>
+              </Show>
+              <div class="dialog-actions">
+                <button type="submit" class="send-btn" disabled={saving()}>
+                  {saving() ? "保存中…" : "保存到菜单"}
+                </button>
+              </div>
+            </form>
+          </Show>
         </div>
       </div>
       <Show when={pendingImport()}>
@@ -631,5 +614,182 @@ export function ModelSettings() {
       </Show>
       </>
     </Show>
+  )
+}
+
+const MODEL_LIST_LIMIT = 200
+
+function CatalogPane(props: { models: ReturnType<typeof useModels> }) {
+  const [providers, setProviders] = createSignal<CatalogProvider[] | null>(null)
+  const [error, setError] = createSignal<string | null>(null)
+  const [query, setQuery] = createSignal("")
+  const [expanded, setExpanded] = createSignal<string | null>(null)
+  const [selection, setSelection] = createSignal<{ providerID: string; ids: string[] } | null>(null)
+  const [apiKey, setApiKey] = createSignal("")
+  const [busy, setBusy] = createSignal(false)
+
+  const load = () => {
+    modelCatalog()
+      .then(setProviders)
+      .catch((err) => setError(err instanceof Error ? err.message : "目录加载失败"))
+  }
+
+  createEffect(() => {
+    if (providers() === null && error() === null) load()
+  })
+
+  const retry = () => {
+    setError(null)
+    setProviders(null)
+  }
+
+  const searching = () => query().trim().length > 0
+  const filteredProviders = () => {
+    const list = providers()
+    if (!list) return []
+    const q = query().trim().toLowerCase()
+    if (!q) return list
+    return list.filter(
+      (provider) =>
+        provider.name.toLowerCase().includes(q) ||
+        provider.id.toLowerCase().includes(q) ||
+        provider.models.some((model) => model.name.toLowerCase().includes(q) || model.id.toLowerCase().includes(q)),
+    )
+  }
+
+  const providerModels = (provider: CatalogProvider) => {
+    const q = query().trim().toLowerCase()
+    const models = q
+      ? provider.models.filter((model) => model.name.toLowerCase().includes(q) || model.id.toLowerCase().includes(q))
+      : provider.models
+    return models.slice(0, MODEL_LIST_LIMIT)
+  }
+
+  const isOpen = (providerID: string) => (searching() ? true : expanded() === providerID)
+  const toggleOpen = (providerID: string) => setExpanded(expanded() === providerID ? null : providerID)
+
+  const isAdded = (providerID: string, modelID: string) =>
+    props.models.configuredModels().some((item) => item.providerID === providerID && item.modelID === modelID)
+
+  const selectedProvider = () => {
+    const current = selection()
+    return current ? providers()?.find((provider) => provider.id === current.providerID) : undefined
+  }
+
+  const toggleModel = (provider: CatalogProvider, modelID: string) => {
+    setSelection((current) => {
+      if (!current || current.providerID !== provider.id) return { providerID: provider.id, ids: [modelID] }
+      const ids = current.ids.includes(modelID)
+        ? current.ids.filter((item) => item !== modelID)
+        : [...current.ids, modelID]
+      return ids.length ? { ...current, ids } : null
+    })
+  }
+
+  const save = async () => {
+    const current = selection()
+    const provider = selectedProvider()
+    if (!current || !provider) return
+    const chosen = provider.models.filter((model) => current.ids.includes(model.id))
+    if (!chosen.length) return
+    setBusy(true)
+    setError(null)
+    await props.models.saveConfiguredProvider(
+      {
+        name: provider.name,
+        providerID: provider.id,
+        providerName: provider.name,
+        modelID: chosen[0].id,
+        baseURL: chosen[0].baseURL,
+        apiKey: apiKey().trim(),
+      },
+      current.ids,
+      Object.fromEntries(chosen.map((model) => [model.id, model.name])),
+      Object.fromEntries(chosen.map((model) => [model.id, model.input])),
+    )
+    setBusy(false)
+  }
+
+  const keyPlaceholder = () => selectedProvider()?.env ?? "API Key"
+
+  return (
+    <section class="catalog-pane settings-pane">
+      <input
+        class="catalog-search"
+        type="search"
+        placeholder="搜索供应商或模型"
+        value={query()}
+        onInput={(event) => setQuery(event.currentTarget.value)}
+      />
+      <Show when={error()}>
+        <div class="dialog-error">
+          {error()}
+          <button type="button" class="text-btn" onClick={retry}>
+            重试
+          </button>
+        </div>
+      </Show>
+      <Show when={props.models.modelSettingsError()}>
+        <div class="dialog-error">{props.models.modelSettingsError()}</div>
+      </Show>
+      <Show when={!providers() && !error()}>
+        <div class="catalog-status">目录加载中…</div>
+      </Show>
+      <div class="catalog-list">
+        <For each={filteredProviders()}>
+          {(provider) => (
+            <div class="catalog-provider" classList={{ open: isOpen(provider.id) }}>
+              <button type="button" class="catalog-provider-head" onClick={() => toggleOpen(provider.id)}>
+                <span class="catalog-provider-name">{provider.name}</span>
+                <span class="catalog-provider-meta">
+                  {provider.models.length} 个模型{provider.env ? ` · ${provider.env}` : ""}
+                </span>
+                <Icon name="chevron-right" class="catalog-provider-caret" />
+              </button>
+              <Show when={isOpen(provider.id)}>
+                <For each={providerModels(provider)}>
+                  {(model) => (
+                    <label class="catalog-model" classList={{ added: isAdded(provider.id, model.id) }}>
+                      <input
+                        type="checkbox"
+                        checked={selection()?.providerID === provider.id && selection()!.ids.includes(model.id)}
+                        onChange={() => toggleModel(provider, model.id)}
+                      />
+                      <span class="catalog-model-name">{model.name}</span>
+                      <span class="catalog-model-id">{model.id}</span>
+                      <span class="capability-pills">
+                        <For each={model.input}>{(type) => <span class="capability-pill on">{INPUT_LABELS[type]}</span>}</For>
+                        <Show when={isAdded(provider.id, model.id)}>
+                          <span class="capability-pill added">已添加</span>
+                        </Show>
+                      </span>
+                    </label>
+                  )}
+                </For>
+              </Show>
+            </div>
+          )}
+        </For>
+      </div>
+      <Show when={selection()}>
+        <div class="catalog-add-bar">
+          <input
+            type="password"
+            placeholder={keyPlaceholder()}
+            autocomplete="off"
+            value={apiKey()}
+            onInput={(event) => setApiKey(event.currentTarget.value)}
+          />
+          <button
+            type="button"
+            class="send-btn"
+            disabled={busy() || !apiKey().trim()}
+            onClick={() => void save()}
+          >
+            {busy() ? "添加中…" : `添加 ${selection()!.ids.length} 个模型`}
+          </button>
+        </div>
+      </Show>
+    </section>
   )
 }

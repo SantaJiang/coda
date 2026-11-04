@@ -1,5 +1,4 @@
 import { emptyModelForm, type ModelForm } from "./models"
-import { CUSTOM_PRESET_ID, presetByBaseURL, presetById } from "./presets"
 import { parseInputMedia, type InputMedia } from "./model-input"
 
 export type ImportedModel = {
@@ -93,12 +92,11 @@ function importedFromProvider(id: string, provider: ProviderLike): ImportedProvi
   if (!baseURL) return null
   const models = modelEntries(provider.models)
   const providerName = String(provider.name || id).trim() || id
-  const preset = presetById(id)
   return {
     form: {
-      name: preset?.name || providerName,
-      providerID: preset?.id || id,
-      providerName: preset?.name || providerName,
+      name: providerName,
+      providerID: id,
+      providerName,
       modelID: models[0]?.id ?? "",
       baseURL,
       apiKey: extractApiKey(options),
@@ -199,8 +197,4 @@ export function parseImportedProviders(raw: string): ImportedProvider[] {
   const fromMap = importedFromMap(parsed)
   if (fromMap.length) return fromMap
   throw new Error("JSON 里没有可用的接口地址和模型")
-}
-
-export function importedPresetId(imported: ImportedProvider) {
-  return presetById(imported.form.providerID)?.id ?? presetByBaseURL(imported.form.baseURL)?.id ?? CUSTOM_PRESET_ID
 }

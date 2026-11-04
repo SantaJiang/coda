@@ -214,9 +214,9 @@ export function McpSettings() {
             }}
           </For>
           <form class="model-form mcp-form" onSubmit={(event) => void add(event)}>
-            <div class="preset-row" role="radiogroup" aria-label="服务器类型">
-              <button type="button" role="radio" aria-checked={kind() === "local"} class="preset-chip" classList={{ active: kind() === "local" }} onClick={() => setKind("local")}>本地</button>
-              <button type="button" role="radio" aria-checked={kind() === "remote"} class="preset-chip" classList={{ active: kind() === "remote" }} onClick={() => setKind("remote")}>远程</button>
+            <div class="mcp-kind-row" role="radiogroup" aria-label="服务器类型">
+              <button type="button" role="radio" aria-checked={kind() === "local"} class="mcp-kind-chip" classList={{ active: kind() === "local" }} onClick={() => setKind("local")}>本地</button>
+              <button type="button" role="radio" aria-checked={kind() === "remote"} class="mcp-kind-chip" classList={{ active: kind() === "remote" }} onClick={() => setKind("remote")}>远程</button>
             </div>
             <label class="field">
               名称
