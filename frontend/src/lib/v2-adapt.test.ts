@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { translateWireEvent } from "./v2-events"
+import { conversationTurns } from "./conversation"
 import { formToQuestion, sessionStatuses, shellOutputToLog, shellToTerminal, todosFromMessages, toTranscript, toV2Rules } from "./v2-map"
 
 describe("v2 feature adapters", () => {
@@ -62,6 +63,29 @@ describe("v2 feature adapters", () => {
       error: { name: "MessageAbortedError", data: { message: "Step interrupted" } },
     })
     expect(row?.parts[0]).toMatchObject({ type: "text", text: "half" })
+  })
+
+  it("keeps directory instructions on the original turn instead of a new question", () => {
+    const transcript = toTranscript("ses_1", [
+      { id: "u1", type: "user", text: "帮我看这个报错", time: { created: 1 } },
+      { id: "a1", type: "assistant", finish: "tool-calls", time: { created: 2, completed: 3 }, content: [{ type: "tool", name: "read", state: { status: "completed", input: { filePath: "src/app.ts" } } }] },
+      { id: "syn", type: "synthetic", text: "Instructions from: /repo/AGENTS.md\n# guide", description: "Loaded AGENTS.md", time: { created: 4 } },
+      { id: "sys", type: "system", text: "Instructions updated body", description: "Instructions updated: AGENTS.md", time: { created: 5 } },
+      { id: "a2", type: "assistant", finish: "stop", time: { created: 6, completed: 7 }, content: [{ type: "text", text: "原因在版本号" }] },
+    ])
+    expect(transcript.find((row) => row.info.id === "syn")?.parts[0]).toMatchObject({ type: "text", synthetic: true })
+    expect(transcript.find((row) => row.info.id === "sys")?.parts[0]).toMatchObject({ type: "text", synthetic: true })
+    expect(transcript.find((row) => row.info.id === "u1")?.parts[0]).toMatchObject({ type: "text", text: "帮我看这个报错" })
+    expect(transcript.find((row) => row.info.id === "u1")?.parts[0]).not.toHaveProperty("synthetic")
+    const parts = Object.fromEntries(transcript.map((row) => [row.info.id, row.parts]))
+    const turns = conversationTurns(transcript.map((row) => row.info), parts, { status: { type: "idle" } })
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.id).toBe("u1")
+    expect(turns[0]?.assistants.map((message) => message.id)).toEqual(["a1", "a2"])
+    expect(turns[0]?.entries.some((entry) => entry.kind === "part" && entry.part.type === "text" && entry.part.text.includes("Instructions from"))).toBe(false)
+    expect(turns[0]?.answer.map((entry) => entry.kind === "part" && entry.part.type === "text" ? entry.part.text : "")).toEqual(["原因在版本号"])
+    expect(turns[0]?.phase).toBe("done")
+    expect(turns[0]?.label).not.toBe("回复已中断")
   })
 
   it("keeps user files on the transcript and maps old permission names", () => {

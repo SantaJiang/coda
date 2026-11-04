@@ -185,7 +185,11 @@ export function toTranscript(sessionID: string, rows: Rec[]): MessageWithParts[]
     if (row.type === "user" || row.type === "synthetic" || row.type === "system") {
       const info: UserMessage = { id, sessionID, role: "user", time: { created } }
       const parts: Part[] = []
-      if (typeof row.text === "string" && row.text) parts.push({ id: `${id}:text`, sessionID, messageID: id, type: "text", text: row.text })
+      // Directory guides and other model-only injections must not become a new user turn.
+      const injected = row.type === "synthetic" || row.type === "system"
+      if (typeof row.text === "string" && row.text) {
+        parts.push({ id: `${id}:text`, sessionID, messageID: id, type: "text", text: row.text, ...(injected ? { synthetic: true } : {}) })
+      }
       parts.push(...fileParts(sessionID, id, row.files))
       messages.push({ info, parts })
       continue
