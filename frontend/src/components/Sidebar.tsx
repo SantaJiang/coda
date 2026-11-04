@@ -17,6 +17,7 @@ const SESSION_PREVIEW_COUNT = 5
 // with the pixel grid instead of scaling 24px geometry down to 16px.
 const SIDEBAR_ICON_PATHS = {
   plus: "M8.5 3.5v10M3.5 8.5h10",
+  chevron: "M6 4.25 10.25 8.5 6 12.75",
   compose: "M7.5 3.5H5a2.5 2.5 0 0 0-2.5 2.5v5a2.5 2.5 0 0 0 2.5 2.5h6a2.5 2.5 0 0 0 2.5-2.5V8.5",
   folder: "M2.5 6.5v-2a1 1 0 0 1 1-1H6l1.5 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-6h11",
   "folder-open": "M2.5 11.5v-7a1 1 0 0 1 1-1H6l1.5 2h5a1 1 0 0 1 1 1M3.5 13.5h8.25a1 1 0 0 0 .95-.68l1.65-5A1 1 0 0 0 13.4 6.5H5.75a1 1 0 0 0-.95.68l-2.25 5a1 1 0 0 0 .95 1.32Z",
@@ -110,6 +111,22 @@ function TreeCollapse(props: { open: boolean; children: JSX.Element }) {
 function sessionLabel(session: Session) {
   if (isLocalDraft(session)) return session.title?.trim() || "新会话"
   return formatSessionTitle(session.title)
+}
+
+function sessionAge(value?: number) {
+  if (!value) return ""
+  const ms = value < 1e12 ? value * 1000 : value
+  const delta = Date.now() - ms
+  if (!Number.isFinite(delta) || delta < 0) return ""
+  const minutes = Math.round(delta / 60_000)
+  if (minutes < 60) return `${Math.max(1, minutes)}m`
+  const hours = Math.round(delta / 3_600_000)
+  if (hours < 24) return `${hours}h`
+  const days = Math.round(delta / 86_400_000)
+  if (days < 30) return `${days}d`
+  const months = Math.round(days / 30)
+  if (months < 12) return `${months}mo`
+  return `${Math.round(months / 12)}y`
 }
 
 function sessionDotTitle(kind: SessionDot) {
@@ -269,11 +286,11 @@ export function Sidebar() {
                       title={project().path}
                       onClick={() => projects.toggleProject(project().id)}
                     >
-                      <span class="tree-icon">
+                      <span class="tree-icon" classList={{ chevron: !isLocalProject(project()) && !project().missing }}>
                         <SidebarIcon
-                          class="tree-folder"
+                          class={isLocalProject(project()) || project().missing ? "tree-folder" : "tree-chevron"}
                           name={
-                            isLocalProject(project()) ? "home" : project().missing ? "warning" : project().expanded ? "folder-open" : "folder"
+                            isLocalProject(project()) ? "home" : project().missing ? "warning" : "chevron"
                           }
                         />
                       </span>
@@ -386,26 +403,34 @@ export function Sidebar() {
                               onContextMenu={(event) => openSessionMenu(event, session())}
                               onClick={() => void projects.selectSession(session())}
                             >
-                              <Show when={isLocalDraft(session())}>
+                              <Show
+                                when={isLocalDraft(session())}
+                                fallback={
+                                  <Show
+                                    when={sessionDot(session().id)}
+                                    fallback={<span class="tree-bullet" aria-hidden="true" />}
+                                  >
+                                    {(kind) => (
+                                      <span
+                                        class="session-dot"
+                                        classList={{
+                                          wait: kind() === "wait",
+                                          error: kind() === "error",
+                                          busy: kind() === "busy",
+                                          unread: kind() === "unread",
+                                        }}
+                                        title={sessionDotTitle(kind())}
+                                      />
+                                    )}
+                                  </Show>
+                                }
+                              >
                                 <span class="tree-draft-icon" title="未提交的草稿">
                                   <SidebarIcon name="pencil" />
                                 </span>
                               </Show>
                               <span class="truncate">{sessionLabel(session())}</span>
-                              <Show when={sessionDot(session().id)}>
-                                {(kind) => (
-                                  <span
-                                    class="session-dot"
-                                    classList={{
-                                      wait: kind() === "wait",
-                                      error: kind() === "error",
-                                      busy: kind() === "busy",
-                                      unread: kind() === "unread",
-                                    }}
-                                    title={sessionDotTitle(kind())}
-                                  />
-                                )}
-                              </Show>
+                              <span class="tree-session-age">{sessionAge(session().time?.updated)}</span>
                             </button>
                           </Show>
                         </div>
@@ -418,7 +443,7 @@ export function Sidebar() {
                         aria-expanded={showAllSessions()}
                         onClick={() => setShowAllSessions((value) => !value)}
                       >
-                        {showAllSessions() ? "收起显示" : "展开显示"}
+                        {showAllSessions() ? "收起" : "更多"}
                       </button>
                     </Show>
                   </TreeCollapse>

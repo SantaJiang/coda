@@ -13,6 +13,7 @@ const GLYPHS = {
   "paper-plane": "\uf1d8",
   pencil: "\uf040",
   trash: "\uf014",
+  minus: "\uf068",
   "code-fork": "\uf126",
   warning: "\uf071",
   undo: "\uf0e2",

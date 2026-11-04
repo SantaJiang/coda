@@ -53,12 +53,25 @@ function formatSentTime(value?: number) {
   return `${date.getFullYear()}/${day} ${hh}`
 }
 
+function formatRelativeTime(value?: number) {
+  if (!value) return ""
+  const ms = value < 1e12 ? value * 1000 : value
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return ""
+  const delta = Date.now() - date.getTime()
+  if (delta < 45_000) return "Just now"
+  if (delta < 60 * 60_000) return `${Math.max(1, Math.round(delta / 60_000))}m ago`
+  if (delta < 24 * 60 * 60_000) return `${Math.max(1, Math.round(delta / 3_600_000))}h ago`
+  return formatSentTime(value)
+}
+
 function MessageMeta(props: {
   agent?: string
   modelName: string
   time?: number
   copyText: string
   onRollback?: () => void
+  relative?: boolean
 }) {
   const copy = async (event: MouseEvent) => {
     event.stopPropagation()
@@ -71,12 +84,13 @@ function MessageMeta(props: {
     }
   }
 
-  const info = () =>
-    [formatAgentLabel(props.agent), props.modelName, formatSentTime(props.time)].filter(Boolean).join(" · ")
+  const clock = () => (props.relative ? formatRelativeTime(props.time) : formatSentTime(props.time))
+  const detail = () => [formatAgentLabel(props.agent), props.modelName, formatSentTime(props.time)].filter(Boolean).join(" · ")
+  const info = () => (props.relative ? clock() : detail())
 
   return (
-    <div class="msg-meta">
-      <span class="msg-meta-info">{info()}</span>
+    <div class="msg-meta" classList={{ "is-assistant": props.relative }}>
+      <span class="msg-meta-info" title={props.relative ? detail() : undefined}>{info()}</span>
       <button type="button" class="msg-meta-copy" aria-label="复制" title="复制" onClick={(event) => void copy(event)}>
         <Icon name="copy" />
       </button>
@@ -271,11 +285,19 @@ function BlockList(props: {
 }
 
 function CompactionRow(props: { entry: CompactionEntry; open: boolean; onToggle: (target: HTMLElement) => void }) {
-  const label = () => ({ running: "正在整理上下文", done: "上下文已整理", failed: "上下文整理失败", interrupted: "上下文整理已中断" })[props.entry.status]
+  const label = () => ({
+    running: "Summarizing chat context",
+    done: "Chat context summarized",
+    failed: "Summarization failed",
+    interrupted: "Summarization stopped",
+  })[props.entry.status]
   return <div class="compaction-mark" classList={{ open: props.open, failed: props.entry.status === "failed" }}>
-    <button type="button" class="work-step-head" disabled={!props.entry.summary && !props.entry.error}
+    <button type="button" class="work-head" disabled={!props.entry.summary && !props.entry.error}
       aria-expanded={props.open} onClick={(event) => props.onToggle(event.currentTarget)}>
-      <span>{label()}</span><Show when={props.entry.summary || props.entry.error}><Icon name="chevron-right" class="work-step-caret" /></Show>
+      <span class="work-summary">
+        <span class="work-summary-text">{label()}</span>
+        <Show when={props.entry.summary || props.entry.error}><Icon name="chevron-right" class="work-summary-caret" /></Show>
+      </span>
     </button>
     <Show when={props.open}>
       <Show when={props.entry.summary}><MarkdownView text={props.entry.summary} /></Show>
@@ -428,7 +450,8 @@ export function ChatTurnView(props: {
           <Show when={props.turn.error}><div class="error-card">{props.turn.error}</div></Show>
           <Show when={!props.turn.active && files().length > 0}><ChangedFiles files={files()} /></Show>
         </div>
-        <Show when={!props.turn.active && last()}>{(message) => <MessageMeta
+          <Show when={!props.turn.active && last()}>{(message) => <MessageMeta
+          relative
           agent={message().agent ?? message().mode} modelName={models.nameFor(message().providerID, message().modelID)}
           time={message().time.completed ?? message().time.created} copyText={copyText()} />}</Show>
       </article>

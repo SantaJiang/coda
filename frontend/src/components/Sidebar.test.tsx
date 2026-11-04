@@ -69,12 +69,12 @@ it("previews five recent sessions per project and expands each group independent
     const more = groups[0].querySelector<HTMLButtonElement>(".tree-show-more")!
     expect(groups[0].querySelectorAll(".tree-session")).toHaveLength(5)
     expect(groups[1].querySelectorAll(".tree-session")).toHaveLength(5)
-    expect(more.textContent).toBe("展开显示")
+    expect(more.textContent).toBe("更多")
     expect(more.getAttribute("aria-expanded")).toBe("false")
     more.click()
     expect(groups[0].querySelectorAll(".tree-session")).toHaveLength(8)
     expect(groups[1].querySelectorAll(".tree-session")).toHaveLength(5)
-    expect(more.textContent).toBe("收起显示")
+    expect(more.textContent).toBe("收起")
     groups[0].querySelectorAll<HTMLButtonElement>(".tree-session-main")[7].click()
     expect(selectSession).toHaveBeenCalledWith(expect.objectContaining({ id: "a-7" }))
     more.click()
@@ -88,12 +88,12 @@ it("keeps an older active session visible when selection changes or the preview 
   try {
     const group = host.querySelector(".tree-project")!
     setSelected("a-6")
-    expect(group.querySelector(".tree-session.active")?.textContent).toBe("会话 7")
+    expect(group.querySelector(".tree-session.active .truncate")?.textContent).toBe("会话 7")
     expect(group.querySelectorAll(".tree-session")).toHaveLength(7)
     group.querySelector<HTMLButtonElement>(".tree-show-more")!.click()
     expect(group.querySelectorAll(".tree-session")).toHaveLength(8)
     group.querySelector<HTMLButtonElement>(".tree-show-more")!.click()
-    expect(group.querySelector(".tree-session.active")?.textContent).toBe("会话 7")
+    expect(group.querySelector(".tree-session.active .truncate")?.textContent).toBe("会话 7")
     setSelected("a-0")
     expect(group.querySelectorAll(".tree-session")).toHaveLength(5)
   } finally { cleanup() }
