@@ -11,9 +11,6 @@ export type ConversationBlock = {
   shape: BlockShape
 }
 
-const TEXT_MAX = 100
-const TEXT_MAX_LINES = 2
-const MIN_TEXT_GROUP = 3
 const ALWAYS = new Set([
   "read", "grep", "glob", "ls", "list", "semsearch", "searchconversations",
   "readlints", "readtodos", "fetch", "webfetch", "websearch", "getmcptools", "generateimage",
@@ -30,17 +27,6 @@ function nameOf(tool: ToolPart) {
   return tool.tool.toLowerCase()
 }
 
-export function proseCanGroup(text: string) {
-  const value = text.trim()
-  if (!value || value.length > TEXT_MAX) return false
-  if (value.split("\n").length > TEXT_MAX_LINES) return false
-  if (/```/.test(value)) return false
-  if (/^#{1,6}\s/m.test(value)) return false
-  if (/^\s*(?:[-*+]|\d+\.)\s/m.test(value)) return false
-  if (/^\s*\|.+\|\s*$/m.test(value)) return false
-  return true
-}
-
 function pathOf(tool: ToolPart) {
   const input = tool.state.input ?? {}
   return String(input.filePath ?? input.file_path ?? input.path ?? input.target_file ?? input.targetFile ?? input.file ?? "").trim()
@@ -55,7 +41,7 @@ function classify(entry: ConversationEntry, density: ConversationDensity): { ent
   if (entry.kind === "compaction") return { entry, family: "blocked", groupable: false }
   const part = entry.part
   if (part.type === "reasoning") return { entry, family: "thinking", groupable: true }
-  if (part.type === "text") return { entry, family: "text", groupable: proseCanGroup(part.text) }
+  if (part.type === "text") return { entry, family: "text", groupable: false }
   if (part.type !== "tool") return { entry, family: "blocked", groupable: false }
   if (needsApproval(part)) return { entry, family: "blocked", groupable: false }
   const name = nameOf(part)
@@ -119,19 +105,14 @@ function singleBlock(entry: ConversationEntry, density: ConversationDensity): Co
   return { kind: "content", key: `content:${entry.key}`, entries: [entry], shape: "single" }
 }
 
-/** Cursor step grouping. Short prose can join a group; the finished answer is split by the turn, not here. */
+/** Narration separates consecutive work batches at every density, live and in history. */
 export function groupEntries(entries: ConversationEntry[], density: ConversationDensity = "compact-all-grouped"): ConversationBlock[] {
   const blocks: ConversationBlock[] = []
   let buf: Array<{ entry: ConversationEntry; family: Family }> = []
   const flush = () => {
     if (!buf.length) return
-    const onlyText = buf.every((item) => item.family === "text")
-    if (onlyText && buf.length < MIN_TEXT_GROUP) {
-      for (const item of buf) blocks.push(singleBlock(item.entry, density))
-    } else {
-      const first = buf[0].entry
-      blocks.push({ kind: "work", key: `work:${first.key}`, entries: buf.map((item) => item.entry), shape: shapeFor(buf) })
-    }
+    const first = buf[0].entry
+    blocks.push({ kind: "work", key: `work:${first.key}`, entries: buf.map((item) => item.entry), shape: shapeFor(buf) })
     buf = []
   }
   for (const entry of entries) {

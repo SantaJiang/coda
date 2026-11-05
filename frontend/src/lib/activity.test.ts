@@ -83,7 +83,7 @@ describe("activity presentation", () => {
       { id: "t1", sessionID: "s1", messageID: "a1", type: "text", text: "progress" },
       tool("r2", "grep"),
     ]
-    expect(conversationBlocks(parts.map((part) => ({ kind: "part", key: part.id, part }))).map((block) => block.key)).toEqual(["work:r1"])
+    expect(conversationBlocks(parts.map((part) => ({ kind: "part", key: part.id, part }))).map((block) => block.key)).toEqual(["work:r1", "content:t1", "work:r2"])
   })
 
   it("shows accurate read ranges and search locations", () => {

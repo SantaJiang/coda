@@ -344,7 +344,7 @@ export function ChatTurnView(props: {
       props.afterLayout?.()
     }
   })
-  const processOpen = () => runtime.timelineView().processOpen[props.turn.id] === true
+  const processOpen = () => runtime.timelineView().processOpen[props.turn.id] !== false
   const toggleProcess = (target: HTMLElement) => {
     props.onInspect?.()
     props.beforeLayout?.(target)

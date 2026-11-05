@@ -40,6 +40,39 @@ function setup(initial: Part[] = [], completed = false, extra: Partial<Assistant
 }
 
 describe("streaming turn presentation", () => {
+  it.each([false, true])("shows separate work batches between narration, including completed history (%s)", (history) => {
+    const parts = [
+      part("intro", "text", "先检查配置"), tool,
+      part("progress", "text", "找到原因，开始修复"),
+      { ...tool, id: "edit", callID: "edit", tool: "edit" } as Part,
+      part("verify", "text", "修复完成，执行验证"),
+      { ...tool, id: "shell", callID: "shell", tool: "shell" } as Part,
+      part("answer", "text", "已修复并验证通过"),
+    ]
+    const { container, setDone, setStatus } = setup(parts, history)
+    const check = () => {
+      expect(container.querySelectorAll(".conversation-work-block")).toHaveLength(3)
+      for (const id of ["intro", "progress", "verify"]) {
+        const row = container.querySelector(`[data-entry-key="a1:${id}"]`)!
+        expect(row).toBeTruthy()
+        expect(row.closest(".work-group")).toBeNull()
+      }
+      const body = container.querySelector(".assistant-body")!.textContent!
+      expect(body.indexOf("先检查配置")).toBeLessThan(body.indexOf("找到原因，开始修复"))
+      expect(body.indexOf("找到原因，开始修复")).toBeLessThan(body.indexOf("修复完成，执行验证"))
+    }
+    check()
+    if (!history) { setDone(true); setStatus({ type: "idle" }); check() }
+    expect(container.querySelector(".final-answer")?.textContent).toContain("已修复并验证通过")
+    const summary = container.querySelector<HTMLButtonElement>(".worked-for > .work-head")!
+    expect(summary.getAttribute("aria-expanded")).toBe("true")
+    summary.click()
+    expect(container.querySelector(".conversation-work-block")).toBeNull()
+    expect(container.querySelector(".final-answer")?.textContent).toContain("已修复并验证通过")
+    summary.click()
+    check()
+  })
+
   it("keeps the upward status transition when a work group gives way to prose", () => {
     vi.useFakeTimers()
     const { container, setParts } = setup([tool])
@@ -61,7 +94,6 @@ describe("streaming turn presentation", () => {
   it("does not add view-terminal links to command steps", () => {
     const shell = { ...tool, tool: "shell", state: { status: "completed", input: { command: "git status" }, output: "clean", metadata: { terminalID: "term-fast" } } } as Part
     const { container } = setup([shell], true)
-    ;(container.querySelector(".worked-for > .work-head") as HTMLButtonElement).click()
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
     expect(container.textContent).not.toContain("查看终端")
     expect(container.querySelector(".work-terminal-link")).toBeNull()
@@ -208,7 +240,7 @@ describe("streaming turn presentation", () => {
     expect([...container.querySelectorAll("[data-entry-key]")].map((element) => element.getAttribute("data-entry-key"))).toEqual(["a1:p1", "a1:t1", "a1:p2"])
   })
 
-  it("groups only after the run ends and restores step expansion", () => {
+  it("keeps narration and expanded steps visible after the run ends", () => {
     const { container, setDone, setStatus } = setup([part("p1", "text", "先检查"), tool, part("p2", "text", "最终结论")])
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
     ;(container.querySelector(".work-step-head") as HTMLButtonElement).click()
@@ -216,8 +248,7 @@ describe("streaming turn presentation", () => {
     expect(container.querySelector(".final-answer")).toBeNull()
     setStatus({ type: "idle" })
     expect(container.querySelector(".final-answer")?.textContent).toContain("最终结论")
-    expect(container.querySelector('[data-entry-key="a1:p1"]')).toBeNull()
-    ;(container.querySelector(".worked-for > .work-head") as HTMLButtonElement).click()
+    expect(container.querySelector(".worked-for > .work-head")?.getAttribute("aria-expanded")).toBe("true")
     expect(container.querySelector('[data-entry-key="a1:p1"]')?.textContent).toContain("先检查")
     expect(container.querySelector(".tool-details")?.textContent).toContain("contents")
   })
@@ -315,7 +346,6 @@ describe("streaming turn presentation", () => {
     setDone(true)
     setStatus({ type: "idle" })
     expect(container.querySelector('.worked-for > .work-head')?.textContent).toContain("Worked for")
-    ;(container.querySelector('.worked-for > .work-head') as HTMLButtonElement).click()
     expect(container.querySelector('.work-group > .work-head')?.textContent).toContain("Thought 2s")
   })
 

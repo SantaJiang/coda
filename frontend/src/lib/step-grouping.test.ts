@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { groupEntries, proseCanGroup } from "./step-grouping"
+import { groupEntries } from "./step-grouping"
 import type { ConversationEntry } from "./conversation"
 import type { Part, ToolPart } from "./types"
 
@@ -14,24 +14,27 @@ function text(id: string, value: string): Part {
 }
 
 describe("step grouping", () => {
-  it("keeps long prose and fenced prose on their own row", () => {
-    expect(proseCanGroup("short note")).toBe(true)
-    expect(proseCanGroup("x".repeat(101))).toBe(false)
-    expect(proseCanGroup("```ts\nconst a = 1\n```")).toBe(false)
-    expect(proseCanGroup("# Title")).toBe(false)
+  it.each(["compact-all-grouped", "compact-grouped", "compact-ungrouped", "compact-shells", "detailed"] as const)("uses every narration as a work boundary at %s density", (density) => {
+    const blocks = groupEntries([
+      entry(text("intro", "先检查")),
+      entry(tool("r1", "read", { filePath: "a.ts" })),
+      entry(tool("g1", "grep", { pattern: "TODO" })),
+      entry(text("progress", "找到原因，开始修复")),
+      entry(tool("e1", "edit", { filePath: "a.ts" })),
+      entry(text("check", "接下来验证")),
+      entry(tool("s1", "shell", { command: "bun test" })),
+    ], density)
+    expect(blocks.map((block) => [block.kind, block.key])).toEqual([
+      ["content", "content:intro"], ["work", "work:r1"],
+      ["content", "content:progress"], ["work", "work:e1"],
+      ["content", "content:check"], ["work", "work:s1"],
+    ])
+    expect(blocks[1].entries.map((entry) => entry.key)).toEqual(["r1", "g1"])
   })
 
-  it("joins short prose with tools in compact and forces three short lines before a text-only group", () => {
-    const mixed = groupEntries([
-      entry(tool("r1", "read", { filePath: "a.ts" })),
-      entry(text("t1", "checking")),
-      entry(tool("g1", "grep", { pattern: "TODO" })),
-    ])
-    expect(mixed.map((block) => block.key)).toEqual(["work:r1"])
-    const shorts = groupEntries([entry(text("a", "one")), entry(text("b", "two"))])
-    expect(shorts.map((block) => block.shape)).toEqual(["single", "single"])
-    const grouped = groupEntries([entry(text("a", "one")), entry(text("b", "two")), entry(text("c", "three"))])
-    expect(grouped.map((block) => block.shape)).toEqual(["group"])
+  it("keeps consecutive short text parts visible instead of folding them into work", () => {
+    const blocks = groupEntries([entry(text("a", "one")), entry(text("b", "two")), entry(text("c", "three"))])
+    expect(blocks.map((block) => block.kind)).toEqual(["content", "content", "content"])
   })
 
   it("splits shell from edits unless the density is compact", () => {

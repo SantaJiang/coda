@@ -125,7 +125,7 @@ it("keeps Worked for and earlier content fixed when an unfocused summary expands
   const original = HTMLElement.prototype.getBoundingClientRect
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
     if (!this.matches("[data-scroll-key], [data-entry-key]")) return original.call(this)
-    const expanded = view().processOpen.u1 === true
+    const expanded = view().processOpen.u1 !== false
     const top = (this.matches(".worked-for") ? 160 : 210 + (expanded ? 180 : 0)) - this.closest(".timeline")!.scrollTop
     return { top, bottom: top + 30, left: 0, right: 700, width: 700, height: 30, x: 0, y: top, toJSON() {} }
   })
@@ -143,14 +143,14 @@ it("keeps Worked for and earlier content fixed when an unfocused summary expands
     // reach this handler without a pointerdown event.
     summary.click()
     resize([], {} as ResizeObserver)
-    expect(view().processOpen.u1).toBe(true)
+    expect(view().processOpen.u1).toBe(false)
     expect(scroller.scrollTop).toBe(40)
     expect(summary.parentElement!.getBoundingClientRect().top).toBe(initialTop)
     // A later resize must retain the summary, rather than recapture the answer.
     resize([], {} as ResizeObserver)
     summary.click()
     resize([], {} as ResizeObserver)
-    expect(view().processOpen.u1).toBe(false)
+    expect(view().processOpen.u1).toBe(true)
     expect(scroller.scrollTop).toBe(40)
     expect(summary.parentElement!.getBoundingClientRect().top).toBe(initialTop)
     expect(view().following).toBe(false)
