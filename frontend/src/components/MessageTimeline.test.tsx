@@ -282,3 +282,49 @@ it("does not show jump-latest from a stale paused view while an empty session lo
     expect(scene.host.querySelector(".jump-latest:not([disabled])")).toBeNull()
   } finally { scene.dispose() }
 })
+
+it.each([true, false])("keeps the live thought completion position (reading latest: %s)", (atBottom) => {
+  let frame: FrameRequestCallback | undefined
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frame = callback; return 1 })
+  vi.stubGlobal("cancelAnimationFrame", () => { frame = undefined })
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} })
+  const live: import("../lib/types").Part = { id: "r1", type: "reasoning", text: "正在思考", sessionID: "s1", messageID: "a1", time: { start: 1 } }
+  const [parts, setParts] = createSignal<import("../lib/types").Part[]>([live])
+  const [view, setView] = createSignal(emptyTimelineView())
+  const runtime = {
+    timelineView: view, updateTimelineView: (patch: Partial<TimelineViewState>) => setView({ ...view(), ...patch }),
+    messages: () => [
+      { id: "u1", sessionID: "s1", role: "user", time: { created: 1 } },
+      { id: "a1", sessionID: "s1", role: "assistant", parentID: "u1", time: { created: 2 } },
+    ],
+    partsByMessage: () => ({ a1: parts() }), status: () => ({ type: "busy" }), busy: () => true,
+    stopping: () => false, settling: () => false, stoppedTurnID: () => undefined, stoppedTurns: () => ({}),
+    pendingPermissions: () => [], pendingQuestions: () => [], sessionError: () => "", syncError: () => "",
+  } as unknown as RuntimeApi
+  const container = document.createElement("div")
+  document.body.append(container)
+  const dispose = render(() => <StoreProviders runtime={runtime} projects={{ selectedSessionId: () => "s1", connection: () => "connected" } as ProjectApi}
+    models={{ nameFor: () => "model" } as ModelApi} chrome={{} as ChromeApi}><MessageTimeline /></StoreProviders>, container)
+  try {
+    const scroller = container.querySelector<HTMLDivElement>(".timeline")!
+    let height = 1600
+    let top = 0
+    Object.defineProperties(scroller, {
+      scrollHeight: { get: () => height }, clientHeight: { value: 200 },
+      scrollTop: { get: () => top, set: (value: number) => { top = Math.max(0, Math.min(value, height - 200)) } },
+    })
+    ;(container.querySelector(".work-head") as HTMLButtonElement).click()
+    expect(container.querySelector(".thinking-body")).toBeTruthy()
+    scroller.scrollTop = atBottom ? 1400 : 100
+    scroller.dispatchEvent(new Event("scroll"))
+    setParts([{ ...live, time: { start: 1, end: 1001 } }, {
+      id: "t1", type: "tool", tool: "read", callID: "call1", sessionID: "s1", messageID: "a1", state: { status: "running", input: { filePath: "app.ts" } },
+    }])
+    expect(view().following).toBe(atBottom)
+    height = 500
+    frame?.(0)
+    expect(scroller.scrollTop).toBe(atBottom ? 300 : 100)
+    expect(container.querySelector(".thinking-body")).toBeNull()
+    expect(container.querySelector(".work-step-action")?.textContent).toBe("Thought")
+  } finally { dispose(); container.remove() }
+})

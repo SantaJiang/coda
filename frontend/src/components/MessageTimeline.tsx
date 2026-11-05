@@ -73,6 +73,13 @@ function SessionTimeline(props: { sessionID: string }) {
     frame = requestAnimationFrame(applyLayout)
   }
   const pause = () => { restoreTop = undefined; captureAnchor(); setFollowing(false); measureBottom(); save() }
+  const thoughtComplete = () => {
+    // Continue at the latest text when its live preview folds away. Someone
+    // reading earlier content keeps their anchor and does not get pulled down.
+    if (awayFromBottom() || selectedText()) return
+    setFollowing(true)
+    save()
+  }
   const latest = () => {
     window.getSelection()?.removeAllRanges()
     anchor = undefined
@@ -138,6 +145,7 @@ function SessionTimeline(props: { sessionID: string }) {
         <For each={turns().map((turn) => turn.id)}>{(id) => <ChatTurnView turn={byID().get(id)!}
           partsByMessage={runtime.partsByMessage()} following={following() && !selectedText()}
           onInspect={pause}
+          onThoughtComplete={thoughtComplete}
           // Mouse activation on macOS need not focus the button. Anchor the
           // toggled row itself so its new content grows below it.
           beforeLayout={(target) => captureAnchor(target?.closest<HTMLElement>("[data-scroll-key], [data-entry-key]") ?? undefined)} afterLayout={scheduleLayout} />}</For>

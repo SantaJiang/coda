@@ -106,12 +106,52 @@ describe("streaming turn presentation", () => {
     // Cursor: pure Thinking already owns the status — no second Thinking line.
     expect(container.querySelector(".turn-status")).toBeNull()
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
-    expect(container.querySelector(".thinking-line")?.textContent).toMatch(/Thinking|Thought/)
-    expect(container.querySelector(".thinking-body")).toBeNull()
-    ;(container.querySelector(".thinking-line .work-step-head") as HTMLButtonElement).click()
+    expect(container.querySelectorAll(".work-head, .work-step-head")).toHaveLength(1)
+    expect(container.querySelector(".work-summary-caret, .work-step-caret")).toBeNull()
     expect(container.querySelector(".thinking-body")?.textContent).toContain("思考原文")
     expect(container.querySelector(".turn-status")).toBeNull()
     expect(container.querySelector(".work-preview")).toBeNull()
+  })
+
+  it("folds the single live thought and keeps the next step in the same group", () => {
+    const live = { ...part("r1", "reasoning", "第一段思考\n第二段思考"), time: { start: 1 } } as Part
+    const { container, setParts } = setup([live])
+    const group = container.querySelector(".work-group")
+    const head = container.querySelector<HTMLButtonElement>(".work-group > .work-head")!
+    expect(head.textContent).toBe("Thinking")
+    expect(head.querySelector("svg, .work-summary-caret")).toBeNull()
+    head.click()
+    expect(head.getAttribute("aria-expanded")).toBe("true")
+    expect(container.querySelector(".thinking-line .work-step-head")).toBeNull()
+    expect(container.querySelector(".thinking-body")?.textContent).toContain("第二段思考")
+    setParts([{ ...live, time: { start: 1, end: 1001 } } as Part, tool])
+    expect(container.querySelector(".work-group")).toBe(group)
+    expect(container.querySelector(".thinking-body")).toBeNull()
+    expect([...container.querySelectorAll(".work-step-action")].map((node) => node.textContent)).toEqual(["Thought", "Read"])
+  })
+
+  it("finishes the thought collapse animation even without animationend", () => {
+    vi.useFakeTimers()
+    vi.stubGlobal("matchMedia", () => ({ matches: false }))
+    const live = { ...part("r1", "reasoning", "正在思考"), time: { start: 1 } } as Part
+    const { container, setParts } = setup([live])
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    setParts([{ ...live, time: { start: 1, end: 1001 } } as Part, tool])
+    expect(container.querySelector(".thinking-collapse.closing")).toBeTruthy()
+    vi.advanceTimersByTime(300)
+    expect(container.querySelector(".thinking-body")).toBeNull()
+  })
+
+  it("uses one header for multiple reasoning parts and folds the entire live preview", () => {
+    const first = { ...part("r1", "reasoning", "第一段"), time: { start: 1, end: 1001 } } as Part
+    const last = { ...part("r2", "reasoning", "第二段"), time: { start: 1001 } } as Part
+    const { container, setParts } = setup([first, last])
+    expect(container.querySelectorAll(".work-head, .work-step-head")).toHaveLength(1)
+    expect(container.querySelector(".work-head")?.textContent).toBe("Thinking")
+    ;(container.querySelector(".work-head") as HTMLButtonElement).click()
+    expect([...container.querySelectorAll(".thinking-body")].map((node) => node.textContent?.trim())).toEqual(["第一段", "第二段"])
+    setParts([first, { ...last, time: { start: 1001, end: 2001 } } as Part, tool])
+    expect(container.querySelector(".thinking-body")).toBeNull()
   })
 
   it("opens the mixed group without a loading preview or auto-expanding Thought", () => {
@@ -192,13 +232,13 @@ describe("streaming turn presentation", () => {
       part("p3", "text", "# 最终结论"),
     ])
     expect(container.querySelectorAll(".conversation-work-block")).toHaveLength(3)
-    expect(container.querySelectorAll(".work-step")).toHaveLength(0)
+    expect(container.querySelectorAll(".work-step-head")).toHaveLength(0)
     expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
     const heads = container.querySelectorAll<HTMLButtonElement>(".work-group > .work-head")
     expect(heads[1].textContent).toContain("Explored 1 file")
     expect(heads[2].textContent).toContain("Ran 1 command")
     heads[1].click()
-    expect(container.querySelectorAll(".work-step")).toHaveLength(2)
+    expect(container.querySelectorAll(".work-step-head")).toHaveLength(2)
     expect(container.querySelectorAll(".work-group.open")).toHaveLength(1)
     expect([...container.querySelectorAll(".work-step-head")].map((head) => head.textContent)).toEqual([expect.stringContaining("Read app.ts"), expect.stringContaining("Thinking")])
     expect(container.querySelector(".tool-details")).toBeNull()
@@ -241,7 +281,7 @@ describe("streaming turn presentation", () => {
   it("keeps completed thought duration separate from the next live activity", () => {
     const thought: Part = { ...part("r1", "reasoning", "考虑完成"), time: { start: 1000, end: 3000 } } as Part
     const { container, setDone, setStatus } = setup([thought])
-    expect(container.querySelector('.work-group > .work-head')?.textContent).toContain("Thinking")
+    expect(container.querySelector('.work-group > .work-head')?.textContent).toContain("Thought 2s")
     expect(container.querySelector(".work-preview")).toBeNull()
     setDone(true)
     setStatus({ type: "idle" })
@@ -254,7 +294,6 @@ describe("streaming turn presentation", () => {
     const thought = part("r1", "reasoning", "原来的思考内容")
     const { container, setParts } = setup([thought])
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
-    ;(container.querySelector(".thinking-line .work-step-head") as HTMLButtonElement).click()
     expect(container.querySelector(".thinking-line.open .thinking-body")?.textContent).toContain("原来的思考内容")
     setParts([thought, tool])
     expect(container.querySelectorAll(".work-group.open")).toHaveLength(1)
@@ -266,10 +305,11 @@ describe("streaming turn presentation", () => {
   it("does not leave finished thoughts expanded after tools join", () => {
     const thought = { ...part("r1", "reasoning", "已经想完的内容"), time: { start: 1, end: 3 } } as Part
     const { container, setParts } = setup([thought])
-    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
     // Finished Thought row stays visible but collapsed — no blank body wall.
     expect(container.querySelector(".thinking-body")).toBeNull()
-    expect(container.querySelector(".thinking-line")?.textContent).toContain("Thought")
+    expect(container.querySelector(".work-head")?.textContent).toContain("Thought")
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
     setParts([thought, tool])
     expect(container.querySelectorAll(".work-group.open")).toHaveLength(1)
     expect(container.querySelector(".thinking-line")?.textContent).toContain("Thought")
@@ -314,7 +354,6 @@ describe("streaming turn presentation", () => {
     const { container } = setup([doneThought])
     expect(container.querySelector(".turn-status [role=\"status\"]")?.textContent).toContain("Planning next moves")
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
-    ;(container.querySelector(".thinking-line .work-step-head") as HTMLButtonElement).click()
     expect(container.querySelector(".thinking-body")?.textContent).toContain("上一轮想完了")
     expect(container.querySelector(".turn-status [role=\"status\"]")?.textContent).toContain("Planning next moves")
   })
@@ -323,10 +362,9 @@ describe("streaming turn presentation", () => {
     const hollow = { ...part("r1", "reasoning", ">\n>  "), time: { start: 1, end: 2 } } as Part
     const real = { ...part("r2", "reasoning", "真正的思考"), time: { start: 3, end: 5 } } as Part
     const { container } = setup([hollow, real])
+    expect(container.querySelector(".thinking-body")).toBeNull()
     ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
     expect(container.querySelectorAll(".thinking-line")).toHaveLength(1)
-    expect(container.querySelector(".thinking-body")).toBeNull()
-    ;(container.querySelector(".thinking-line .work-step-head") as HTMLButtonElement).click()
     expect([...container.querySelectorAll(".thinking-body")].map((node) => node.textContent?.trim())).toEqual(["真正的思考"])
     expect(container.textContent).not.toMatch(/(^|\n)\s*>\s*(\n|$)/)
   })
@@ -351,7 +389,6 @@ describe("streaming turn presentation", () => {
   it("clears stuck auto-revealed Thought bodies without a user click", () => {
     const doneThought = { ...part("r1", "reasoning", "不该自动摊开的长思考\n\n\n\n带空行"), time: { start: 1, end: 3 } } as Part
     const { container, setView, view } = setup([doneThought])
-    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
     // Legacy live-reveal left stepOpen true after the thought finished — force that state.
     setView({ ...view(), stepOpen: { ...view().stepOpen, "a1:r1": true } })
     expect(container.querySelector(".thinking-body")).toBeNull()

@@ -3,6 +3,7 @@ import { applyClientEvent } from "./apply-event"
 import { initialState, type AppState } from "./state"
 import { translateWireEvent } from "../lib/v2-events"
 import { stepPresentation } from "../lib/activity"
+import { conversationTurns } from "../lib/conversation"
 
 function draft(overrides: Partial<AppState> = {}): AppState {
   return {
@@ -283,6 +284,27 @@ describe("applyClientEvent", () => {
 })
 
 describe("stream event ordering", () => {
+  it.each(["session.execution.started", "session.step.started"])("restores a resumed runner from idle on %s", (type) => {
+    const state = draft({
+      status: { s1: { type: "idle" } },
+      messages: { s1: [
+        { id: "u1", sessionID: "s1", role: "user", time: { created: 1 } },
+        { id: "a1", sessionID: "s1", role: "assistant", parentID: "u1", time: { created: 2 } },
+      ] },
+      parts: { a1: [{ id: "p1", sessionID: "s1", messageID: "a1", type: "text", text: "继续检查编译错误" }] },
+    })
+    const turn = () => conversationTurns(state.messages.s1, state.parts, { status: state.status.s1 })[0]
+    expect(turn().phase).toBe("interrupted")
+    for (const event of translateWireEvent({ id: "evt_resume", type, data: { sessionID: "s1", assistantMessageID: "a1" } })) applyClientEvent(state, event)
+    expect(state.status.s1).toEqual({ type: "busy" })
+    expect(state.statusRevision.s1).toBe(1)
+    expect(turn()).toMatchObject({ active: true, phase: "running" })
+    expect(turn().label).not.toBe("回复已中断")
+    for (const event of translateWireEvent({ id: "evt_end", type: "session.execution.succeeded", data: { sessionID: "s1" } })) applyClientEvent(state, event)
+    expect(state.status.s1).toEqual({ type: "idle" })
+    expect(turn().active).toBe(false)
+  })
+
   it("applies every translated tool-start event and deduplicates its replay", () => {
     const state = draft()
     const data = { sessionID: "s1", assistantMessageID: "a1", id: "call_1" }

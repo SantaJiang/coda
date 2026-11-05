@@ -1486,11 +1486,9 @@ button.ctx-pill:hover {
   white-space: pre-wrap;
 }
 
-/* Opened thinking is capped — long drafts with blank runs must not blow the transcript. */
+/* Thought text grows in the transcript; scrolling belongs to the timeline. */
 .thinking-body {
   margin: 2px 0 8px;
-  max-height: 12rem;
-  overflow: auto;
   opacity: 0.5;
   color: var(--text-muted);
   font-size: var(--font-chat);
@@ -1500,7 +1498,11 @@ button.ctx-pill:hover {
 .thinking-body .markdown {
   font-size: inherit;
   line-height: inherit;
+  color: inherit;
 }
+
+.single-thought > .work-steps { margin-top: 0; }
+.single-thought .thinking-body { margin-top: 4px; }
 
 .thinking-body .markdown p,
 .thinking-body .markdown pre,

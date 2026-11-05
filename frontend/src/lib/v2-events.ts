@@ -154,6 +154,11 @@ export function translateWireEvent(raw: Wire): ParsedEvent[] {
   if (type === "session.execution.succeeded" || type === "session.execution.interrupted") {
     return [emit("session.idle", { sessionID })]
   }
+  // A runner may resume without a frontend send (for example after a background
+  // command). Step starts also restore busy if reconnect missed execution start.
+  if (type === "session.execution.started" || type === "session.step.started") {
+    return [emit("session.status", { sessionID, status: { type: "busy" } })]
+  }
   if (type === "session.tool.input.started") {
     return [
       emit("message.updated", { info: assistant(messageID, sessionID) }),

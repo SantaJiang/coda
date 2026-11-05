@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import type { JSX } from "solid-js"
 import { activityDiff, activityFailureCount, stepPresentation } from "../lib/activity"
 import { blockTitle, type BlockShape } from "../lib/step-grouping"
@@ -15,9 +15,8 @@ const TITLE_GAP = 200
 
 /**
  * Glass Agent Transcript activity group:
- * - Closed: one summary row (no 144px preview).
- * - Open: group head + per-step ThinkingLine / tool / short-prose rows.
- * Thought bodies stay collapsed until the Thought row is clicked (same as tools).
+ * Reasoning-only activity has one clickable header with inline thought text.
+ * Mixed activity uses a group head and individual thought/tool/prose rows.
  * Live generating/running status is suppressed only while this live group is open.
  */
 export function WorkGroup(props: {
@@ -58,13 +57,28 @@ export function WorkGroup(props: {
   const failures = createMemo(() => activityFailureCount(parts()))
   const diff = createMemo(() => activityDiff(parts()))
   const map = createMemo(() => new Map(props.entries.map((entry) => [entry.key, entry])))
+  const thoughtEntries = createMemo(() => {
+    const visible = props.entries.filter((entry) => entry.kind !== "part" || entry.part.type !== "reasoning" || thinkingBody(entry.part) || !Number.isFinite(entry.part.time?.end))
+    return visible.every((entry) => entry.kind === "part" && entry.part.type === "reasoning") ? visible : []
+  })
+  const thoughtOnly = () => thoughtEntries().length > 0
 
   // Thought bodies never auto-open. Stuck stepOpen from old live-reveal is forced shut.
   // A click while streaming is a live preview and closes when that thought ends (Glass);
   // a click on a finished Thought stays open until the user collapses it.
   const userOpened = new Set<string>()
   const openedWhileLive = new Set<string>()
+  const previewKeys = new Set<string>()
   createEffect(() => {
+    if (previewKeys.size && props.entries.every((entry) => !previewKeys.has(entry.key) || (entry.kind === "part" && entry.part.type === "reasoning" && Number.isFinite(entry.part.time?.end)))) {
+      const completed = [...previewKeys]
+      previewKeys.clear()
+      for (const key of completed) {
+        userOpened.delete(key)
+        openedWhileLive.delete(key)
+        if (props.stepOpen[key] === true) props.onCollapseStep?.(key)
+      }
+    }
     for (const entry of props.entries) {
       if (entry.kind !== "part" || entry.part.type !== "reasoning") continue
       if (props.stepOpen[entry.key] !== true) continue
@@ -96,17 +110,36 @@ export function WorkGroup(props: {
     return title()
   })
 
-  return <div class="work-group" classList={{ open: props.open, live: props.active, failed: failures() > 0 }}>
-    <button type="button" class="work-head" disabled={!expandable()} aria-expanded={expandable() ? props.open : undefined}
-      onClick={(event) => props.onToggle(event.currentTarget)}>
+  const headOpen = () => thoughtOnly() ? thoughtEntries().some((entry) => props.stepOpen[entry.key] === true) : props.open
+  const thoughtTitle = () => {
+    if (thoughtEntries().some((entry) => entry.kind === "part" && entry.part.type === "reasoning" && !Number.isFinite(entry.part.time?.end))) return "Thinking"
+    return blockTitle(thoughtEntries(), "group")
+  }
+  const toggleHead = (target: HTMLElement) => {
+    if (!thoughtOnly()) { props.onToggle(target); return }
+    // Keep the group ready for the next tool without adding another Thought row.
+    const opening = !headOpen()
+    previewKeys.clear()
+    if (opening && thoughtEntries().some((entry) => entry.kind === "part" && entry.part.type === "reasoning" && !Number.isFinite(entry.part.time?.end))) {
+      for (const entry of thoughtEntries()) previewKeys.add(entry.key)
+    }
+    if (!props.open && opening) props.onToggle(target)
+    for (const entry of thoughtEntries()) {
+      if ((props.stepOpen[entry.key] === true) === opening) continue
+      toggleThought(entry.key, (entry as { part: ReasoningPart }).part, target)
+    }
+  }
+  return <div class="work-group" classList={{ open: props.open, live: props.active, failed: failures() > 0, "single-thought": thoughtOnly() }}>
+    <button type="button" class="work-head" disabled={!expandable()} aria-expanded={expandable() ? headOpen() : undefined}
+      onClick={(event) => toggleHead(event.currentTarget)}>
       <span class="work-summary">
-        <span class="work-summary-text">{headTitle()}</span>
+        <span class="work-summary-text">{thoughtOnly() ? thoughtTitle() : headTitle()}</span>
         <Show when={!props.active && diff()}>{(value) => <span class="work-diff"><Show when={value().added}><span class="work-diff-add">+{value().added}</span></Show><Show when={value().removed}><span class="work-diff-del">-{value().removed}</span></Show></span>}</Show>
         <Show when={failures()}><span class="work-failure">{failures()} 项失败</span></Show>
-        <Show when={expandable()}><Icon name="chevron-right" class="work-summary-caret" /></Show>
+        <Show when={expandable() && !thoughtOnly()}><Icon name="chevron-right" class="work-summary-caret" /></Show>
       </span>
     </button>
-    <Show when={props.open && expandable()}>
+    <Show when={(props.open || thoughtOnly()) && expandable()}>
       <div class="work-steps">
         <For each={props.entries.flatMap((entry) => {
           if (entry.kind !== "part") return []
@@ -128,6 +161,7 @@ export function WorkGroup(props: {
                 part={part() as ReasoningPart}
                 open={props.stepOpen[key] === true}
                 active={props.active}
+                hideHeader={thoughtOnly()}
                 onToggle={(target) => toggleThought(key, part() as ReasoningPart, target)}
               />
             </Show>
@@ -159,6 +193,7 @@ function ThinkingLine(props: {
   part: ReasoningPart
   open: boolean
   active: boolean
+  hideHeader?: boolean
   onToggle: (target: HTMLElement) => void
 }) {
   const live = () => !Number.isFinite(props.part.time?.end)
@@ -176,15 +211,14 @@ function ThinkingLine(props: {
     closeTimer = undefined
     if (motion() === "closing") setMotion("closed")
   }
-  createEffect(() => {
-    const text = body()
+  createEffect(on(() => [props.open, body()] as const, ([open, text]) => {
     window.clearTimeout(closeTimer)
     closeTimer = undefined
-    if (props.open && text) {
+    if (open && text) {
       setMotion("open")
       return
     }
-    if (!props.open && motion() === "open") {
+    if (!open && motion() === "open") {
       if (!text || prefersReducedMotion()) {
         setMotion("closed")
         return
@@ -193,7 +227,7 @@ function ThinkingLine(props: {
       // Fallback if animationend is skipped (display:none / reduced path races).
       closeTimer = window.setTimeout(finishClose, 260)
     }
-  })
+  }))
   onCleanup(() => window.clearTimeout(closeTimer))
   const showBody = () => {
     const phase = motion()
@@ -208,7 +242,7 @@ function ThinkingLine(props: {
   // Never render an empty Thinking husk — those became lone `>` / blank rows on hover.
   return <Show when={expandable()}>
     <div class="work-step thinking-line" classList={{ open: showBody() && motion() === "open", closing: motion() === "closing" }}>
-      <button type="button" class="work-step-head"
+      <Show when={!props.hideHeader}><button type="button" class="work-step-head"
         aria-expanded={showBody() && motion() === "open"}
         onClick={(event) => props.onToggle(event.currentTarget)}>
         <span class="work-step-label">
@@ -216,9 +250,8 @@ function ThinkingLine(props: {
             <span class="work-step-action">{presentation().action}</span>
             <Show when={presentation().detail}> <span class="work-step-detail">{presentation().detail}</span></Show>
           </span>
-          <Icon name="chevron-right" class="work-step-caret" />
         </span>
-      </button>
+      </button></Show>
       <Show when={showBody()}>
         <div
           class="thinking-collapse"

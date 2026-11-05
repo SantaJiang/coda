@@ -242,6 +242,7 @@ function BlockList(props: {
   onInspect?: () => void
   beforeLayout?: (target?: HTMLElement) => void
   afterLayout?: () => void
+  onThoughtComplete?: () => void
 }) {
   const runtime = useRuntime()
   let held: ReturnType<typeof conversationBlocks> = []
@@ -277,8 +278,8 @@ function BlockList(props: {
             if (runtime.timelineView().stepOpen[stepKey] !== true) return
             // Anchor scroll before height animates away so the eye can follow Thought → next step.
             const row = document.querySelector<HTMLElement>(`[data-entry-key="${CSS.escape(stepKey)}"]`)
-            props.onInspect?.()
             props.beforeLayout?.(row ?? undefined)
+            props.onThoughtComplete?.()
             runtime.updateTimelineView({ stepOpen: { ...runtime.timelineView().stepOpen, [stepKey]: false } })
             props.afterLayout?.()
           }}
@@ -325,6 +326,7 @@ export function ChatTurnView(props: {
   beforeLayout?: (target?: HTMLElement) => void
   afterLayout?: () => void
   onInspect?: () => void
+  onThoughtComplete?: () => void
 }) {
   const runtime = useRuntime()
   const models = useModels()
@@ -415,6 +417,7 @@ export function ChatTurnView(props: {
               </div>
             </Show>
             <BlockList entries={props.turn.entries} active={props.turn.active}
+              onThoughtComplete={props.onThoughtComplete}
               onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
             <Show when={showTurnStatus()}>
               <div class="turn-status" classList={{ live: props.turn.active, failed: props.turn.phase === "failed" }}>
