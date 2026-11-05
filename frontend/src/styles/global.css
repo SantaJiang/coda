@@ -981,7 +981,8 @@ button.ctx-pill:hover {
 .timeline-inner {
   width: min(840px, 100%);
   margin: 0 auto;
-  padding: 28px 28px 20px;
+  /* Horizontal inset matches the sent question box, so the stream shares its edges. */
+  padding: 28px 14px 20px;
 }
 
 .turn {
@@ -995,6 +996,7 @@ button.ctx-pill:hover {
   display: flex;
   justify-content: flex-start;
   width: 100%;
+  margin-bottom: 8px;
   /* Opaque so the answer scrolling underneath the pinned prompt stays covered. */
   background: var(--chat-bg);
 }
@@ -1021,7 +1023,6 @@ button.ctx-pill:hover {
 .user-bubble {
   box-sizing: border-box;
   width: auto;
-  margin-inline: -14px;
   background: var(--chat-bg);
   border: 1px solid color-mix(in srgb, var(--chat-text) 16%, transparent);
   border-radius: 8px;
@@ -1062,6 +1063,17 @@ button.ctx-pill:hover {
 
 .msg-meta.is-assistant .msg-meta-info {
   order: 1;
+}
+
+.turn[data-role="user"] .msg-meta {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 0;
+  z-index: 3;
+  background: var(--chat-bg);
 }
 
 .turn:hover .msg-meta,
@@ -1122,6 +1134,11 @@ button.ctx-pill:hover {
 
 .work-group {
   margin: 0 0 12px;
+}
+
+/* Live summary and the status line under it read as one cluster. */
+.conversation-turn:not([data-phase="done"]) .work-group {
+  margin-bottom: 4px;
 }
 
 .compaction-mark {
