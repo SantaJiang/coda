@@ -1,6 +1,6 @@
 [package]
 name = "coda"
-version = "2.4.1"
+version = "2.4.2"
 description = "Coda — a streamlined desktop agent client"
 authors = ["coda"]
 edition = "2021"

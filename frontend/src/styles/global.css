@@ -350,7 +350,7 @@ a,
 }
 
 .tree {
-  --tree-label-inset: 30px;
+  --tree-label-inset: 31px;
   flex: 1 1 0;
   min-height: 0;
   overflow: auto;
@@ -525,7 +525,7 @@ a,
   box-sizing: border-box;
   height: 30px;
   min-height: 30px;
-  padding: 0 8px 0 var(--tree-label-inset);
+  padding: 0 8px 0 7px;
   border: none;
   border-radius: 6px;
   background: transparent;
@@ -536,12 +536,12 @@ a,
 }
 
 .tree-bullet {
-  width: 5px;
-  height: 5px;
-  margin-left: 1px;
+  width: 6px;
+  height: 6px;
+  /* Read sessions keep the slot for alignment but show no dot. */
+  margin: 0 5px;
   border-radius: 50%;
-  background: currentColor;
-  opacity: 0.55;
+  background: transparent;
   flex-shrink: 0;
 }
 
@@ -554,7 +554,8 @@ a,
 }
 
 .sidebar .session-dot {
-  margin-left: 0;
+  margin-left: 5px;
+  margin-right: 5px;
 }
 
 .tree-root:hover,
@@ -566,10 +567,6 @@ a,
 .tree-session.active .tree-session-main {
   background: var(--nav-active);
   color: var(--nav-text);
-}
-
-.tree-session.active .tree-bullet {
-  opacity: 0.95;
 }
 
 .tree-session.draft .tree-session-main {
