@@ -996,7 +996,8 @@ button.ctx-pill:hover {
   display: flex;
   justify-content: flex-start;
   width: 100%;
-  margin-bottom: 8px;
+  /* Breather between the pinned prompt and the answer stream below it. */
+  margin-bottom: 14px;
   /* Opaque so the answer scrolling underneath the pinned prompt stays covered. */
   background: var(--chat-bg);
 }
