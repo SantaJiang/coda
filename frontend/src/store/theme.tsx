@@ -1,9 +1,22 @@
 import { createContext, createEffect, createSignal, onCleanup, useContext, type ParentProps } from "solid-js"
 import { onSharedChange } from "../lib/shared"
-import { applyTheme, isTheme, loadTheme, saveTheme, type Theme } from "../lib/theme"
+import {
+  applyTheme,
+  isTheme,
+  loadTheme,
+  resolveTheme,
+  saveTheme,
+  systemTheme,
+  watchSystemTheme,
+  type ResolvedTheme,
+  type Theme,
+} from "../lib/theme"
 
 export type ThemeApi = {
+  /** 用户选择的偏好，可能是 system。 */
   theme: () => Theme
+  /** 当前实际生效的浅色/深色，已把 system 解析掉。 */
+  resolvedTheme: () => ResolvedTheme
   setTheme: (theme: Theme) => void
 }
 
@@ -11,8 +24,13 @@ const ThemeContext = createContext<ThemeApi>()
 
 export function ThemeProvider(props: ParentProps) {
   const [theme, setThemeSignal] = createSignal<Theme>(loadTheme())
+  const [system, setSystem] = createSignal<ResolvedTheme>(systemTheme())
+  const resolvedTheme = () => resolveTheme(theme(), system())
 
-  createEffect(() => applyTheme(theme()))
+  createEffect(() => applyTheme(resolvedTheme()))
+
+  const stopWatchingSystem = watchSystemTheme(setSystem)
+  onCleanup(stopWatchingSystem)
 
   // 其他实例（run.sh 开发版 / 安装版）改了主题时跟随更新
   const unsubscribe = onSharedChange((patch) => {
@@ -22,6 +40,7 @@ export function ThemeProvider(props: ParentProps) {
 
   const api: ThemeApi = {
     theme,
+    resolvedTheme,
     setTheme: (next) => {
       setThemeSignal(next)
       saveTheme(next)

@@ -9,7 +9,7 @@ import type { Terminals } from "../lib/terminals"
 
 const mocked = vi.hoisted(() => ({ instances: [] as any[], action: vi.fn() }))
 vi.mock("../store/theme", () => ({
-  useTheme: () => ({ theme: () => "light" }),
+  useTheme: () => ({ theme: () => "light", resolvedTheme: () => "light" }),
 }))
 vi.mock("../lib/api", async (original) => ({
   ...(await original<typeof import("../lib/api")>()),
@@ -89,7 +89,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-it("supports terminal selection shortcuts without input, metadata or toolbar buttons", async () => {
+it("supports read-only selection and exposes the command with terminal status", async () => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -139,8 +139,10 @@ it("supports terminal selection shortcuts without input, metadata or toolbar but
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(document.activeElement).toBe(composer)
   expect(terminal.write).not.toHaveBeenCalledWith("")
-  expect(host.textContent).not.toMatch(/private\/project|exit |搜索|查找|停止命令|复制/)
-  expect(host.textContent).toContain("Agent is using this terminal. It's read-only.")
+  expect(host.querySelector(".terminal-command pre")?.textContent).toBe("bun install")
+  expect(host.querySelector(".terminal-command-cwd")?.textContent).toBe("/private/project")
+  expect(host.querySelector(".terminal-command")?.hasAttribute("open")).toBe(false)
+  expect(host.textContent).toContain("Agent 正在使用此终端 · 只读")
   expect(host.textContent).not.toContain("$ bun install")
   expect(host.querySelector("input")).toBeNull()
   expect(terminal.keyHandler(new KeyboardEvent("keydown", { key: "a", metaKey: true }))).toBe(true)
@@ -168,7 +170,7 @@ it("shows a silent command explicitly and replaces the notice when streamed outp
   const info: TerminalInfo = { id: "silent", sessionID: "one", rootSessionID: "one", command: "curl -sL https://example.test/file", cwd: "/tmp", startedAt: 1, lastOutputAt: 1, status: "running", cursor: 0, baseCursor: 0 }
   cleanup = render(() => <TerminalOutput client={client} directory="/tmp" sessionID="one" info={info} scroll={0} onScroll={() => {}} />, host)
   await vi.waitFor(() => expect(host.textContent).toContain("暂未产生输出"))
-  expect(host.querySelector(".terminal-readonly-banner")?.textContent).toContain("Agent is using this terminal. It's read-only.")
+  expect(host.querySelector(".terminal-readonly-banner")?.textContent).toContain("Agent 正在使用此终端 · 只读")
   expect(host.textContent).not.toContain(`$ ${info.command}`)
   emit({ data: btoa("download complete\r\n"), start: 0, cursor: 19, baseCursor: 0, endCursor: 19, truncated: false, status: "completed", ended: true })
   expect(mocked.instances[0].write).toHaveBeenCalledWith("download complete\r\n")

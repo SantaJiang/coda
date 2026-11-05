@@ -105,7 +105,7 @@ export function TerminalOutput(props: {
   const [following, setFollowing] = createSignal(initialScroll <= 1)
   const theme = useTheme()
   const colors = () =>
-    theme.theme() === "dark"
+    theme.resolvedTheme() === "dark"
       ? {
           background: "#151517",
           foreground: "#dedee3",
@@ -279,8 +279,8 @@ export function TerminalOutput(props: {
   const title = () => terminalDisplayTitle(props.info.command)
   const banner = () =>
     isTerminalRunning(props.info)
-      ? "Agent is using this terminal. It's read-only."
-      : "This terminal is read-only."
+      ? "Agent 正在使用此终端 · 只读"
+      : "终端输出 · 只读"
   return (
     <div class="terminal-output">
       <div class="terminal-readonly-banner" role="status">
@@ -294,6 +294,14 @@ export function TerminalOutput(props: {
           </Show>
         </span>
       </div>
+      <details class="terminal-command">
+        <summary title={props.info.command}>
+          <span class="terminal-command-title">{title()}</span>
+          <span class="terminal-small-status">{terminalStatusLabel(props.info)}{props.info.exitCode !== undefined ? ` · 退出码 ${props.info.exitCode}` : ""}</span>
+        </summary>
+        <pre>{props.info.command}</pre>
+        <Show when={props.info.cwd}><div class="terminal-command-cwd">{props.info.cwd}</div></Show>
+      </details>
       <Show when={!error() && !hasOutput()}>
         <div class="terminal-notice" role="status">
           {!ready() ? "正在加载终端输出…" : isTerminalRunning(props.info)

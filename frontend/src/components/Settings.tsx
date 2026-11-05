@@ -2,6 +2,7 @@ import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid
 import { version as bundledVersion } from "../../package.json"
 import { conversationDensity, setConversationDensity, type DensityChoice } from "../lib/density"
 import { modifierLabel, type CloseBehavior, type SendShortcut, type StopBehavior, type TaskRecovery } from "../lib/settings"
+import { isTheme } from "../lib/theme"
 import { useChrome } from "../store/app"
 import { useTheme } from "../store/theme"
 import { Icon } from "./Icon"
@@ -109,17 +110,20 @@ export function Settings() {
 
           <div class="settings-list">
             <div class="settings-row">
-              <div id="settings-theme" class="settings-row-label">深色模式</div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={theme.theme() === "dark"}
-                aria-labelledby="settings-theme"
-                class="settings-switch-btn"
-                onClick={() => theme.setTheme(theme.theme() === "dark" ? "light" : "dark")}
+              <label class="settings-row-label" for="settings-theme">主题</label>
+              <select
+                id="settings-theme"
+                class="settings-select"
+                value={theme.theme()}
+                onChange={(event) => {
+                  const next = event.currentTarget.value
+                  if (isTheme(next)) theme.setTheme(next)
+                }}
               >
-                <span class="settings-switch" aria-hidden="true" />
-              </button>
+                <option value="system">跟随系统</option>
+                <option value="light">浅色模式</option>
+                <option value="dark">深色模式</option>
+              </select>
             </div>
 
             <Segment<SendShortcut>

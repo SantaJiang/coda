@@ -40,7 +40,7 @@ it("keeps manual recovery available for a short interrupted command without a te
   expect(action).toHaveBeenCalledWith("short", "resume")
 })
 
-it("expands the terminal card with human titles instead of raw shell argv", () => {
+it("expands multiple terminals with titles, status and command tooltips", () => {
   const open = vi.fn()
   const start = 1_700_000_000_000
   const info = {
@@ -51,8 +51,8 @@ it("expands the terminal card with human titles instead of raw shell argv", () =
     lastOutputAt: start,
   }
   const t = {
-    items: () => [info],
-    visible: () => [info],
+    items: () => [info, { ...info, id: "second" }],
+    visible: () => [info, { ...info, id: "second" }],
     selected: () => undefined,
     view: () => ({ open: false }),
     waiting: () => undefined,
@@ -66,7 +66,7 @@ it("expands the terminal card with human titles instead of raw shell argv", () =
   cleanups.push(() => host.remove())
   cleanups.push(render(() => <TerminalDock terminals={t} />, host))
   ;(host.querySelector(".terminal-pill") as HTMLButtonElement).click()
-  expect(host.querySelector(".terminal-card-label")?.textContent).toContain("1 Terminal")
+  expect(host.querySelector(".terminal-card-label")?.textContent).toContain("2终端")
   expect(host.querySelector(".terminal-card-title")?.textContent).toBe("Prepare script")
   expect(host.textContent).not.toContain("chmod +x")
   expect(host.querySelector(".terminal-card-time")?.textContent).toBe("26s")
@@ -90,4 +90,25 @@ it("shows the same minute/second shell countdown in place across the minute boun
   setNow(start + 31000)
   expect(host.querySelector(".shell-wait")).toBe(line)
   expect(line.textContent).toBe("Waiting up to 0m 59s for shell")
+})
+
+it("opens a single terminal directly from the dock", () => {
+  const open = vi.fn()
+  const info = { id: "only", command: "sleep 30", status: "running", startedAt: 1, lastOutputAt: 1 }
+  const t = { items: () => [info], visible: () => [info], error: () => "", view: () => ({ open: false }), now: () => 20000, waiting: () => undefined, open } as unknown as Terminals
+  const host = document.createElement("div")
+  document.body.append(host)
+  cleanups.push(() => host.remove())
+  cleanups.push(render(() => <TerminalDock terminals={t} />, host))
+  ;(host.querySelector(".terminal-pill") as HTMLButtonElement).click()
+  expect(open).toHaveBeenCalledWith("only")
+  expect(host.querySelector(".terminal-card")).toBeNull()
+})
+it("shows synchronization failures even before the first terminal is discovered", () => {
+  const t = { items: () => [], visible: () => [], error: () => "终端状态同步失败", waiting: () => undefined } as unknown as Terminals
+  const host = document.createElement("div")
+  document.body.append(host)
+  cleanups.push(() => host.remove())
+  cleanups.push(render(() => <TerminalDock terminals={t} />, host))
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("终端状态同步失败")
 })

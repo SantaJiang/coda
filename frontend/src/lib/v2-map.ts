@@ -406,7 +406,8 @@ export function shellToTerminal(row: Rec, sessionID: string, hidden = false): Te
     ...(nextCheckAt !== undefined ? { nextCheckAt } : {}),
     status,
     ...(hidden ? { hidden: true } : {}),
-    cursor: 1,
+    // Shell metadata does not expose a byte cursor; only output pages do.
+    cursor: 0,
     baseCursor: 0,
   }
 }

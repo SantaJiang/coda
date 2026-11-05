@@ -2629,6 +2629,7 @@ button.ctx-pill:hover {
 }
 
 .settings-seg button:focus-visible,
+.settings-select:focus-visible,
 .settings-switch-btn:focus-visible {
   outline: 2px solid var(--focus-border);
   outline-offset: 2px;
@@ -2671,6 +2672,37 @@ button.ctx-pill:hover {
 
 .settings-switch-btn[aria-checked="true"] .settings-switch::after {
   transform: translateX(16px);
+}
+
+.settings-select {
+  flex: 0 0 228px;
+  min-width: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--bg-elevated);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% - 2px),
+    calc(100% - 9px) calc(50% - 2px);
+  background-repeat: no-repeat;
+  background-size:
+    5px 5px,
+    5px 5px;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 6px 28px 6px 10px;
+}
+
+.settings-select option {
+  background: var(--bg-elevated);
+  color: var(--text);
 }
 
 .settings-version {
@@ -3941,3 +3973,11 @@ span.capability-pill.added {
 .terminal-earlier { align-self: center; margin: 4px 0; }
 
 .plan-unfinished { color: var(--text-muted); font-size: 12px; padding: 10px 14px 0; }
+
+.terminal-command { flex: 0 0 auto; min-width: 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+.terminal-command summary { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; color: var(--text); }
+.terminal-command summary::before { content: "›"; color: var(--text-muted); }
+.terminal-command[open] summary::before { transform: rotate(90deg); }
+.terminal-command-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-command pre { margin: 0; padding: 0 12px 8px; max-height: 140px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); font: 11px/1.6 Menlo, Consolas, monospace; user-select: text; }
+.terminal-command-cwd { padding: 0 12px 8px; color: var(--text-muted); overflow-wrap: anywhere; user-select: text; }

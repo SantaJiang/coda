@@ -4,7 +4,6 @@ export { LONG_TERMINAL_MS } from "./terminal-policy"
 import { isTerminalRunning } from "./api"
 import type { TerminalInfo } from "./terminal-contracts"
 import { defaultTerminalClient, type TerminalClient } from "./terminal-client"
-import { createTerminalOutputProbe } from "./terminal-output"
 
 type View = {
   open: boolean
@@ -47,9 +46,8 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
   const [error, setError] = createSignal("")
   const [now, setNow] = createSignal(Date.now())
   const snapshots = new Map<string, TerminalInfo[]>()
-  const probes = new Map<string, { cursor: number; read: ReturnType<typeof createTerminalOutputProbe> }>()
-  const [withOutput, setWithOutput] = createSignal<ReadonlySet<string>>(new Set())
-  const canView = (info: TerminalInfo) => isLongTerminal(info, now()) && withOutput().has(info.id)
+  // Output can be buffered or deliberately silent; elapsed execution owns visibility.
+  const canView = (info: TerminalInfo) => isLongTerminal(info, now())
   const key = createMemo(() => JSON.stringify([directory() ?? "", sessionID() ?? ""]))
   const storageKey = () => `${directory() ?? ""}:${sessionID() ?? ""}`
   const pendingViews = new Map<string, View>()
@@ -95,19 +93,6 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
           if (snapshots.size > 32) snapshots.delete(snapshots.keys().next().value!)
           setItems(data.items)
           setError("")
-          // A silent PTY still echoes its startup newline. Inspect actual log
-          // content once, and retry only when more bytes arrive. Never add fake
-          // progress merely to make a terminal eligible for the viewer.
-          await Promise.allSettled(data.items.filter((info) => isLongTerminal(info) && info.cursor > 0 && !withOutput().has(info.id)).map(async (info) => {
-            const probe = probes.get(info.id) ?? { cursor: 0, read: createTerminalOutputProbe() }
-            if (probe.cursor >= info.cursor) return
-            const frame = await client.log(dir, id, info.id, probe.cursor, 64 * 1024)
-            if (disposed) return
-            if (frame.truncated) probe.read = createTerminalOutputProbe()
-            if (probe.read(frame.data)) setWithOutput((current) => new Set([...current, info.id]))
-            probe.cursor = frame.cursor
-            probes.set(info.id, probe)
-          }))
         }
       } catch (e) {
         if (!disposed) setError(e instanceof Error ? e.message : "终端状态同步失败")

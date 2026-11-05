@@ -152,12 +152,13 @@ pub fn run() {
 
 /// 跟 `global.css` 里的 `--bg` 保持一致，避免 WebView2 在首帧用默认白底。
 #[cfg(any(windows, test))]
-fn startup_theme(raw: &str) -> &'static str {
+fn startup_theme(raw: &str, system: &str) -> &'static str {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
         return "dark";
     };
     match value.get("theme").and_then(|theme| theme.as_str()) {
         Some("light") => "light",
+        Some("system") if system == "light" => "light",
         _ => "dark",
     }
 }
@@ -181,7 +182,14 @@ fn paint_hidden_window(app: &tauri::App) {
         return;
     };
     let raw = std::fs::read_to_string(paths::settings_path()).ok();
-    let theme = raw.as_deref().map(startup_theme).unwrap_or("dark");
+    let system = match window.theme() {
+        Ok(tauri::Theme::Light) => "light",
+        _ => "dark",
+    };
+    let theme = raw
+        .as_deref()
+        .map(|raw| startup_theme(raw, system))
+        .unwrap_or("dark");
     let (red, green, blue, alpha) = theme_background(theme);
     let _ = window.set_background_color(Some(tauri::window::Color(red, green, blue, alpha)));
 }
@@ -211,11 +219,13 @@ mod tests {
 
     #[test]
     fn reads_light_theme_and_ignores_anything_else() {
-        assert_eq!(startup_theme(r#"{"theme":"light"}"#), "light");
-        assert_eq!(startup_theme(r#"{"theme":"dark"}"#), "dark");
-        assert_eq!(startup_theme(r#"{"theme":"sepia"}"#), "dark");
-        assert_eq!(startup_theme("not json"), "dark");
-        assert_eq!(startup_theme("{}"), "dark");
+        assert_eq!(startup_theme(r#"{"theme":"light"}"#, "dark"), "light");
+        assert_eq!(startup_theme(r#"{"theme":"dark"}"#, "light"), "dark");
+        assert_eq!(startup_theme(r#"{"theme":"system"}"#, "light"), "light");
+        assert_eq!(startup_theme(r#"{"theme":"system"}"#, "dark"), "dark");
+        assert_eq!(startup_theme(r#"{"theme":"sepia"}"#, "light"), "dark");
+        assert_eq!(startup_theme("not json", "light"), "dark");
+        assert_eq!(startup_theme("{}", "light"), "dark");
     }
 
     #[test]

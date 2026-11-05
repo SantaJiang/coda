@@ -150,24 +150,26 @@ describe("terminal output response", () => {
 
 
 describe("long terminal visibility", () => {
-  it("omits silent tasks from the dock and rejects direct viewer requests until real output arrives", async () => {
+  it("reveals the first silent long task before any output, and keeps it through completion", async () => {
     vi.useFakeTimers()
-    const silent = { ...task("silent"), cursor: 2 }
-    vi.mocked(defaultTerminalClient.log).mockResolvedValue({ data: btoa("\r\n"), start: 0, cursor: 2, baseCursor: 0, endCursor: 2, truncated: false, status: "running" })
+    const silent = { ...task("silent"), startedAt: Date.now(), cursor: 0 }
+    const log = vi.fn()
+    const client = { ...defaultTerminalClient, log }
     vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [silent] })
     let model!: ReturnType<typeof useTerminals>
-    cleanups.push(render(() => { model = useTerminals(() => "/tmp/silent", () => "one"); return null }, document.createElement("div")))
+    cleanups.push(render(() => { model = useTerminals(() => "/tmp/silent", () => "one", client); return null }, document.createElement("div")))
     await flush()
     expect(model.visible()).toEqual([])
-    model.open("silent")
-    window.dispatchEvent(new CustomEvent("coda:open-terminal", { detail: "silent" }))
-    expect(model.view().open).toBe(false)
-    vi.mocked(defaultTerminalClient.log).mockResolvedValue({ data: btoa("progress"), start: 2, cursor: 12, baseCursor: 0, endCursor: 12, truncated: false, status: "running" })
-    vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [{ ...silent, cursor: 12 }] })
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(LONG_TERMINAL_MS)
     expect(model.visible().map((info) => info.id)).toEqual(["silent"])
     expect(model.view().open).toBe(false)
-    model.open("silent")
+    window.dispatchEvent(new CustomEvent("coda:open-terminal", { detail: "silent" }))
+    expect(model.view().open).toBe(true)
+    expect(log).not.toHaveBeenCalled()
+    vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [{ ...silent, status: "completed", endedAt: Date.now() }] })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(model.visible()).toHaveLength(1)
+    expect(model.selected()?.status).toBe("completed")
     expect(model.view().open).toBe(true)
   })
   it("keeps the inspected terminal selected when another command becomes the running task", async () => {

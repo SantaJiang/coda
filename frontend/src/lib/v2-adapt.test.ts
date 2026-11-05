@@ -115,7 +115,7 @@ describe("v2 feature adapters", () => {
       metadata: { sessionID: "ses_1" },
       time: { started: 10 },
     }, "ses_1")
-    expect(info).toMatchObject({ id: "sh_1", sessionID: "ses_1", command: "npm test", status: "running" })
+    expect(info).toMatchObject({ id: "sh_1", sessionID: "ses_1", command: "npm test", status: "running", cursor: 0 })
     expect(shellToTerminal({ id: "sh_2", metadata: { sessionID: "other" }, time: { started: 1 } }, "ses_1")).toBeNull()
     const frame = shellOutputToLog({ output: "ok", cursor: 2, size: 2 }, 0, "completed")
     expect(frame.ended).toBe(true)

@@ -2,7 +2,7 @@ import { For, Show, createSignal } from "solid-js"
 import { isTerminalRunning } from "../lib/api"
 import { terminalDisplayTitle } from "../lib/activity"
 import type { TerminalInfo } from "../lib/terminal-contracts"
-import type { Terminals } from "../lib/terminals"
+import { terminalStatusLabel, type Terminals } from "../lib/terminals"
 import { shellWaitLabel } from "../lib/terminal-policy"
 
 const TRAY_PAGE = 5
@@ -41,30 +41,30 @@ export function TerminalDock(props: { terminals: Terminals }) {
     setLimit(TRAY_PAGE)
   }
   return (
-    <Show when={count() || recoverable()}>
+    <Show when={count() || recoverable() || t.error()}>
       <div class="terminal-dock">
         <Show when={count() && !tray()}>
           <button
             type="button"
             class="terminal-pill"
             data-pill-count={count()}
-            aria-label={`Open terminals (${count()})`}
-            aria-expanded={false}
-            onClick={toggle}
+            aria-label={`查看终端（${count()}）`}
+            aria-expanded={count() === 1 ? t.view().open && t.view().tab === "terminal" : tray()}
+            onClick={() => count() === 1 ? t.open(rows()[0]!.id) : toggle()}
           >
             <Show when={running()}><span class="terminal-pill-spin" aria-hidden="true" /></Show>
             <span class="terminal-pill-count">{count()}</span>
-            {count() === 1 ? "Terminal" : "Terminals"}
+            终端
           </button>
         </Show>
         <Show when={tray() && count()}>
-          <div class="terminal-card" role="region" aria-label="Terminals">
+          <div class="terminal-card" role="region" aria-label="终端">
             <div class="terminal-card-head">
               <span class="terminal-card-label">
                 <span class="terminal-pill-count">{count()}</span>
-                {count() === 1 ? " Terminal" : " Terminals"}
+                终端
               </span>
-              <button type="button" class="terminal-card-collapse" aria-label="Collapse terminals" onClick={toggle}>
+              <button type="button" class="terminal-card-collapse" aria-label="收起终端列表" onClick={toggle}>
                 —
               </button>
             </div>
@@ -72,18 +72,19 @@ export function TerminalDock(props: { terminals: Terminals }) {
               <For each={rows().slice(0, limit())}>{(info) => {
                 const title = () => terminalDisplayTitle(info.command)
                 return <div class="terminal-card-row" role="listitem">
-                  <button type="button" class="terminal-card-open" onClick={() => { t.open(info.id); setTray(false) }}>
+                  <button type="button" class="terminal-card-open" title={info.command} onClick={() => { t.open(info.id); setTray(false) }}>
                     <span class="terminal-card-glyph" aria-hidden="true">&gt;_</span>
                     <span class="terminal-card-title">{title()}</span>
+                    <span class="terminal-small-status">{terminalStatusLabel(info)}</span>
                     <span class="terminal-card-time">{ranFor(info, t.now())}</span>
                   </button>
                   <Show when={isTerminalRunning(info)}>
-                    <button type="button" class="terminal-card-kill" aria-label={`Stop ${title()}`} onClick={() => void t.action(info.id, "cancel")}>×</button>
+                    <button type="button" class="terminal-card-kill" aria-label={`停止 ${title()}`} title="停止任务" onClick={() => void t.action(info.id, "cancel")}>×</button>
                   </Show>
                 </div>
               }}</For>
               <Show when={rows().length > limit()}>
-                <button type="button" class="terminal-card-more" onClick={() => setLimit((value) => value + TRAY_MORE)}>Show more</button>
+                <button type="button" class="terminal-card-more" onClick={() => setLimit((value) => value + TRAY_MORE)}>显示更多</button>
               </Show>
             </div>
           </div>

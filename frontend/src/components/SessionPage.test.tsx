@@ -114,8 +114,6 @@ it("slides the terminal aside open and keeps it mounted until the close transiti
   const pill = host.querySelector<HTMLButtonElement>(".terminal-pill")
   expect(pill).not.toBeNull()
   pill!.click()
-  expect(host.querySelector(".terminal-aside")).toBeNull()
-  host.querySelector<HTMLButtonElement>(".terminal-card-open")!.click()
   const aside = host.querySelector(".terminal-aside")
   expect(aside).not.toBeNull()
   expect(aside!.classList.contains("is-open")).toBe(false)
@@ -134,7 +132,6 @@ it("opens and closes the terminal aside immediately when motion is reduced", asy
   await flush()
   const pill = host.querySelector<HTMLButtonElement>(".terminal-pill")!
   pill.click()
-  host.querySelector<HTMLButtonElement>(".terminal-card-open")!.click()
   const aside = host.querySelector(".terminal-aside")
   expect(aside?.classList.contains("is-open")).toBe(true)
   host.querySelector<HTMLButtonElement>('[aria-label="收起侧栏"]')!.click()
