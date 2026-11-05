@@ -981,8 +981,8 @@ button.ctx-pill:hover {
 .timeline-inner {
   width: min(840px, 100%);
   margin: 0 auto;
-  /* Horizontal inset matches the sent question box, so the stream shares its edges. */
-  padding: 28px 14px 20px;
+  /* Stream text lines up with question-bubble body text; equal L/R inset. */
+  padding: 28px 28px 20px;
 }
 
 .turn {
@@ -1024,6 +1024,8 @@ button.ctx-pill:hover {
 .user-bubble {
   box-sizing: border-box;
   width: auto;
+  /* Expand by the bubble's own padding so body text shares the stream's left edge. */
+  margin-inline: -14px;
   background: var(--chat-bg);
   border: 1px solid color-mix(in srgb, var(--chat-text) 16%, transparent);
   border-radius: 8px;
