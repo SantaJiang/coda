@@ -10,10 +10,12 @@ usage() {
 
 删除可再生成的缓存与构建产物，方便拷贝或腾出磁盘：
   - 各处 node_modules
+  - 各处 *.bun-build（bun 编译临时文件）
   - frontend/dist
   - frontend/src-tauri/target
   - frontend/src-tauri/binaries/coda-backend-*
-  - backend/packages/opencode/dist
+  - backend/packages/cli/dist
+  - 各处 .turbo / .cache 构建缓存
   - .coda（本地日志与运行缓存）
   - .DS_Store 与 *.log
 
@@ -37,11 +39,21 @@ find "$ROOT" \
   -name .git -prune -o \
   -type d -name node_modules -prune -print -exec rm -rf {} +
 
+echo "==> 删除 bun 编译临时文件"
+find "$ROOT" \
+  -name .git -prune -o \
+  -type f -name '*.bun-build' -print -delete
+
+echo "==> 删除构建缓存（.turbo / .cache）"
+find "$ROOT" \
+  -name .git -prune -o \
+  -type d \( -name .turbo -o -name .cache \) -prune -print -exec rm -rf {} +
+
 echo "==> 删除前端构建产物"
 for path in \
   "$ROOT/frontend/dist" \
   "$ROOT/frontend/src-tauri/target" \
-  "$ROOT/backend/packages/opencode/dist" \
+  "$ROOT/backend/packages/cli/dist" \
   "$ROOT/.coda"
 do
   if [[ -e "$path" ]]; then
