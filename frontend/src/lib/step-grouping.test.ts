@@ -37,19 +37,33 @@ describe("step grouping", () => {
     expect(blocks.map((block) => block.kind)).toEqual(["content", "content", "content"])
   })
 
-  it("splits shell from edits unless the density is compact", () => {
+  it("splits operation types even at compact density", () => {
     const steps = [
       entry(tool("r1", "read", { filePath: "a.ts" })),
       entry(tool("s1", "bash", { command: "bun test" })),
       entry(tool("e1", "edit", { filePath: "a.ts" })),
     ]
-    expect(groupEntries(steps, "compact-all-grouped").map((block) => block.key)).toEqual(["work:r1"])
+    expect(groupEntries(steps, "compact-all-grouped").map((block) => block.key)).toEqual(["work:r1", "work:s1", "work:e1"])
     expect(groupEntries(steps, "compact-ungrouped").map((block) => [block.key, block.shape])).toEqual([
       ["work:r1", "group"],
       ["work:s1", "single"],
       ["work:e1", "single"],
     ])
     expect(groupEntries(steps, "detailed").find((block) => block.key === "work:s1")?.shape).toBe("card")
+  })
+
+  it("keeps consecutive operations together across messages and reasoning without narration", () => {
+    const thought = (id: string): ConversationEntry => entry({ id, type: "reasoning", text: "checking", sessionID: "s", messageID: id })
+    const steps = [
+      entry(tool("r1", "read")), thought("thought1"), entry({ ...tool("r2", "grep"), messageID: "a2" }),
+      thought("thought2"), entry(tool("e1", "edit")), entry(tool("e2", "write")),
+      thought("thought3"), entry(tool("s1", "shell")), entry(tool("s2", "shell")),
+      entry(tool("r3", "read")),
+    ]
+    const blocks = groupEntries(steps)
+    expect(blocks.map((block) => block.key)).toEqual(["work:r1", "work:e1", "work:s1", "work:r3"])
+    expect(blocks.flatMap((block) => block.entries)).toEqual(steps)
+    expect(blocks.map((block) => block.entries.filter((e) => e.kind === "part" && e.part.type === "tool").length)).toEqual([2, 2, 2, 1])
   })
 
   it("makes a browser group only after two browser tools", () => {

@@ -102,7 +102,8 @@ describe("streaming turn presentation", () => {
   it("lets shell and read steps expand like Thought rows", () => {
     const shell = { ...tool, id: "sh1", tool: "shell", state: { status: "completed", input: { command: "git status" }, output: "clean" } } as Part
     const { container } = setup([shell, tool])
-    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    expect(container.querySelectorAll(".work-group")).toHaveLength(2)
+    for (const group of container.querySelectorAll<HTMLButtonElement>(".work-group > .work-head")) group.click()
     const heads = [...container.querySelectorAll<HTMLButtonElement>(".work-step-head")]
     expect(heads.length).toBeGreaterThanOrEqual(2)
     for (const head of heads) {

@@ -60,27 +60,12 @@ function classify(entry: ConversationEntry, density: ConversationDensity): { ent
   return { entry, family: "explore", groupable: density === "compact-all-grouped" }
 }
 
-function boundary(family: Family) {
-  return family === "shell" || family === "edit" || family === "delete"
-}
-
-function compatible(buf: Array<{ family: Family }>, next: Family, density: ConversationDensity) {
-  if (!buf.length) return true
-  const families = new Set(buf.map((item) => item.family))
-  const soft = (family: Family) => family === "text" || family === "thinking"
-  if (families.has("browser") || next === "browser") {
-    return next === "browser" || (soft(next) && [...families].every((family) => family === "browser" || soft(family)))
-  }
-  if (families.has("waiting") || next === "waiting") {
-    return next === "waiting" || (soft(next) && [...families].every((family) => family === "waiting" || soft(family)))
-  }
-  if (density === "compact-all-grouped" || soft(next)) return true
-  if (boundary(next)) {
-    const current = [...families].find(boundary)
-    if (current && current !== next) return false
-    if (!current && [...families].some((family) => family === "explore")) return false
-  } else if (next === "explore" && [...families].some(boundary)) return false
-  return true
+// Reasoning does not reset the current operation type. A read → edit → shell
+// sequence must remain separate even when the model sends no narration.
+function compatible(buf: Array<{ family: Family }>, next: Family) {
+  if (next === "thinking") return true
+  const current = buf.find((item) => item.family !== "thinking")
+  return !current || current.family === next
 }
 
 function shapeFor(buf: Array<{ family: Family }>): BlockShape {
@@ -122,7 +107,7 @@ export function groupEntries(entries: ConversationEntry[], density: Conversation
       blocks.push(singleBlock(entry, density))
       continue
     }
-    if (!compatible(buf, item.family, density)) flush()
+    if (!compatible(buf, item.family)) flush()
     buf.push(item)
   }
   flush()
