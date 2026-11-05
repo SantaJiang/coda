@@ -101,7 +101,7 @@
   --bg: #ffffff;
   --bg-sidebar: #fafafa;
   --bg-elevated: #ffffff;
-  --bg-hover: #f5f5f5;
+  --bg-hover: #ebebeb;
   --bg-active: #e5e5e5;
   --border: #e5e5e5;
   --border-strong: #d4d4d4;
@@ -110,18 +110,18 @@
   --text-muted: #525252;
   --text-faint: #a3a3a3;
   --user: #f5f5f5;
-  --chat-bg: #ffffff;
+  --chat-bg: #f5f5f5;
   --chat-text: #1c1c1e;
   --chat-secondary: #6e6e73;
   --chat-faint: #8e8e93;
   --chat-bubble: color-mix(in srgb, #000 6%, var(--chat-bg));
-  --chat-code: #efeff1;
+  --chat-code: #e5e5e7;
   --chat-link: #1a6dcc;
   --shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
-  --bg-code: #f5f5f5;
+  --bg-code: #ebebeb;
   --text-code: #262626;
   --bg-inline-code: #efefef;
-  --bg-table-head: #f5f5f5;
+  --bg-table-head: #ebebeb;
   --border-table: #d4d4d4;
   --bg-chip: #e5e5e5;
   --bg-chip-hover: #d4d4d4;
@@ -233,9 +233,9 @@ a,
 }
 
 :root[data-theme="light"] .sidebar {
-  --nav-bg: #f3f3f3;
-  --nav-hover: #e7e7e7;
-  --nav-active: #dedede;
+  --nav-bg: #e0e0e0;
+  --nav-hover: #d4d4d4;
+  --nav-active: #cbcbcb;
   --nav-text: #1c1c1e;
   --nav-muted: #6e6e73;
   --nav-faint: #8e8e93;
