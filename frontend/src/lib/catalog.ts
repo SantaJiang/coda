@@ -1,4 +1,5 @@
 import { INPUT_MEDIA, type InputMedia } from "./model-input"
+import { isTauri } from "./platform-detect"
 
 export type CatalogModel = {
   id: string
@@ -19,8 +20,21 @@ const COMPATIBLE_SDK = "@ai-sdk/openai-compatible"
 // The free catalog provider already surfaces through the model menu.
 const MENU_PROVIDER_ID = "opencode"
 
+// The desktop CSP only allows same-origin connections, and the catalog host does
+// not send CORS headers. Route the request through the Tauri HTTP plugin (Rust
+// side, no CORS) or the dev proxy instead of calling fetch on the page directly.
+async function requestCatalog() {
+  const signal = AbortSignal.timeout(20_000)
+  if (isTauri()) {
+    const http = await import("@tauri-apps/plugin-http")
+    return http.fetch(CATALOG_URL, { method: "GET", signal })
+  }
+  if (import.meta.env.DEV) return fetch("/__coda/catalog", { signal })
+  return fetch(CATALOG_URL, { signal })
+}
+
 export async function fetchModelCatalog(): Promise<CatalogProvider[]> {
-  const response = await fetch(CATALOG_URL, { signal: AbortSignal.timeout(20_000) })
+  const response = await requestCatalog()
   if (!response.ok) throw new Error(`目录加载失败（HTTP ${response.status}）`)
   return parseCatalog(await response.json())
 }

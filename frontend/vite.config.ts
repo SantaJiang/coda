@@ -4,10 +4,31 @@ import uno from "unocss/vite"
 
 const host = process.env.TAURI_DEV_HOST
 
+const CATALOG_URL = "https://models.opencode.ai/experimental/v2.0/api.json?type=chat,decision,image"
+
 function codaModelsProxy(): Plugin {
   return {
     name: "coda-models-proxy",
     configureServer(server) {
+      server.middlewares.use("/__coda/catalog", (req, res, next) => {
+        if (req.method !== "GET") {
+          next()
+          return
+        }
+        void (async () => {
+          try {
+            const upstream = await fetch(CATALOG_URL)
+            const text = await upstream.text()
+            res.statusCode = upstream.status
+            res.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json")
+            res.end(text)
+          } catch (error) {
+            res.statusCode = 502
+            res.setHeader("Content-Type", "application/json")
+            res.end(JSON.stringify({ message: error instanceof Error ? error.message : "获取模型目录失败" }))
+          }
+        })()
+      })
       server.middlewares.use("/__coda/models", (req, res, next) => {
         if (req.method !== "POST") {
           next()
