@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest"
 import { STORAGE_KEYS } from "./config"
 import {
   filterProjectSessions,
+  forgetRemovedProject,
   hydrateDraftSessions,
   loadDraftSessions,
+  loadRemovedProjects,
+  rememberRemovedProject,
   restoreCandidates,
   saveDraftSessions,
   serializeDraftSessions,
@@ -78,6 +81,40 @@ describe("restoreCandidates", () => {
       ],
     )
     expect(groups).toEqual([["/tmp/a", "/tmp/shared"]])
+  })
+
+  it("skips backend projects the user removed from the sidebar", () => {
+    const groups = restoreCandidates(
+      [],
+      [
+        backend("p1", "/tmp/removed", { time: { created: 1, updated: 2 } }),
+        backend("p2", "/tmp/kept", { time: { created: 1, updated: 1 } }),
+      ],
+      ["/tmp/removed"],
+    )
+    expect(groups).toEqual([["/tmp/kept"]])
+  })
+
+  it("matches removed windows paths case-insensitively", () => {
+    const groups = restoreCandidates(
+      [],
+      [backend("p1", "c:/users/me/app")],
+      ["C:\\Users\\me\\App"],
+    )
+    expect(groups).toEqual([])
+  })
+})
+
+describe("removed project persistence", () => {
+  it("remembers a path once and forgets it when the project is added again", () => {
+    localStorage.removeItem(STORAGE_KEYS.removedProjects)
+    rememberRemovedProject("/tmp/app")
+    rememberRemovedProject("/tmp/app/")
+    expect(loadRemovedProjects()).toEqual(["/tmp/app"])
+
+    forgetRemovedProject("/tmp/app")
+    expect(loadRemovedProjects()).toEqual([])
+    localStorage.removeItem(STORAGE_KEYS.removedProjects)
   })
 })
 

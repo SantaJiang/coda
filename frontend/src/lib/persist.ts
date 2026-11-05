@@ -132,6 +132,38 @@ export function saveProjects(projects: Project[]) {
   setSharedValue({ projects: stored })
 }
 
+export function loadRemovedProjects(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.removedProjects)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((path): path is string => typeof path === "string" && path.length > 0)
+  } catch {
+    return []
+  }
+}
+
+export function saveRemovedProjects(paths: string[]) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.removedProjects, JSON.stringify(paths))
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+export function rememberRemovedProject(path: string) {
+  const paths = loadRemovedProjects()
+  if (paths.some((item) => samePath(item, path))) return
+  saveRemovedProjects([...paths, path])
+}
+
+export function forgetRemovedProject(path: string) {
+  const paths = loadRemovedProjects()
+  const next = paths.filter((item) => !samePath(item, path))
+  if (next.length !== paths.length) saveRemovedProjects(next)
+}
+
 export function loadProjectSessions(projectId: string): Session[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.projectSessions)
@@ -352,7 +384,11 @@ export function createProject(path: string): Project {
   }
 }
 
-export function restoreCandidates(projects: Project[], backend: BackendProject[]): string[][] {
+export function restoreCandidates(
+  projects: Project[],
+  backend: BackendProject[],
+  removed: string[] = [],
+): string[][] {
   const known = projects.map((project) => project.path)
   const sorted = [...backend].sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))
   const groups: string[][] = []
@@ -361,6 +397,9 @@ export function restoreCandidates(projects: Project[], backend: BackendProject[]
       (dir, index, all) => dir && dir !== "/" && all.indexOf(dir) === index,
     )
     if (!dirs.length) continue
+    // Removing a project from the sidebar only drops it locally, so keep the
+    // backend's project record from bringing it back on the next launch.
+    if (removed.some((path) => samePath(path, dirs[0]))) continue
     if (dirs.some((dir) => known.some((path) => samePath(path, dir)))) continue
     known.push(...dirs)
     groups.push(dirs)

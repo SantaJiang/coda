@@ -7,8 +7,11 @@ import {
   clearProjectSessions,
   directoryExists,
   filterProjectSessions,
+  forgetRemovedProject,
   isLocalProject,
   loadProjectSessions,
+  loadRemovedProjects,
+  rememberRemovedProject,
   restoreCandidates,
   saveProjectSessions,
   missingDirectoryMessage,
@@ -188,7 +191,8 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       return loadSessionDetail(session, { merge: true })
     },
     restoreProjects: async (list) => {
-      const groups = restoreCandidates(state.projects, list)
+      const removed = loadRemovedProjects()
+      const groups = restoreCandidates(state.projects, list, removed)
       if (!groups.length) return
       const next: Project[] = []
       for (const dirs of groups) {
@@ -199,8 +203,10 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
             break
           }
         }
+        if (removed.some((item) => samePath(item, path))) continue
         next.push(createProject(path))
       }
+      if (!next.length) return
       const projects = [...state.projects, ...next]
       setState("projects", projects)
       if (!state.selectedProjectId) {
@@ -215,6 +221,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
     addProject: async () => {
       const path = await pickDirectory()
       if (!path) return
+      forgetRemovedProject(path)
       const existing = state.projects.find((project) => samePath(project.path, path))
       if (existing) {
         const restored = { ...existing, expanded: true, missing: false }
@@ -241,9 +248,11 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       sessionListGen.set(current.path, (sessionListGen.get(current.path) ?? 0) + 1)
       const path = await pickDirectory()
       if (!path) return null
+      forgetRemovedProject(path)
       const duplicate = state.projects.find((project) => project.id !== id && samePath(project.path, path))
       if (duplicate) {
         const previousPath = current.path
+        rememberRemovedProject(previousPath)
         const restored = { ...duplicate, missing: false, expanded: true }
         const projects = state.projects
           .filter((project) => project.id !== id)
@@ -287,6 +296,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
       setState("error", null)
       saveLastProject(id)
       if (!samePath(previousPath, path)) {
+        rememberRemovedProject(previousPath)
         setState(
           produce((draft) => {
             draft.sessionsByProject[path] = previousSessions.map((session) => ({ ...session, directory: path }))
@@ -326,6 +336,7 @@ export function createProjectSlice(handle: StoreHandle): ProjectSlice {
     removeProject: (id) => {
       const removed = state.projects.find((project) => project.id === id)
       if (!removed || isLocalProject(removed)) return
+      rememberRemovedProject(removed.path)
       sessionListGen.set(removed.path, (sessionListGen.get(removed.path) ?? 0) + 1)
       const projects = state.projects.filter((project) => project.id !== id)
       setState("projects", projects)

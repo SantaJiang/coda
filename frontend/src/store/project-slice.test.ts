@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { createStore } from "solid-js/store"
+import { STORAGE_KEYS } from "../lib/config"
+import { loadRemovedProjects, rememberRemovedProject } from "../lib/persist"
 import type { MessageWithParts, Session } from "../lib/types"
 import type { StoreHandle } from "./handle"
 import type { AgentClient } from "./ports"
@@ -246,6 +248,41 @@ describe("refreshProjectSessions", () => {
     await projects.refreshProjectSessions(project)
 
     expect(state.error).toBe("directory is not a project")
+  })
+})
+
+describe("removed projects", () => {
+  const directory = "/tmp/removed-project"
+
+  function setup(projects: AppState["projects"] = []) {
+    const [state, setState] = createStore<AppState>({
+      ...structuredClone(initialState),
+      projects,
+      selectedProjectId: projects[0]?.id ?? null,
+    })
+    return { state, setState, slice: createProjectSlice({ state, setState, client: stubClient() }) }
+  }
+
+  it("records the path so the next launch does not restore it", () => {
+    localStorage.removeItem(STORAGE_KEYS.removedProjects)
+    const { state, slice } = setup([{ id: "p1", name: "removed", path: directory, expanded: true }])
+
+    slice.removeProject("p1")
+
+    expect(state.projects).toEqual([])
+    expect(loadRemovedProjects()).toEqual([directory])
+    localStorage.removeItem(STORAGE_KEYS.removedProjects)
+  })
+
+  it("skips a removed path when restoring backend projects", async () => {
+    localStorage.removeItem(STORAGE_KEYS.removedProjects)
+    rememberRemovedProject(directory)
+    const { state, slice } = setup()
+
+    await slice.restoreProjects([{ id: "backend", worktree: directory, sandboxes: [] }])
+
+    expect(state.projects).toEqual([])
+    localStorage.removeItem(STORAGE_KEYS.removedProjects)
   })
 })
 

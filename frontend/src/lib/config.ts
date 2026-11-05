@@ -5,6 +5,7 @@ export const PLAN_AGENT = "plan"
 
 export const STORAGE_KEYS = {
   projects: "coda.projects",
+  removedProjects: "coda.removedProjects",
   lastProject: "coda.lastProject",
   projectSessions: "coda.projectSessions.v2",
   draftSessions: "coda.draftSessions",
