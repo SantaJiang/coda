@@ -137,6 +137,8 @@ function diffKind(line: string) {
   if (
     line.startsWith("diff ") ||
     line.startsWith("index ") ||
+    line.startsWith("Index:") ||
+    line.startsWith("===") ||
     line.startsWith("+++") ||
     line.startsWith("---") ||
     line.startsWith("new file") ||

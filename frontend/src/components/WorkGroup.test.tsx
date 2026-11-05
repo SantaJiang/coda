@@ -113,6 +113,35 @@ describe("streaming turn presentation", () => {
     expect(container.querySelector(".work-preview")).toBeNull()
   })
 
+  it("shows v2 file diff counts and expands the patch on Review", () => {
+    const edit = {
+      ...tool,
+      id: "e1",
+      tool: "edit",
+      state: {
+        status: "completed",
+        input: { path: "src/a.ts" },
+        output: "ok",
+        metadata: { files: [{ file: "src/a.ts", patch: "@@ -1 +1 @@\n-old\n+new", status: "modified", additions: 2, deletions: 1 }] },
+      },
+    } as Part
+    const { container } = setup([edit], true)
+    expect(container.querySelector(".changed-files-title")?.textContent).toBe("1 File Changed")
+    const row = container.querySelector(".changed-file-row")!
+    expect(row.querySelector(".work-diff-add")?.textContent).toBe("+2")
+    expect(row.querySelector(".work-diff-del")?.textContent).toBe("-1")
+    expect(container.querySelector(".changed-file-patch")).toBeNull()
+
+    ;(container.querySelector(".changed-files-review") as HTMLButtonElement).click()
+    expect(container.querySelector(".changed-files-review")?.textContent).toBe("Hide")
+    expect(container.querySelector(".changed-file-patch")?.textContent).toContain("+new")
+
+    ;(container.querySelector(".changed-files-review") as HTMLButtonElement).click()
+    expect(container.querySelector(".changed-file-patch")).toBeNull()
+    ;(container.querySelector(".changed-file-row") as HTMLButtonElement).click()
+    expect(container.querySelector(".changed-file-patch")?.textContent).toContain("+new")
+  })
+
   it("folds the single live thought and keeps the next step in the same group", () => {
     const live = { ...part("r1", "reasoning", "第一段思考\n第二段思考"), time: { start: 1 } } as Part
     const { container, setParts } = setup([live])

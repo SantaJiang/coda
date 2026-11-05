@@ -5,6 +5,7 @@ import {
   activityFailureCount,
   activityStatus,
   activitySummary,
+  changedFiles,
   formatDuration,
   stepPresentation,
   terminalDisplayTitle,
@@ -177,6 +178,35 @@ describe("activity presentation", () => {
       added: 1,
       removed: 0,
     })
+  })
+
+  it("reads the v2 file diff entries behind changed files and their counts", () => {
+    const edit = tool("e1", "edit", { path: "/repo/a.ts" }, {
+      metadata: { files: [
+        { file: "/repo/a.ts", patch: "@@ -1 +1 @@\n-old\n+new", status: "modified", additions: 2, deletions: 1 },
+      ] },
+    })
+    expect(changedFiles([edit])).toEqual([
+      { path: "/repo/a.ts", name: "a.ts", added: 2, removed: 1, patch: "@@ -1 +1 @@\n-old\n+new" },
+    ])
+    expect(activityDiff([edit])).toEqual({ added: 2, removed: 1 })
+  })
+
+  it("keeps every file of a multi-file patch call and merges repeated edits", () => {
+    const patch = tool("p1", "patch", {}, {
+      metadata: { files: [
+        { file: "src/a.ts", patch: "@@ -1 +1 @@\n-a\n+b", additions: 1, deletions: 1 },
+        { file: "src/b.ts", patch: "@@ -1 +1 @@\n-c\n+d", additions: 1, deletions: 1 },
+      ] },
+    })
+    const again = tool("p2", "patch", {}, {
+      metadata: { files: [{ file: "src/a.ts", patch: "@@ -3 +3 @@\n-e\n+f", additions: 1, deletions: 1 }] },
+    })
+    expect(changedFiles([patch, again]).map((file) => [file.path, file.added, file.removed])).toEqual([
+      ["src/a.ts", 2, 2],
+      ["src/b.ts", 1, 1],
+    ])
+    expect(activityDiff([patch, again])).toEqual({ added: 3, removed: 3 })
   })
 
   it("keeps completed to-do checks in step history without adding a summary category", () => {

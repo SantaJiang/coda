@@ -46,6 +46,7 @@ function bucketOf(tool: string): Bucket {
     name === "edit" ||
     name === "write" ||
     name === "multiedit" ||
+    name === "patch" ||
     name === "apply_patch" ||
     name === "applypatch"
   ) {
@@ -68,11 +69,39 @@ function looksLikePath(value: string) {
   return /[\\/]/.test(value) || /\.\w{1,8}$/.test(value)
 }
 
+function metaFiles(part: ToolPart) {
+  const meta = "metadata" in part.state ? asRecord(part.state.metadata) : undefined
+  return Array.isArray(meta?.files) ? meta.files.map(asRecord).filter((file): file is Record<string, unknown> => Boolean(file)) : []
+}
+
+/** v2 tools report every touched file as a FileDiff entry under `metadata.files`. */
+function filesFromTool(part: ToolPart) {
+  return metaFiles(part).flatMap((file) => {
+    const path = typeof file.file === "string" ? file.file.trim() : ""
+    if (!path) return []
+    const patch = typeof file.patch === "string" && file.patch.trim() ? file.patch : undefined
+    return [{
+      path,
+      name: basename(path),
+      added: countOrZero(file.additions),
+      removed: countOrZero(file.deletions),
+      patch,
+    }]
+  })
+}
+
+function countOrZero(value: unknown) {
+  const count = Number(value)
+  return Number.isFinite(count) && count > 0 ? count : 0
+}
+
 function fileFromTool(part: ToolPart) {
   const meta = "metadata" in part.state ? asRecord(part.state.metadata) : undefined
   const filediff = asRecord(meta?.filediff)
+  const metaFile = metaFiles(part)[0]
   const input = part.state.input
   const raw =
+    (typeof metaFile?.file === "string" && metaFile.file) ||
     (typeof filediff?.file === "string" && filediff.file) ||
     (typeof meta?.filepath === "string" && meta.filepath) ||
     (typeof meta?.file === "string" && meta.file) ||
@@ -116,6 +145,14 @@ export function activityDiff(parts: Part[]): ActivityDiff | null {
     if (part.type !== "tool") continue
     const tool = part as ToolPart
     if (bucketOf(tool.tool) !== "edit") continue
+    const files = filesFromTool(tool)
+    if (files.length) {
+      for (const file of files) {
+        added += file.added
+        removed += file.removed
+      }
+      continue
+    }
     const next = diffFromTool(tool)
     added += next.added
     removed += next.removed
@@ -130,21 +167,28 @@ export function activityFailureCount(parts: Part[]) {
 
 export function changedFiles(parts: Part[]): ChangedFile[] {
   const map = new Map<string, ChangedFile>()
+  const merge = (file: ChangedFile) => {
+    const prev = map.get(file.path)
+    if (!prev) {
+      map.set(file.path, file)
+      return
+    }
+    prev.added += file.added
+    prev.removed += file.removed
+    if (file.patch) prev.patch = prev.patch ? `${prev.patch}\n${file.patch}` : file.patch
+  }
   for (const part of parts) {
     if (part.type !== "tool") continue
     const tool = part as ToolPart
     if (bucketOf(tool.tool) !== "edit") continue
+    const files = filesFromTool(tool)
+    if (files.length) {
+      for (const file of files) merge(file)
+      continue
+    }
     const file = fileFromTool(tool)
     if (!file) continue
-    const diff = diffFromTool(tool)
-    const prev = map.get(file.path)
-    if (prev) {
-      prev.added += diff.added
-      prev.removed += diff.removed
-      if (diff.patch) prev.patch = prev.patch ? `${prev.patch}\n${diff.patch}` : diff.patch
-    } else {
-      map.set(file.path, { ...file, ...diff })
-    }
+    merge({ ...file, ...diffFromTool(tool) })
   }
   return [...map.values()]
 }
@@ -411,7 +455,7 @@ function liveStepLabel(part: ToolPart, now: number) {
   if (name === "grep") return withDetail("Searching", pattern ? truncate(pattern, 40) : "")
   if (name === "websearch") return withDetail("Searching", query ? truncate(query, 40) : "the web")
   if (name === "webfetch") return withDetail("Fetching", url ? hostFromUrl(url) : "")
-  if (name === "edit" || name === "write" || name === "multiedit" || name === "apply_patch" || name === "applypatch") {
+  if (name === "edit" || name === "write" || name === "multiedit" || name === "patch" || name === "apply_patch" || name === "applypatch") {
     return withDetail("Editing", file)
   }
   if (["bash", "shell", "shell_wait", "shell_status", "shell_cancel"].includes(name)) {
@@ -527,7 +571,7 @@ export function stepPresentation(part: Part, opts: { live?: boolean } = {}): Ste
   if (name === "list" || name === "ls") return { action: live ? "Listing" : "Listed", detail: stepLocation(path) || "directory" }
   if (name === "edit" || name === "multiedit") return { action: live ? "Editing" : "Edited", detail: file || "file" }
   if (name === "write") return { action: live ? "Writing" : "Wrote", detail: file || "file" }
-  if (name === "apply_patch" || name === "applypatch") {
+  if (name === "apply_patch" || name === "applypatch" || name === "patch") {
     return file
       ? { action: live ? "Patching" : "Patched", detail: file }
       : { action: live ? "Applying patch" : "Applied patch" }
