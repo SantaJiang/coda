@@ -305,6 +305,34 @@ describe("stream event ordering", () => {
     expect(turn().active).toBe(false)
   })
 
+  it("releases a usage-limit failure so the next prompt is not held as busy", () => {
+    const state = draft({
+      status: { s1: { type: "busy" } },
+      messages: { s1: [{ id: "u1", sessionID: "s1", role: "user", time: { created: 1 } }] },
+    })
+    const events = translateWireEvent({
+      id: "evt_limit",
+      type: "session.execution.failed",
+      data: {
+        sessionID: "s1",
+        error: {
+          type: "provider.free-limit",
+          message: "Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.",
+        },
+      },
+    })
+    const idleSessions: string[] = []
+    for (const event of events) idleSessions.push(...applyClientEvent(state, event).idleSessions)
+    expect(events.map((event) => event.event.type)).toEqual(["session.error", "session.idle"])
+    expect(state.status.s1).toEqual({ type: "idle" })
+    expect(idleSessions).toEqual(["s1"])
+    expect(state.sessionErrorText.s1).toContain("Free usage limit reached")
+    expect(conversationTurns(state.messages.s1, state.parts, { status: state.status.s1, sessionError: state.sessionErrorText.s1 })[0]).toMatchObject({
+      active: false,
+      phase: "failed",
+    })
+  })
+
   it("applies every translated tool-start event and deduplicates its replay", () => {
     const state = draft()
     const data = { sessionID: "s1", assistantMessageID: "a1", id: "call_1" }

@@ -1027,6 +1027,10 @@ button.ctx-pill:hover {
   width: auto;
   /* Expand by the bubble's own padding so body text shares the stream's left edge. */
   margin-inline: -14px;
+  /* The prompt stays pinned. A long paste must scroll inside the card so the reply stays visible. */
+  max-height: min(240px, 40vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--chat-bg);
   border: 1px solid color-mix(in srgb, var(--chat-text) 16%, transparent);
   border-radius: 8px;

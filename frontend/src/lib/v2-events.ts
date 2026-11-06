@@ -181,7 +181,16 @@ export function translateWireEvent(raw: Wire): ParsedEvent[] {
   }
   if (type === "form.replied") return [emit("question.replied", { requestID: data.id, sessionID: data.sessionID })]
   if (type === "form.cancelled") return [emit("question.rejected", { requestID: data.id, sessionID: data.sessionID })]
-  if (type === "session.execution.failed" || type === "session.error") {
+  // A failed run is finished. Idle must follow the error, otherwise the composer
+  // stays on "still replying" and the next prompt — for example after switching
+  // off a model that hit its free limit — is parked in the queue.
+  if (type === "session.execution.failed") {
+    return [
+      emit("session.error", { sessionID, error: data.error ?? data }),
+      emit("session.idle", { sessionID }),
+    ]
+  }
+  if (type === "session.error") {
     return [emit("session.error", { sessionID, error: data.error ?? data })]
   }
   if (type === "session.retry.scheduled") {
