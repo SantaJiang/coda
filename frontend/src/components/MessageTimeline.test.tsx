@@ -8,17 +8,29 @@ import { MessageTimeline } from "./MessageTimeline"
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+// Timeline and the long-prompt bubble both observe layout. Keep every callback.
+function stubResizeObservers() {
+  const observers = new Set<ResizeObserverCallback>()
+  vi.stubGlobal("ResizeObserver", class {
+    #callback: ResizeObserverCallback
+    constructor(callback: ResizeObserverCallback) {
+      this.#callback = callback
+      observers.add(callback)
+    }
+    observe() {}
+    disconnect() { observers.delete(this.#callback) }
+  })
+  return ((entries: ResizeObserverEntry[], observer: ResizeObserver) => {
+    for (const callback of [...observers]) callback(entries, observer)
+  }) as ResizeObserverCallback
+}
+
 it("preserves the reading anchor when a layout-generated scroll arrives before ResizeObserver correction", () => {
   let layoutShift = 0
   let frame: FrameRequestCallback | undefined
-  let resize!: ResizeObserverCallback
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frame = callback; return 1 })
   vi.stubGlobal("cancelAnimationFrame", () => { frame = undefined })
-  vi.stubGlobal("ResizeObserver", class {
-    constructor(callback: ResizeObserverCallback) { resize = callback }
-    observe() {}
-    disconnect() {}
-  })
+  const resize = stubResizeObservers()
   const original = HTMLElement.prototype.getBoundingClientRect
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
     if (!this.hasAttribute("data-entry-key")) return original.call(this)
@@ -72,10 +84,9 @@ it("preserves the reading anchor when a layout-generated scroll arrives before R
 })
 
 it("restores a historical reading position after delayed session details arrive", () => {
-  let resize!: ResizeObserverCallback
   vi.stubGlobal("requestAnimationFrame", () => 1)
   vi.stubGlobal("cancelAnimationFrame", () => {})
-  vi.stubGlobal("ResizeObserver", class { constructor(callback: ResizeObserverCallback) { resize = callback } observe() {} disconnect() {} })
+  const resize = stubResizeObservers()
   const [messages, setMessages] = createSignal<import("../lib/types").Message[]>([])
   const [view, setView] = createSignal({ ...emptyTimelineView(), following: false, top: 400 })
   const runtime = {
@@ -103,10 +114,9 @@ it("restores a historical reading position after delayed session details arrive"
 })
 
 it("keeps Worked for and earlier content fixed when an unfocused summary expands or collapses", () => {
-  let resize!: ResizeObserverCallback
   vi.stubGlobal("requestAnimationFrame", () => 1)
   vi.stubGlobal("cancelAnimationFrame", () => {})
-  vi.stubGlobal("ResizeObserver", class { constructor(callback: ResizeObserverCallback) { resize = callback } observe() {} disconnect() {} })
+  const resize = stubResizeObservers()
   const [view, setView] = createSignal({ ...emptyTimelineView(), following: false, top: 40 })
   const runtime = {
     timelineView: view, updateTimelineView: (patch: Partial<TimelineViewState>) => setView({ ...view(), ...patch }),
@@ -161,11 +171,10 @@ function mountScrollScenario(options: { height?: number; viewport?: number; save
   let height = options.height ?? 400
   let viewport = options.viewport ?? 600
   let top = options.savedTop ?? 0
-  let resize!: ResizeObserverCallback
   let frame: FrameRequestCallback | undefined
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frame = callback; return 1 })
   vi.stubGlobal("cancelAnimationFrame", () => { frame = undefined })
-  vi.stubGlobal("ResizeObserver", class { constructor(callback: ResizeObserverCallback) { resize = callback } observe() {} disconnect() {} })
+  const resize = stubResizeObservers()
   // Model the browser's scroll clamping, including content/viewport shrinkage.
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("timeline") ? viewport : 0 })
   vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("timeline") ? Math.max(height, viewport) : 0 })

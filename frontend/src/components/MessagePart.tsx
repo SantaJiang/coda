@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { KeyedList } from "./KeyedList"
 import { changedFiles, formatDuration, liveShellWaitLabel } from "../lib/activity"
 import type { CompactionEntry, ConversationBlock, ConversationEntry, ConversationTurn } from "../lib/conversation"
@@ -140,6 +140,10 @@ function MessagePartView(props: { part: Part; plain?: boolean; streaming?: boole
   )
 }
 
+// Collapsed preview matches a short transcript row; expanding scrolls inside a fixed cap.
+const USER_BUBBLE_COLLAPSED = 72
+const USER_BUBBLE_EXPANDED = 300
+
 function UserBubble(props: { message: Message; parts: Part[] }) {
   // Optimistic send + server ack can briefly leave two text parts with the same body.
   const parts = createMemo(() => {
@@ -160,11 +164,50 @@ function UserBubble(props: { message: Message; parts: Part[] }) {
     setConfirmOpen(false)
     void runtime.revertToMessage(props.message.id)
   }
+  const [expanded, setExpanded] = createSignal(false)
+  const [overflowing, setOverflowing] = createSignal(false)
+  let body: HTMLDivElement | undefined
+  const measure = () => {
+    const node = body
+    if (!node) return
+    setOverflowing(node.scrollHeight > USER_BUBBLE_COLLAPSED + 1)
+  }
+  onMount(() => {
+    measure()
+    if (typeof ResizeObserver === "undefined" || !body) return
+    const observer = new ResizeObserver(measure)
+    observer.observe(body)
+    onCleanup(() => observer.disconnect())
+  })
+  createEffect(() => {
+    parts()
+    expanded()
+    queueMicrotask(measure)
+  })
+  const open = () => expanded() && overflowing()
+  const collapsed = () => overflowing() && !expanded()
   return (
-    <article class="turn" data-role="user">
+    <article class="turn" data-role="user" data-expanded={open() ? "" : undefined}>
       <div class="turn-stack">
         <div class="user-bubble">
-          <KeyedList each={parts()} by={(part) => part.id}>{(part) => <MessagePartView part={part()} plain />}</KeyedList>
+          <div
+            class="user-bubble-body"
+            classList={{ "is-collapsed": collapsed(), "is-faded": collapsed(), "is-expanded": open() }}
+            style={{ "max-height": collapsed() ? `${USER_BUBBLE_COLLAPSED}px` : open() ? `${USER_BUBBLE_EXPANDED}px` : undefined }}
+            ref={(node) => { body = node }}
+          >
+            <KeyedList each={parts()} by={(part) => part.id}>{(part) => <MessagePartView part={part()} plain />}</KeyedList>
+          </div>
+          <Show when={overflowing()}>
+            <button
+              type="button"
+              class="user-bubble-more"
+              aria-expanded={open()}
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {open() ? "收起" : "展开"}
+            </button>
+          </Show>
         </div>
         <MessageMeta
           agent={user().agent}

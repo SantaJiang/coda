@@ -997,10 +997,14 @@ button.ctx-pill:hover {
   display: flex;
   justify-content: flex-start;
   width: 100%;
-  /* Breather between the pinned prompt and the answer stream below it. */
-  margin-bottom: 14px;
-  /* Opaque so the answer scrolling underneath the pinned prompt stays covered. */
+  /* Padding paints with the card, so the answer cannot slide into the border. */
+  margin-bottom: 0;
+  padding-bottom: 14px;
   background: var(--chat-bg);
+}
+
+.turn[data-role="user"][data-expanded] {
+  position: relative;
 }
 
 .turn[data-role="assistant"] {
@@ -1027,10 +1031,6 @@ button.ctx-pill:hover {
   width: auto;
   /* Expand by the bubble's own padding so body text shares the stream's left edge. */
   margin-inline: -14px;
-  /* The prompt stays pinned. A long paste must scroll inside the card so the reply stays visible. */
-  max-height: min(240px, 40vh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
   background: var(--chat-bg);
   border: 1px solid color-mix(in srgb, var(--chat-text) 16%, transparent);
   border-radius: 8px;
@@ -1120,6 +1120,36 @@ button.ctx-pill:hover {
 
 .msg-meta-copy.rollback:hover {
   color: var(--danger);
+}
+
+.user-bubble-body.is-collapsed {
+  overflow: hidden;
+}
+
+.user-bubble-body.is-faded {
+  -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 65%, transparent 100%);
+}
+
+.user-bubble-body.is-expanded {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.user-bubble-more {
+  margin: 4px 0 0 -5px;
+  padding: 0 5px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.user-bubble-more:hover {
+  color: var(--text);
 }
 
 .user-bubble .user-text {
