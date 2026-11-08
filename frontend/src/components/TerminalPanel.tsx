@@ -31,7 +31,7 @@ export default function TerminalPanel(props: { terminals: Terminals; directory: 
                   >
                     <span class="terminal-list-glyph" aria-hidden="true">&gt;_</span>
                     <span class="truncate">{title()}</span>
-                    <span class="terminal-small-status">{terminalStatusLabel(info())}</span>
+                    <span class="terminal-small-status" data-status={info().status}>{terminalStatusLabel(info())}</span>
                   </button>
                   <Show when={!isTerminalRunning(info())}>
                     <button type="button" class="icon-btn" aria-label={`移除 ${title()}`} onClick={() => void t.action(id, "hide")}>
@@ -243,8 +243,13 @@ export function TerminalOutput(props: {
         terminal.blur()
         const fit = new FitAddon()
         terminal.loadAddon(fit)
-        fit.fit()
-        const observer = new ResizeObserver(() => fit.fit())
+        // The host is absolutely positioned, so its box is the pane, not the
+        // canvas. Fit must run after that box has a size; an early 0×0 measure
+        // would leave the default 80 columns and clip every line.
+        const refit = () => fit.fit()
+        refit()
+        requestAnimationFrame(refit)
+        const observer = new ResizeObserver(() => refit())
         observer.observe(host)
         const scroll = terminal.onScroll(() => {
           if (!terminal || updatingOutput || replaying) return
@@ -297,7 +302,7 @@ export function TerminalOutput(props: {
       <details class="terminal-command">
         <summary title={props.info.command}>
           <span class="terminal-command-title">{title()}</span>
-          <span class="terminal-small-status">{terminalStatusLabel(props.info)}{props.info.exitCode !== undefined ? ` · 退出码 ${props.info.exitCode}` : ""}</span>
+          <span class="terminal-small-status" data-status={props.info.status}>{terminalStatusLabel(props.info)}{props.info.exitCode !== undefined ? ` · 退出码 ${props.info.exitCode}` : ""}</span>
         </summary>
         <pre>{props.info.command}</pre>
         <Show when={props.info.cwd}><div class="terminal-command-cwd">{props.info.cwd}</div></Show>
@@ -319,19 +324,21 @@ export function TerminalOutput(props: {
           {error()}
         </div>
       </Show>
-      <div ref={host} class="terminal-canvas" aria-label="只读终端输出" />
-      <Show when={!following()}>
-        <button
-          type="button"
-          class="terminal-follow"
-          onClick={() => {
-            setFollowing(true)
-            terminal?.scrollToBottom()
-          }}
-        >
-          回到最新
-        </button>
-      </Show>
+      <div class="terminal-screen">
+        <div ref={host} class="terminal-canvas" aria-label="只读终端输出" />
+        <Show when={!following()}>
+          <button
+            type="button"
+            class="terminal-follow"
+            onClick={() => {
+              setFollowing(true)
+              terminal?.scrollToBottom()
+            }}
+          >
+            回到最新
+          </button>
+        </Show>
+      </div>
     </div>
   )
 }
