@@ -126,7 +126,7 @@ bun run test
 - **手动**：GitHub Actions 里 `workflow_dispatch`，勾选 force 可对当前版本强制再打一包（例如安装包坏了要重出）。
 - **平台**（每个 runner 上走 `scripts/pack.sh`，不跑 `bun test`）：
   - Windows x64 → NSIS `setup.exe`（`windows-latest`）
-  - macOS Apple Silicon → `dmg`（`macos-14`，`aarch64-apple-darwin`）
+  - macOS Apple Silicon → `dmg`（`macos-15`，`aarch64-apple-darwin`）
   - Linux x64 → `deb`（`ubuntu-22.04`；CI 不打 rpm）
 - **产物**：发布到 GitHub Release，tag 为 `vX.Y.Z`（例如 `v1.0.0`）。
 
