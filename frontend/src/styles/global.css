@@ -1036,6 +1036,11 @@ button.ctx-pill:hover {
   align-items: stretch;
 }
 
+/* Keep the reply (Worked for / first block) from touching the question bubble. */
+.turn[data-role="user"] + .turn[data-role="assistant"] {
+  margin-top: 14px;
+}
+
 .turn-stack {
   display: flex;
   flex-direction: column;
