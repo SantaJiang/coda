@@ -67,6 +67,18 @@ function SessionTimeline(props: { sessionID: string }) {
     measureBottom()
     save()
     captureAnchor()
+    markStuck()
+  }
+  // The pinned question bubble used to keep an opaque pad so the answer could
+  // not slide into its border. That pad left a gap and still sliced glyphs.
+  // Mark the bubble only while it is actually stuck, and let a fade sit under it.
+  const markStuck = () => {
+    const top = scroller.getBoundingClientRect().top
+    for (const turn of scroller.querySelectorAll<HTMLElement>(".turn[data-role='user']")) {
+      const rect = turn.getBoundingClientRect()
+      const stuck = !turn.hasAttribute("data-expanded") && rect.height > 0 && Math.abs(rect.top - top) <= 2
+      turn.classList.toggle("is-stuck", stuck)
+    }
   }
   const scheduleLayout = () => {
     if (frame !== undefined) return
@@ -130,6 +142,7 @@ function SessionTimeline(props: { sessionID: string }) {
       }}
       onScroll={() => {
         measureBottom()
+        markStuck()
         // Layout shrinkage and our own scrollTop writes also dispatch scroll.
         // They must not replace the anchor before the next layout correction.
         if (userScroll || draggingScrollbar) {
@@ -155,6 +168,6 @@ function SessionTimeline(props: { sessionID: string }) {
       </div>
     </div>
     <button type="button" class="jump-latest" classList={{ "is-visible": showLatest() }}
-      disabled={!showLatest()} aria-hidden={!showLatest()} aria-label="Scroll to bottom" onClick={latest}>Scroll to bottom</button>
+      disabled={!showLatest()} aria-hidden={!showLatest()} aria-label="下拉到最新" onClick={latest}>下拉到最新</button>
   </div>
 }
