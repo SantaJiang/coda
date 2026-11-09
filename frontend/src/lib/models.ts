@@ -88,6 +88,7 @@ export type ProviderList = {
 const STORAGE_MODELS = "coda.models"
 const STORAGE_SECRETS = "coda.modelSecrets"
 const STORAGE_SELECTED = "coda.selectedModel"
+const STORAGE_VARIANTS = "coda.selectedVariants"
 const STORAGE_PINNED = "coda.pinnedModels"
 
 export const OPENCODE_PROVIDER_ID = "opencode"
@@ -228,6 +229,45 @@ export function saveSelectedModelKey(key: string | null) {
   if (!key) localStorage.removeItem(STORAGE_SELECTED)
   else localStorage.setItem(STORAGE_SELECTED, key)
   setSharedValue({ selectedModelKey: key })
+}
+
+function sanitizeVariants(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  const result: Record<string, string> = {}
+  for (const [key, variant] of Object.entries(value as Record<string, unknown>)) {
+    if (key && typeof variant === "string" && variant) result[key] = variant
+  }
+  return result
+}
+
+export function loadSelectedVariants(): Record<string, string> {
+  const shared = sharedValue("selectedVariants")
+  if (shared !== undefined) return sanitizeVariants(shared)
+  try {
+    const raw = localStorage.getItem(STORAGE_VARIANTS)
+    if (!raw) return {}
+    return sanitizeVariants(JSON.parse(raw) as unknown)
+  } catch {
+    return {}
+  }
+}
+
+export function saveSelectedVariants(variants: Record<string, string>) {
+  localStorage.setItem(STORAGE_VARIANTS, JSON.stringify(variants))
+  setSharedValue({ selectedVariants: variants })
+}
+
+export function selectedVariantFor(key: string | null) {
+  if (!key) return null
+  return loadSelectedVariants()[key] ?? null
+}
+
+export function rememberSelectedVariant(key: string | null, variant: string | null) {
+  if (!key) return
+  const variants = loadSelectedVariants()
+  if (variant) variants[key] = variant
+  else delete variants[key]
+  saveSelectedVariants(variants)
 }
 
 export function createConfiguredModel(form: ModelForm): ConfiguredModel {

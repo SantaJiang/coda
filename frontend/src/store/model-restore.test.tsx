@@ -18,6 +18,14 @@ const providers: ProviderList = {
   all: [{ id: "opencode", name: "Coda", models: { "free-fixture": { name: "Free fixture" } } }],
   connected: ["opencode"], default: {},
 }
+const variantProviders: ProviderList = {
+  all: [{
+    id: "opencode",
+    name: "Coda",
+    models: { "free-fixture": { name: "Free fixture", variants: { low: {}, high: {} } } },
+  }],
+  connected: ["opencode"], default: {},
+}
 const disposers: Array<() => void> = []
 
 function mount(listProviders: AgentClient["listProviders"]) {
@@ -93,4 +101,35 @@ it("respects a new user selection while startup discovery is pending", async () 
   await vi.waitFor(() => expect(app.models.selectableModels()).toHaveLength(2))
   expect(app.models.selectedModelKey()).toBe(customKey)
   expect(localStorage.getItem("coda.selectedModel")).toBe(customKey)
+})
+
+it("remembers a model variant across restarts and model switches", async () => {
+  seed()
+  localStorage.setItem("coda.selectedModel", freeKey)
+  const first = mount(async () => variantProviders)
+  await vi.waitFor(() => expect(first.models.currentVariants()).toEqual(["low", "high"]))
+  first.models.setVariant("high")
+  expect(first.models.selectedVariant()).toBe("high")
+  expect(JSON.parse(localStorage.getItem("coda.selectedVariants")!)).toEqual({ [freeKey]: "high" })
+
+  first.models.selectModel(customKey)
+  expect(first.models.selectedVariant()).toBeNull()
+  first.models.selectModel(freeKey)
+  expect(first.models.selectedVariant()).toBe("high")
+  first.close()
+
+  const second = mount(async () => variantProviders)
+  expect(second.models.selectedVariant()).toBe("high")
+  await vi.waitFor(() => expect(second.models.currentVariants()).toContain("high"))
+  expect(second.models.selectedVariant()).toBe("high")
+})
+
+it("drops a saved variant once discovery shows the model no longer offers it", async () => {
+  seed()
+  localStorage.setItem("coda.selectedModel", freeKey)
+  localStorage.setItem("coda.selectedVariants", JSON.stringify({ [freeKey]: "xhigh" }))
+  const app = mount(async () => variantProviders)
+  expect(app.models.selectedVariant()).toBe("xhigh")
+  await vi.waitFor(() => expect(app.models.currentVariants()).toEqual(["low", "high"]))
+  await vi.waitFor(() => expect(app.models.selectedVariant()).toBeNull())
 })

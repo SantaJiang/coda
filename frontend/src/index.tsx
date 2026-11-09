@@ -5,7 +5,7 @@ import "./styles/global.css"
 import { applyWindowChromeAttr, revealMainWindow } from "./lib/platform"
 import { hydrateShared } from "./lib/shared"
 import { initTheme, loadTheme } from "./lib/theme"
-import { clearRetiredModelStorage, loadConfiguredModels, loadSelectedModelKey } from "./lib/models"
+import { clearRetiredModelStorage, loadConfiguredModels, loadSelectedModelKey, loadSelectedVariants } from "./lib/models"
 import { loadPermissionMode } from "./lib/permissions"
 import { clearRetiredBackgroundSetting, loadTaskRecovery, loadStopBehavior, loadSendShortcut } from "./lib/settings"
 import { loadLastProject, loadProjects } from "./lib/persist"
@@ -19,6 +19,7 @@ async function boot() {
       await hydrateShared(() => ({
         models: loadConfiguredModels(),
         selectedModelKey: loadSelectedModelKey(),
+        selectedVariants: loadSelectedVariants(),
         theme: loadTheme(),
         sendShortcut: loadSendShortcut(),
         permissionMode: loadPermissionMode(),

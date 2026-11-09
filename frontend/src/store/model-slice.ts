@@ -10,9 +10,11 @@ import {
   menuDiscoveredModels,
   mergeSelectables,
   modelKey,
+  rememberSelectedVariant,
   resolveSelectedKey,
   saveConfiguredModels,
   saveSelectedModelKey,
+  selectedVariantFor,
   variantsByKey,
   type ConfiguredModel,
   type ModelForm,
@@ -29,6 +31,21 @@ export function selectableModelsOf(state: AppState) {
 
 export function selectedModelOf(state: AppState) {
   return selectableModelsOf(state).find((item) => item.key === state.selectedModelKey)
+}
+
+export function variantsForKey(state: AppState, key: string | null) {
+  if (!key) return []
+  return state.modelVariants[key] ?? selectableModelsOf(state).find((item) => item.key === key)?.variants ?? []
+}
+
+// The variant list arrives asynchronously with model discovery. Until then a
+// saved choice cannot be validated, so keep it and let discovery reconcile it.
+export function storedVariantFor(state: AppState, key: string | null) {
+  const stored = selectedVariantFor(key)
+  if (!stored) return null
+  const variants = variantsForKey(state, key)
+  if (!state.modelDiscoveryReady && variants.length === 0) return stored
+  return variants.includes(stored) ? stored : null
 }
 
 export function persistSelection(handle: StoreHandle, key: string | null) {
@@ -48,6 +65,7 @@ export function createModelSlice(handle: StoreHandle, config = createBackendConf
     const nextKey = resolveSelectedKey(models, selectables, preferredKey ?? state.selectedModelKey, state.modelDiscoveryReady)
     setState("configuredModels", models)
     persistSelection(handle, nextKey)
+    setState("selectedVariant", storedVariantFor(state, nextKey))
     saveConfiguredModels(models)
     await config.sync()
   }
@@ -60,9 +78,9 @@ export function createModelSlice(handle: StoreHandle, config = createBackendConf
       const list = await client.listProviders(project?.missing ? undefined : project?.path)
       if (gen !== discoveredGen) return
       const discovered = discoveredFromProviderList(list)
-      setState("modelDiscoveryReady", true)
       setState("discoveredModels", discovered)
       setState("modelVariants", variantsByKey(list))
+      setState("modelDiscoveryReady", true)
       const extras = menuDiscoveredModels(discovered)
       const nextKey = resolveSelectedKey(
         state.configuredModels,
@@ -70,6 +88,7 @@ export function createModelSlice(handle: StoreHandle, config = createBackendConf
         state.selectedModelKey,
       )
       persistSelection(handle, nextKey)
+      setState("selectedVariant", storedVariantFor(state, nextKey))
     } catch {
       if (gen !== discoveredGen || state.discoveredModels.length > 0) return
       setState("discoveredModels", [])
@@ -81,11 +100,7 @@ export function createModelSlice(handle: StoreHandle, config = createBackendConf
     selectedModel,
     selectedModelKey: () => state.selectedModelKey,
     selectedVariant: () => state.selectedVariant,
-    currentVariants: () => {
-      const key = state.selectedModelKey
-      if (!key) return []
-      return state.modelVariants[key] ?? selectedModel()?.variants ?? []
-    },
+    currentVariants: () => variantsForKey(state, state.selectedModelKey),
     variantLabel: () => formatVariantLabel(state.selectedVariant ?? "default"),
     modelMenuOpen: () => state.modelMenuOpen,
     variantMenuOpen: () => state.variantMenuOpen,
@@ -94,11 +109,9 @@ export function createModelSlice(handle: StoreHandle, config = createBackendConf
     configuredModels: () => state.configuredModels,
     selectModel: (key) => {
       persistSelection(handle, key)
-      const variants = state.modelVariants[key] ?? []
-      const nextVariant = state.selectedVariant && variants.includes(state.selectedVariant) ? state.selectedVariant : null
       setState({
         ...popoverPatch(null),
-        selectedVariant: nextVariant,
+        selectedVariant: storedVariantFor(state, key),
       })
     },
     openModelMenu: () => {
@@ -168,7 +181,10 @@ export function createModelSlice(handle: StoreHandle, config = createBackendConf
       }
     },
     refreshDiscovered,
-    setVariant: (value) => setState({ selectedVariant: value, variantMenuOpen: false }),
+    setVariant: (value) => {
+      rememberSelectedVariant(state.selectedModelKey, value)
+      setState({ selectedVariant: value, variantMenuOpen: false })
+    },
     openVariantMenu: () => setState(popoverPatch("variant")),
     closeVariantMenu: () => setState("variantMenuOpen", false),
     nameFor: (providerID, modelID) => {

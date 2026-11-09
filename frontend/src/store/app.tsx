@@ -37,7 +37,7 @@ import { createChromeSlice } from "./chrome-slice"
 import { StoreProviders } from "./ctx"
 import { flushPendingDraftPersist, persistDraftSessions, rekeyDraftSessions } from "./draft-session-state"
 import { reportError, type StoreHandle } from "./handle"
-import { persistSelection, createModelSlice } from "./model-slice"
+import { persistSelection, createModelSlice, storedVariantFor } from "./model-slice"
 import { pushPermissionMode } from "./permission-sync"
 import type { AppPorts } from "./ports"
 import { createProjectSlice } from "./project-slice"
@@ -135,7 +135,9 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     if (selectedId && selectedId !== last) saveLastProject(selectedId)
     setState("draft", true)
     setState("configuredModels", configured)
-    persistSelection(handle, resolveSelectedKey(configured, mergeSelectables(configured, []), loadSelectedModelKey(), state.modelDiscoveryReady))
+    const selectedKey = resolveSelectedKey(configured, mergeSelectables(configured, []), loadSelectedModelKey(), state.modelDiscoveryReady)
+    persistSelection(handle, selectedKey)
+    setState("selectedVariant", storedVariantFor(state, selectedKey))
 
     const hydratedDrafts = loadDraftSessions()
     setState("draftSessionsByProject", hydratedDrafts.draftSessionsByProject)
@@ -198,11 +200,15 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
       if (patch.taskRecovery) setState("taskRecovery", patch.taskRecovery)
       if (patch.closeBehavior) setState("closeBehavior", patch.closeBehavior === "tray" ? "tray" : "quit")
       if (patch.stopBehavior) setState("stopBehavior", patch.stopBehavior)
-      if (patch.models || "selectedModelKey" in patch) {
+      if (patch.models || "selectedModelKey" in patch || "selectedVariants" in patch) {
         const configured = loadConfiguredModels()
         const extras = menuDiscoveredModels(state.discoveredModels)
         const nextKey = resolveSelectedKey(configured, mergeSelectables(configured, extras), loadSelectedModelKey(), state.modelDiscoveryReady)
-        setState({ configuredModels: configured, selectedModelKey: nextKey })
+        setState({
+          configuredModels: configured,
+          selectedModelKey: nextKey,
+          selectedVariant: storedVariantFor(state, nextKey),
+        })
         void config.sync().catch(() => undefined)
         bootstrap.invalidate()
       }
@@ -286,7 +292,7 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
 
   createEffect(() => {
     const selected = state.selectedVariant
-    if (!selected) return
+    if (!selected || !state.modelDiscoveryReady) return
     if (!models.currentVariants().includes(selected)) setState("selectedVariant", null)
   })
 

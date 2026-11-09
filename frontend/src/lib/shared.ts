@@ -7,6 +7,7 @@ import type { Project } from "./types"
 export type SharedSettings = {
   models?: ConfiguredModel[]
   selectedModelKey?: string | null
+  selectedVariants?: Record<string, string>
   theme?: Theme
   sendShortcut?: SendShortcut
   permissionMode?: PermissionMode
