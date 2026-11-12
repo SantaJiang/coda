@@ -10,6 +10,7 @@ use tauri_plugin_notification::NotificationExt;
 static EXITING: AtomicBool = AtomicBool::new(false);
 static EXIT_PENDING: AtomicBool = AtomicBool::new(false);
 static EXIT_READY: AtomicBool = AtomicBool::new(false);
+static RESTART: AtomicBool = AtomicBool::new(false);
 static TRAY_READY: AtomicBool = AtomicBool::new(false);
 static NOTIFIED: AtomicBool = AtomicBool::new(false);
 static ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -409,15 +410,29 @@ pub fn request_exit(app: &tauri::AppHandle) {
     }
     if ACTIVE.load(Ordering::SeqCst) || has_running_terminals() {
         show(app);
+        let restarting = RESTART.load(Ordering::SeqCst);
         let handle = app.clone();
         let mut dialog = app
             .dialog()
-            .message("还有会话或终端任务正在进行。退出将中断这些任务，是否继续？")
-            .title("退出 Coda？")
+            .message(if restarting {
+                "还有会话或终端任务正在进行。重启将中断这些任务，是否继续？"
+            } else {
+                "还有会话或终端任务正在进行。退出将中断这些任务，是否继续？"
+            })
+            .title(if restarting {
+                "重启 Coda？"
+            } else {
+                "退出 Coda？"
+            })
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "中断并退出".into(),
-                "取消退出".into(),
+                if restarting {
+                    "中断并重启"
+                } else {
+                    "中断并退出"
+                }
+                .into(),
+                "取消".into(),
             ));
         if let Some(window) = app.get_webview_window("main") {
             dialog = dialog.parent(&window);
@@ -425,6 +440,8 @@ pub fn request_exit(app: &tauri::AppHandle) {
         dialog.show(move |confirmed| {
             if confirmed {
                 begin_exit(&handle);
+            } else {
+                RESTART.store(false, Ordering::SeqCst);
             }
             EXIT_PENDING.store(false, Ordering::SeqCst);
         });
@@ -432,6 +449,12 @@ pub fn request_exit(app: &tauri::AppHandle) {
         begin_exit(app);
         EXIT_PENDING.store(false, Ordering::SeqCst);
     }
+}
+
+/// Restarts Coda through the same careful shutdown path as a normal quit.
+pub fn request_restart(app: &tauri::AppHandle) {
+    RESTART.store(true, Ordering::SeqCst);
+    request_exit(app);
 }
 
 fn begin_exit(app: &tauri::AppHandle) {
@@ -490,6 +513,10 @@ fn begin_exit(app: &tauri::AppHandle) {
         suppress_owned_runs();
         eprintln!("Coda shutdown cleanup completed");
         EXIT_READY.store(true, Ordering::SeqCst);
+        if RESTART.swap(false, Ordering::SeqCst) {
+            eprintln!("Coda restarting");
+            tauri::process::restart(&app.env());
+        }
         app.exit(0);
     });
 }

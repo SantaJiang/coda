@@ -4,6 +4,7 @@ use std::time::Duration;
 mod attachments;
 mod backend;
 mod lifecycle;
+mod macos_permissions;
 mod paths;
 mod settings;
 mod terminal_record;
@@ -120,6 +121,10 @@ pub fn run() {
             lifecycle::desktop_activity,
             lifecycle::desktop_close_behavior,
             lifecycle::desktop_quit,
+            macos_permissions::macos_permission_status,
+            macos_permissions::macos_open_permission_settings,
+            macos_permissions::macos_request_screen_recording,
+            macos_permissions::macos_restart,
             path_exists,
             settings_read,
             settings_write,

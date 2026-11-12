@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Coda 需要访问桌面文件夹，以便读写你选择的项目文件。</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Coda 需要访问文稿文件夹，以便读写你选择的项目文件。</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Coda 需要访问下载文件夹，以便读取你选择的附件和项目文件。</string>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>Coda 需要访问外接磁盘上的项目文件。</string>
+  <key>NSNetworkVolumesUsageDescription</key>
+  <string>Coda 需要访问网络磁盘上的项目文件。</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Coda 需要控制其他应用来完成终端和自动化任务。</string>
+</dict>
+</plist>

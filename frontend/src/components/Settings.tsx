@@ -6,6 +6,7 @@ import { isTheme } from "../lib/theme"
 import { useChrome } from "../store/app"
 import { useTheme } from "../store/theme"
 import { Icon } from "./Icon"
+import { MacPermissionsSettings } from "./MacPermissions"
 
 function Segment<T extends string>(props: {
   label: string
@@ -167,6 +168,7 @@ export function Settings() {
               <div class="settings-row-label">MCP</div>
               <button type="button" class="text-btn" onClick={() => chrome.openMcpSettings()}>管理</button>
             </div>
+            <MacPermissionsSettings />
           </div>
 
           <div class="settings-version">版本 {version()}</div>

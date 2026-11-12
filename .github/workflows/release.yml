@@ -128,7 +128,32 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      - name: Build installers (macOS)
+        if: runner.os == 'macOS'
+        env:
+          PACK_BUNDLES: ${{ matrix.bundles }}
+          # Optional Developer ID credentials. Without them the app is ad-hoc
+          # signed through tauri.conf.json, which still binds Info.plist.
+          CODA_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CODA_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          CODA_APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          CODA_APPLE_ID: ${{ secrets.APPLE_ID }}
+          CODA_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          CODA_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${CODA_APPLE_CERTIFICATE:-}" ]]; then
+            export APPLE_CERTIFICATE="$CODA_APPLE_CERTIFICATE"
+            export APPLE_CERTIFICATE_PASSWORD="$CODA_APPLE_CERTIFICATE_PASSWORD"
+            export APPLE_SIGNING_IDENTITY="$CODA_APPLE_SIGNING_IDENTITY"
+            export APPLE_ID="$CODA_APPLE_ID"
+            export APPLE_PASSWORD="$CODA_APPLE_PASSWORD"
+            export APPLE_TEAM_ID="$CODA_APPLE_TEAM_ID"
+          fi
+          bash ./scripts/pack.sh
+
       - name: Build installers
+        if: runner.os != 'macOS'
         env:
           PACK_BUNDLES: ${{ matrix.bundles }}
         run: bash ./scripts/pack.sh

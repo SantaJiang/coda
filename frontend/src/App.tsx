@@ -6,6 +6,7 @@ import { SessionPage } from "./components/SessionPage"
 import { McpSettings } from "./components/McpSettings"
 import { ModelSettings } from "./components/ModelSettings"
 import { Settings } from "./components/Settings"
+import { MacPermissionsOnboarding } from "./components/MacPermissions"
 
 export default function App() {
   onMount(() => {
@@ -39,6 +40,7 @@ export default function App() {
         <ModelSettings />
         <Settings />
         <McpSettings />
+        <MacPermissionsOnboarding />
       </AppProvider>
     </ThemeProvider>
   )

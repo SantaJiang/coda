@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-macos-permissions"
+description = "Check macOS privacy permissions, request screen recording access, open the matching System Settings pane, and restart Coda."
+commands.allow = [
+  "macos_permission_status",
+  "macos_request_screen_recording",
+  "macos_open_permission_settings",
+  "macos_restart",
+]

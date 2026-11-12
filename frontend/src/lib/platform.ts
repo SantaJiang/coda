@@ -1,5 +1,5 @@
 import { isMacPlatform, isTauri } from "./platform-detect"
-export { isTauri } from "./platform-detect"
+export { isMacPlatform, isTauri } from "./platform-detect"
 
 export function isWindowsPlatform() {
   if (typeof navigator === "undefined") return false

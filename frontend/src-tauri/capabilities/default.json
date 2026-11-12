@@ -44,6 +44,7 @@
     },
     "notification:default",
     "allow-desktop-activity",
-    "allow-desktop-quit"
+    "allow-desktop-quit",
+    "allow-macos-permissions"
   ]
 }
