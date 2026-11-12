@@ -1057,15 +1057,17 @@ button.ctx-pill:hover {
 .user-bubble {
   box-sizing: border-box;
   width: auto;
-  /* Expand by the bubble's own padding so body text shares the stream's left edge. */
-  margin-inline: -14px;
-  background: var(--chat-bg);
-  border: 1px solid color-mix(in srgb, var(--chat-text) 16%, transparent);
-  border-radius: 8px;
-  padding: 8px 14px;
+  /* Match the composer card: elevated surface, strong border, floating shadow.
+     Expand by the bubble's own padding so body text shares the stream's left edge. */
+  margin-inline: -12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  padding: 10px 12px 8px;
   color: var(--chat-text);
   font-size: 14px;
   line-height: 22px;
+  box-shadow: var(--shadow);
 }
 
 .msg-meta {
