@@ -1,7 +1,8 @@
 import { useTerminalClient } from "../store/ctx"
 import { TerminalDock } from "./TerminalDock"
 import { useTerminals } from "../lib/terminals"
-import { Show, Suspense, createEffect, createSignal, lazy, onCleanup, type JSX } from "solid-js"
+import { terminalGoalHints } from "../lib/terminal-title"
+import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, type JSX } from "solid-js"
 import { isLocalDraft, draftSidebarTitle } from "../lib/draft-session"
 import { formatSessionTitle } from "../lib/session-label"
 import { useChrome, useProjects, useRuntime } from "../store/app"
@@ -112,7 +113,16 @@ export function SessionPage() {
   const projects = useProjects()
   const runtime = useRuntime()
   const chrome = useChrome()
-  const terminals = useTerminals(() => projects.selectedProject()?.path, () => projects.selectedSession()?.id, useTerminalClient())
+  const goalHints = createMemo(() => {
+    const parts = runtime.partsByMessage?.() ?? {}
+    return terminalGoalHints(runtime.messages().map((info) => ({ info, parts: parts[info.id] ?? [] })))
+  })
+  const terminals = useTerminals(
+    () => projects.selectedProject()?.path,
+    () => projects.selectedSession()?.id,
+    useTerminalClient(),
+    (info) => goalHints().get(info.id),
+  )
   const planAvailable = () => runtime.hasPlan() && !chrome.planPanelDismissed()
   const showTerminal = () => terminals.view().open && terminals.view().tab === "terminal" && terminals.visible().length > 0
   const showAside = () => showTerminal() || (terminals.view().open && terminals.view().tab === "plan" && runtime.hasPlan()) || planAvailable()
@@ -182,7 +192,7 @@ export function SessionPage() {
           <div class="aside-resize" onPointerDown={resize} role="separator" aria-orientation="vertical" aria-label="调整侧栏宽度" />
           <div class="terminal-aside-sheet">
             <header class="terminal-panel-head">
-              <Show when={terminals.visible().length}><button class="session-chrome-title" classList={{ active: asidePane() === "terminal" }} onClick={() => terminals.patch({ open: true, tab: "terminal" })}>终端</button></Show>
+              <Show when={terminals.visible().length && runtime.hasPlan()}><button class="session-chrome-title" classList={{ active: asidePane() === "terminal" }} onClick={() => terminals.patch({ open: true, tab: "terminal" })}>终端</button></Show>
               <Show when={runtime.hasPlan()}><button class="session-chrome-title" classList={{ active: asidePane() === "plan" }} onClick={() => terminals.patch({ open: true, tab: "plan" })}>计划</button></Show>
               <span class="terminal-head-space" /><WindowControls />
               <button class="icon-btn" aria-label="收起侧栏" title="收起侧栏" onClick={() => { terminals.patch({ open: false }); chrome.closePlanPanel() }}>

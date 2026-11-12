@@ -1,8 +1,8 @@
 import { For, Show, createSignal } from "solid-js"
 import { isTerminalRunning } from "../lib/api"
-import { terminalDisplayTitle } from "../lib/activity"
 import type { TerminalInfo } from "../lib/terminal-contracts"
 import { terminalStatusLabel, type Terminals } from "../lib/terminals"
+import { terminalGoalTitle } from "../lib/terminal-title"
 import { shellWaitLabel } from "../lib/terminal-policy"
 
 const TRAY_PAGE = 5
@@ -70,7 +70,7 @@ export function TerminalDock(props: { terminals: Terminals }) {
             </div>
             <div class="terminal-card-list" role="list">
               <For each={rows().slice(0, limit())}>{(info) => {
-                const title = () => terminalDisplayTitle(info.command)
+                const title = () => t.title?.(info) ?? terminalGoalTitle(info.command)
                 return <div class="terminal-card-row" role="listitem">
                   <button type="button" class="terminal-card-open" title={info.command} onClick={() => { t.open(info.id); setTray(false) }}>
                     <span class="terminal-card-glyph" aria-hidden="true">&gt;_</span>

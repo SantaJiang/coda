@@ -1,49 +1,16 @@
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import type { Terminal as GhosttyTerminal } from "ghostty-web"
 import wasmURL from "ghostty-web/ghostty-vt.wasm?url"
 import { isTerminalRunning } from "../lib/api"
-import { terminalDisplayTitle } from "../lib/activity"
 import type { TerminalInfo, TerminalLog } from "../lib/terminal-contracts"
 import { defaultTerminalClient, type TerminalClient } from "../lib/terminal-client"
-import { terminalStatusLabel, type Terminals } from "../lib/terminals"
+import type { Terminals } from "../lib/terminals"
 import { useTheme } from "../store/theme"
 
 export default function TerminalPanel(props: { terminals: Terminals; directory: string; sessionID: string }) {
   const t = props.terminals
   return (
     <div class="terminal-panel">
-      <Show when={t.visible().length > 1}>
-        <div class="terminal-list" role="tablist" aria-label="终端列表">
-          <For each={t.visible().map((info) => info.id)}>
-            {(id) => {
-              const initial = t.visible().find((item) => item.id === id)!
-              const info = () => t.visible().find((item) => item.id === id) ?? initial
-              const title = () => terminalDisplayTitle(info().command)
-              return (
-                <div class="terminal-list-item" classList={{ selected: t.selected()?.id === id }}>
-                  <button
-                    type="button"
-                    class="terminal-list-select"
-                    role="tab"
-                    aria-selected={t.selected()?.id === id}
-                    onClick={() => t.patch({ selected: id })}
-                    title={title()}
-                  >
-                    <span class="terminal-list-glyph" aria-hidden="true">&gt;_</span>
-                    <span class="truncate">{title()}</span>
-                    <span class="terminal-small-status" data-status={info().status}>{terminalStatusLabel(info())}</span>
-                  </button>
-                  <Show when={!isTerminalRunning(info())}>
-                    <button type="button" class="icon-btn" aria-label={`移除 ${title()}`} onClick={() => void t.action(id, "hide")}>
-                      ×
-                    </button>
-                  </Show>
-                </div>
-              )
-            }}
-          </For>
-        </div>
-      </Show>
       <Show when={t.error()}>
         <div class="terminal-notice" role="alert">
           {t.error()}
@@ -64,11 +31,6 @@ export default function TerminalPanel(props: { terminals: Terminals; directory: 
                   scroll: { ...t.view().scroll, [info().id]: scroll },
                 })
               }
-              onHide={
-                t.visible().length === 1 && !isTerminalRunning(info())
-                  ? () => void t.action(info().id, "hide")
-                  : undefined
-              }
             />
           )
         }}
@@ -84,7 +46,6 @@ export function TerminalOutput(props: {
   info: TerminalInfo
   scroll: number
   onScroll: (value: number) => void
-  onHide?: () => void
 }) {
   let host!: HTMLDivElement
   let terminal: GhosttyTerminal | undefined
@@ -111,12 +72,44 @@ export function TerminalOutput(props: {
           foreground: "#dedee3",
           cursor: "#dedee3",
           selectionBackground: "#414157",
+          black: "#2b2b31",
+          red: "#ff7a85",
+          green: "#69d89b",
+          yellow: "#e8c56c",
+          blue: "#78b7ff",
+          magenta: "#d5a0ff",
+          cyan: "#67d7cd",
+          white: "#dedee3",
+          brightBlack: "#787884",
+          brightRed: "#ff9aa3",
+          brightGreen: "#8ee8b5",
+          brightYellow: "#f3d98f",
+          brightBlue: "#a0ccff",
+          brightMagenta: "#e5c2ff",
+          brightCyan: "#91e7df",
+          brightWhite: "#f6f6f8",
         }
       : {
           background: "#fafafa",
           foreground: "#242429",
           cursor: "#242429",
           selectionBackground: "#d6e5fb",
+          black: "#242429",
+          red: "#b8312f",
+          green: "#1b6f41",
+          yellow: "#7c5a00",
+          blue: "#1d57a8",
+          magenta: "#8535a6",
+          cyan: "#0d6661",
+          white: "#6a6a75",
+          brightBlack: "#8b8b96",
+          brightRed: "#d04543",
+          brightGreen: "#238a52",
+          brightYellow: "#946d00",
+          brightBlue: "#2868c4",
+          brightMagenta: "#9c45bf",
+          brightCyan: "#147a74",
+          brightWhite: "#242429",
         }
   createEffect(() => {
     const value = colors()
@@ -209,7 +202,7 @@ export function TerminalOutput(props: {
           disableStdin: true,
           cursorBlink: false,
           fontSize: 12,
-          fontFamily: "Menlo, Consolas, monospace",
+          fontFamily: "SFMono-Regular, Menlo, Monaco, Consolas, monospace",
           scrollback: 20000,
           theme: colors(),
         })
@@ -281,37 +274,11 @@ export function TerminalOutput(props: {
     onCleanupSafe?.()
     terminal?.dispose()
   })
-  const title = () => terminalDisplayTitle(props.info.command)
-  const banner = () =>
-    isTerminalRunning(props.info)
-      ? "Agent 正在使用此终端 · 只读"
-      : "终端输出 · 只读"
   return (
     <div class="terminal-output">
-      <div class="terminal-readonly-banner" role="status">
-        <span class="terminal-readonly-text">{banner()}</span>
-        <span class="terminal-readonly-meta">
-          <span class="terminal-readonly-glyph" aria-hidden="true" title={title()}>&gt;_</span>
-          <Show when={props.onHide}>
-            <button type="button" class="terminal-readonly-hide" aria-label={`移除 ${title()}`} onClick={() => props.onHide?.()}>
-              ×
-            </button>
-          </Show>
-        </span>
-      </div>
-      <details class="terminal-command">
-        <summary title={props.info.command}>
-          <span class="terminal-command-title">{title()}</span>
-          <span class="terminal-small-status" data-status={props.info.status}>{terminalStatusLabel(props.info)}{props.info.exitCode !== undefined ? ` · 退出码 ${props.info.exitCode}` : ""}</span>
-        </summary>
-        <pre>{props.info.command}</pre>
-        <Show when={props.info.cwd}><div class="terminal-command-cwd">{props.info.cwd}</div></Show>
-      </details>
       <Show when={!error() && !hasOutput()}>
         <div class="terminal-notice" role="status">
-          {!ready() ? "正在加载终端输出…" : isTerminalRunning(props.info)
-            ? "运行中，暂未产生输出"
-            : `${terminalStatusLabel(props.info)}，暂无输出`}
+          {!ready() ? "正在加载终端输出…" : isTerminalRunning(props.info) ? "运行中，暂未产生输出" : "终端已结束，暂无输出"}
         </div>
       </Show>
       <Show when={earlier()}>

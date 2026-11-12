@@ -421,7 +421,8 @@ export async function listTerminals(directory: string, sessionID: string) {
   const ids = rememberedShells(sessionID)
   const rows = new Map<string, Record<string, unknown>>()
   for (const row of Array.isArray(running) ? running : []) {
-    if (shellToTerminal(row, sessionID)) {
+    const info = shellToTerminal(row, sessionID)
+    if (info && isTerminalRunning(info)) {
       rows.set(String(row.id), row)
       ids.add(String(row.id))
     }
@@ -429,7 +430,9 @@ export async function listTerminals(directory: string, sessionID: string) {
   await Promise.all([...ids].filter((id) => !rows.has(id)).map(async (id) => {
     try {
       const row = await readShell(directory, id)
-      if (shellToTerminal(row, sessionID)) rows.set(id, row)
+      const info = shellToTerminal(row, sessionID)
+      // Completed shells have already closed; forget them on the next refresh.
+      if (info && isTerminalRunning(info)) rows.set(id, row)
       else ids.delete(id)
     } catch {
       ids.delete(id)

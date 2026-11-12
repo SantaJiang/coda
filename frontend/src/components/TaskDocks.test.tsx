@@ -67,7 +67,7 @@ it("expands multiple terminals with titles, status and command tooltips", () => 
   cleanups.push(render(() => <TerminalDock terminals={t} />, host))
   ;(host.querySelector(".terminal-pill") as HTMLButtonElement).click()
   expect(host.querySelector(".terminal-card-label")?.textContent).toContain("2终端")
-  expect(host.querySelector(".terminal-card-title")?.textContent).toBe("Prepare script")
+  expect(host.querySelector(".terminal-card-title")?.textContent).toBe("准备脚本执行权限")
   expect(host.textContent).not.toContain("chmod +x")
   expect(host.querySelector(".terminal-card-time")?.textContent).toBe("26s")
   ;(host.querySelector(".terminal-card-open") as HTMLButtonElement).click()

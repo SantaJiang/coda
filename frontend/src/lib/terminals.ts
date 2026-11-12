@@ -4,6 +4,7 @@ export { LONG_TERMINAL_MS } from "./terminal-policy"
 import { isTerminalRunning } from "./api"
 import type { TerminalInfo } from "./terminal-contracts"
 import { defaultTerminalClient, type TerminalClient } from "./terminal-client"
+import { terminalGoalTitle } from "./terminal-title"
 
 type View = {
   open: boolean
@@ -40,14 +41,20 @@ function load(key: string): View {
 export function isLongTerminal(info: TerminalInfo, now = Date.now()) {
   return (info.endedAt ?? now) - info.startedAt >= LONG_TERMINAL_MS
 }
-export function useTerminals(directory: Accessor<string | undefined>, sessionID: Accessor<string | undefined>, client: TerminalClient = defaultTerminalClient) {
+export function useTerminals(
+  directory: Accessor<string | undefined>,
+  sessionID: Accessor<string | undefined>,
+  client: TerminalClient = defaultTerminalClient,
+  goals?: (info: TerminalInfo) => string | undefined,
+) {
   const [items, setItems] = createSignal<TerminalInfo[]>([])
   const [view, setView] = createSignal(blank())
   const [error, setError] = createSignal("")
   const [now, setNow] = createSignal(Date.now())
   const snapshots = new Map<string, TerminalInfo[]>()
   // Output can be buffered or deliberately silent; elapsed execution owns visibility.
-  const canView = (info: TerminalInfo) => isLongTerminal(info, now())
+  // Completed terminals close on their own, so the panel only ever shows live work.
+  const canView = (info: TerminalInfo) => isTerminalRunning(info) && isLongTerminal(info, now())
   const key = createMemo(() => JSON.stringify([directory() ?? "", sessionID() ?? ""]))
   const storageKey = () => `${directory() ?? ""}:${sessionID() ?? ""}`
   const pendingViews = new Map<string, View>()
@@ -146,6 +153,7 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
   const waiting = createMemo(() =>
     visible().find((info) => isTerminalRunning(info) && info.nextCheckAt && info.nextCheckAt > now()),
   )
+  const title = (info: TerminalInfo) => terminalGoalTitle(info.command, goals?.(info))
   return {
     client,
     items,
@@ -155,6 +163,7 @@ export function useTerminals(directory: Accessor<string | undefined>, sessionID:
     patch,
     open,
     action,
+    title,
     error,
     now,
     waiting,

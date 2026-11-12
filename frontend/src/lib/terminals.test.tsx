@@ -104,9 +104,9 @@ describe("session terminal ownership", () => {
     await flush()
     expect(model.visible().map((item) => item.id)).toEqual(["second"])
   })
-  it("reveals a removed completed terminal again from its historical execution step", async () => {
-    const hidden = { ...task("hidden"), status: "completed" as const, hidden: true }
-    vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [hidden] })
+  it("does not reopen a completed terminal from a historical execution step", async () => {
+    const completed = { ...task("completed"), status: "completed" as const, hidden: true }
+    vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [completed] })
     let model!: ReturnType<typeof useTerminals>
     cleanups.push(
       render(() => {
@@ -119,12 +119,11 @@ describe("session terminal ownership", () => {
     )
     await flush()
     expect(model.visible()).toHaveLength(0)
-    vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [{ ...hidden, hidden: false }] })
-    window.dispatchEvent(new CustomEvent("coda:open-terminal", { detail: "hidden" }))
+    window.dispatchEvent(new CustomEvent("coda:open-terminal", { detail: "completed" }))
     await flush()
-    expect(terminalControl).toHaveBeenCalledWith("/tmp/terminal-history", "one", "hidden", "show")
-    expect(model.selected()?.id).toBe("hidden")
-    expect(model.view().open).toBe(true)
+    expect(terminalControl).not.toHaveBeenCalled()
+    expect(model.selected()).toBeUndefined()
+    expect(model.view().open).toBe(false)
   })
 })
 describe("terminal output response", () => {
@@ -150,7 +149,7 @@ describe("terminal output response", () => {
 
 
 describe("long terminal visibility", () => {
-  it("reveals the first silent long task before any output, and keeps it through completion", async () => {
+  it("reveals the first silent long task before any output, then closes it on completion", async () => {
     vi.useFakeTimers()
     const silent = { ...task("silent"), startedAt: Date.now(), cursor: 0 }
     const log = vi.fn()
@@ -168,11 +167,11 @@ describe("long terminal visibility", () => {
     expect(log).not.toHaveBeenCalled()
     vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [{ ...silent, status: "completed", endedAt: Date.now() }] })
     await vi.advanceTimersByTimeAsync(1000)
-    expect(model.visible()).toHaveLength(1)
-    expect(model.selected()?.status).toBe("completed")
-    expect(model.view().open).toBe(true)
+    expect(model.visible()).toHaveLength(0)
+    expect(model.items()).toHaveLength(1)
+    expect(model.selected()).toBeUndefined()
   })
-  it("keeps the inspected terminal selected when another command becomes the running task", async () => {
+  it("only shows live terminals, so a finished task yields to the one still running", async () => {
     vi.useFakeTimers()
     const first = task("inspected"), second = task("new-task")
     vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [first] })
@@ -182,11 +181,10 @@ describe("long terminal visibility", () => {
     expect(model.selected()?.id).toBe("inspected")
     vi.mocked(listTerminals).mockResolvedValue({ backendID: "backend", items: [{ ...first, status: "completed", endedAt: Date.now() }, second] })
     await vi.advanceTimersByTimeAsync(1000)
-    expect(model.selected()?.id).toBe("inspected")
-    model.open("new-task")
+    expect(model.visible().map((info) => info.id)).toEqual(["new-task"])
     expect(model.selected()?.id).toBe("new-task")
   })
-  it("does not promote fast commands, and keeps completed long commands visible", () => {
+  it("only promotes commands that actually ran for the long-terminal threshold", () => {
     const start = 1_000_000
     const info = { ...task("time"), startedAt: start }
     expect(isLongTerminal(info, start + 9999)).toBe(false)
