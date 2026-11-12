@@ -46,9 +46,9 @@ describe("v2 feature adapters", () => {
       id: "frm_1",
       sessionID: "ses_1",
       metadata: { kind: "question" },
-      fields: [{ key: "q0", type: "string", title: "方向", description: "选一个", custom: true, options: [{ label: "继续", description: "往下做" }] }],
+      fields: [{ key: "q0", type: "string", title: "方向", description: "选一个", custom: true, options: [{ value: "go", label: "继续", description: "往下做" }] }],
     }
-    expect(formToQuestion(form)?.questions[0]).toMatchObject({ header: "方向", question: "选一个", custom: true, options: [{ label: "继续" }] })
+    expect(formToQuestion(form)?.questions[0]).toMatchObject({ key: "q0", header: "方向", question: "选一个", custom: true, options: [{ value: "go", label: "继续" }] })
     const [event] = translateWireEvent({ type: "form.created", data: { form } })
     expect(event?.event.type).toBe("question.asked")
     expect(event?.event.properties).toMatchObject({ id: "frm_1", sessionID: "ses_1" })

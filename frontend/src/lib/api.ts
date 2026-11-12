@@ -364,15 +364,17 @@ export async function listQuestions(directory: string) {
 export async function replyQuestion(_directory: string, requestID: string, answers: string[][], sessionID?: string) {
   if (!sessionID) return false
   const detail = await request<Record<string, unknown>>("GET", sessionPath(sessionID, `/form/${encodeURIComponent(requestID)}`), { scope: "none" })
-  const fields = Array.isArray(detail.fields) ? detail.fields : []
   const answer: Record<string, string | string[]> = {}
-  fields.forEach((item, index) => {
-    if (!item || typeof item !== "object") return
-    const field = item as { key?: string; type?: string }
-    if (!field.key) return
-    const labels = answers[index] ?? []
-    answer[field.key] = field.type === "multiselect" ? labels : (labels[0] ?? "")
-  })
+  // Use the same field mapping as the dock so indexes line up, and submit each
+  // option's `value` instead of its display `label` (they often differ, e.g. the
+  // web search provider form).
+  for (const [index, question] of (formToQuestion(detail)?.questions ?? []).entries()) {
+    if (!question.key) continue
+    const values = (answers[index] ?? []).map(
+      (label) => question.options.find((option) => option.label === label)?.value ?? label,
+    )
+    answer[question.key] = question.multiple ? values : (values[0] ?? "")
+  }
   await request("POST", sessionPath(sessionID, `/form/${encodeURIComponent(requestID)}/reply`), { scope: "none", body: { answer } })
   return true
 }

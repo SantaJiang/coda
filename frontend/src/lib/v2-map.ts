@@ -354,12 +354,17 @@ export function formToQuestion(row: Rec): QuestionRequest | null {
       ? field.options.flatMap((option) => {
           const value = rec(option)
           return typeof value?.label === "string"
-            ? [{ label: value.label, ...(typeof value.description === "string" ? { description: value.description } : {}) }]
+            ? [{
+                label: value.label,
+                ...(typeof value.value === "string" ? { value: value.value } : {}),
+                ...(typeof value.description === "string" ? { description: value.description } : {}),
+              }]
             : []
         })
       : []
     if (!options.length && metadata?.kind !== "question") return []
     return [{
+      ...(typeof field.key === "string" ? { key: field.key } : {}),
       question: typeof field.description === "string" && field.description ? field.description : typeof field.title === "string" ? field.title : "",
       ...(typeof field.title === "string" ? { header: field.title } : {}),
       options,

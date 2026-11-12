@@ -1,7 +1,39 @@
 import { afterEach, expect, it, vi } from "vitest"
-import { listMessages, listSessions } from "./api"
+import { listMessages, listSessions, replyQuestion } from "./api"
 
 afterEach(() => vi.unstubAllGlobals())
+
+it("submits option values instead of labels for a form the dock shows as a question", async () => {
+  const posts: unknown[] = []
+  vi.stubGlobal("fetch", vi.fn(async (_input: string, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      posts.push(JSON.parse(String(init.body)))
+      return new Response(null, { status: 204 })
+    }
+    return new Response(JSON.stringify({
+      data: {
+        id: "frm_1",
+        sessionID: "ses_1",
+        title: "Web Search",
+        metadata: { kind: "websearch.provider" },
+        fields: [
+          { key: "confirm", type: "boolean" },
+          {
+            key: "choice",
+            type: "string",
+            options: [
+              { value: "allow", label: "Allow search via Exa" },
+              { value: "disable", label: "Disable web search" },
+            ],
+          },
+        ],
+        state: { status: "pending" },
+      },
+    }))
+  }))
+  expect(await replyQuestion("/repo", "frm_1", [["Allow search via Exa"]], "ses_1")).toBe(true)
+  expect(posts).toEqual([{ answer: { choice: "allow" } }])
+})
 
 it("follows session and message cursors instead of keeping only the first page", async () => {
   vi.stubGlobal("fetch", vi.fn(async (input: string) => {

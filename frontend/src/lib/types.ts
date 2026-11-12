@@ -212,10 +212,14 @@ export type PermissionRequest = {
 
 export type QuestionOption = {
   label: string
+  /** 表单实际提交的值；缺省时等同 label。 */
+  value?: string
   description?: string
 }
 
 export type QuestionInfo = {
+  /** 表单字段 key，提交回答时用来对齐字段。 */
+  key?: string
   question: string
   header?: string
   options: QuestionOption[]
