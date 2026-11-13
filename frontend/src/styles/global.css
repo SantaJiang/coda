@@ -1074,6 +1074,7 @@ button.ctx-pill:hover {
 }
 
 .user-bubble {
+  position: relative;
   box-sizing: border-box;
   width: auto;
   /* Match the composer card: elevated surface, strong border, floating shadow.
@@ -1087,6 +1088,18 @@ button.ctx-pill:hover {
   font-size: 14px;
   line-height: 22px;
   box-shadow: var(--shadow-float);
+}
+
+/* The hover controls float 4px below the bubble, and the whole turn only counts
+   as hovered while the pointer is inside it. Without this invisible bridge the
+   control vanishes the moment the pointer crosses that gap on the way down. */
+.user-bubble::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -8px;
+  height: 8px;
 }
 
 .msg-meta {
