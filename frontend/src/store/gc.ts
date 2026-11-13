@@ -7,6 +7,23 @@ export function sessionLifetime(state: AppState, sessionID: string) {
   return () => !state.removedSessions[sessionID] && (state.sessionEpoch[sessionID] ?? 0) === epoch
 }
 
+// A revert commit deletes the boundary message and everything after it on the
+// backend, but publishes no `message.removed` events. Mirror that cut locally
+// so the timeline updates immediately; the boundary message is removed too.
+export function cutSessionMessages(draft: AppState, sessionID: string, messageID: string) {
+  const messages = draft.messages[sessionID] ?? []
+  const index = messages.findIndex((message) => message.id === messageID)
+  if (index === -1) return
+  for (const message of messages.slice(index)) {
+    draft.removedMessages[message.id] = sessionID
+    delete draft.parts[message.id]
+    delete draft.stoppedTurns[message.id]
+    delete draft.outgoing[message.id]
+    if (draft.stoppedTurnBySession[sessionID] === message.id) delete draft.stoppedTurnBySession[sessionID]
+  }
+  draft.messages[sessionID] = messages.slice(0, index)
+}
+
 export function purgeSession(draft: AppState, sessionID: string, deleted = true) {
   draft.sessionEpoch[sessionID] = (draft.sessionEpoch[sessionID] ?? 0) + 1
   if (deleted) draft.removedSessions[sessionID] = true

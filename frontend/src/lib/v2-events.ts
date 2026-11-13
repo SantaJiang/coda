@@ -118,6 +118,9 @@ export function translateWireEvent(raw: Wire): ParsedEvent[] {
   if (type === "session.deleted" || type === "session.status" || type === "session.idle" || type === "permission.replied") {
     return [emit(type, data)]
   }
+  if (type === "session.revert.committed") {
+    return [emit(type, { sessionID, messageID: String(data.to ?? "") })]
+  }
   if (type === "permission.asked") {
     return [emit(type, {
       id: data.id,

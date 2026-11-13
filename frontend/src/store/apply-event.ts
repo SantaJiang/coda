@@ -20,7 +20,7 @@ import type {
 } from "../lib/types"
 import type { ParsedEvent } from "../lib/events"
 import type { AppState } from "./state"
-import { purgeSession } from "./gc"
+import { cutSessionMessages, purgeSession } from "./gc"
 import { resolveRequest } from "./requests"
 
 export type AutoReply = {
@@ -201,6 +201,11 @@ const handlers: Record<string, EventHandler> = {
       draft.messages[sessionID] = (draft.messages[sessionID] ?? []).filter((item) => item.id !== messageID)
       delete draft.parts[messageID]
     }
+  },
+  "session.revert.committed": (draft, { props }) => {
+    const sessionID = props.sessionID as string
+    const messageID = props.messageID as string
+    if (sessionID && messageID) cutSessionMessages(draft, sessionID, messageID)
   },
   "message.part.updated": (draft, { props }) => {
     const part = props.part as Part | undefined

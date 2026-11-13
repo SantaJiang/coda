@@ -90,6 +90,24 @@ describe("applyClientEvent", () => {
     expect(state.draft).toBe(true)
   })
 
+  it("cuts the timeline at the committed revert boundary", () => {
+    const state = draft({
+      messages: {
+        s1: [
+          { id: "m1", sessionID: "s1", role: "user", time: { created: 1 } },
+          { id: "m2", sessionID: "s1", role: "user", time: { created: 2 } },
+          { id: "m3", sessionID: "s1", role: "user", time: { created: 3 } },
+        ],
+      },
+      parts: { m2: [{ id: "p1", sessionID: "s1", messageID: "m2", type: "text", text: "旧提问" }] },
+    })
+    for (const event of translateWireEvent({ type: "session.revert.committed", data: { sessionID: "s1", to: "m2" } }))
+      applyClientEvent(state, event)
+    expect(state.messages.s1.map((message) => message.id)).toEqual(["m1"])
+    expect(state.parts.m2).toBeUndefined()
+    expect(state.removedMessages.m2).toBe("s1")
+  })
+
   it("auto-replies permissions without dropping the request on later failure", () => {
     const state = draft({ permissionMode: "allow" })
     state.sessionsByProject["/tmp/app"] = [

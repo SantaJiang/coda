@@ -17,7 +17,7 @@ import { isSessionBusy, sessionDotKind } from "../lib/session-status"
 import { uid } from "../lib/uid"
 import { emptyTimelineView } from "../lib/conversation"
 import { isUnreachableError } from "../lib/api"
-import { sessionLifetime } from "./gc"
+import { cutSessionMessages, sessionLifetime } from "./gc"
 import { reconcileSession } from "./session-reconcile"
 import { moveOutgoingSession, outgoingDelivery, stageOutgoing } from "./outgoing"
 import { upsertById } from "../lib/upsert"
@@ -653,12 +653,15 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       const current = sessionLifetime(state, session.id)
       const usable = ensureProjectDirectory(project)
       if (!usable) return
+      // Read the question back before committing: the commit deletes the
+      // boundary message, and its events can land while the request is in flight.
+      const draft = revertDraftFromParts(state.parts[messageID] ?? [])
       try {
         const updated = await client.revertSession(usable.path, session.id, messageID)
         if (!current()) return
         const directory = directoryFor(state, session, usable)
         setState("sessionsByProject", directory, (list = []) => upsertById(list, { ...updated, directory }))
-        const draft = revertDraftFromParts(state.parts[messageID] ?? [])
+        setState(produce((next) => cutSessionMessages(next, session.id, messageID)))
         setState("drafts", draftKey(session.id, state.selectedProjectId), {
           composer: draft.text,
           attachments: draft.attachments,

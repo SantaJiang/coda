@@ -68,10 +68,11 @@ function setup(revertSession: AgentClient["revertSession"]) {
 }
 
 describe("runtime.revertToMessage", () => {
-  it("reverts on the backend, refills the draft, and hides reverted messages", async () => {
+  it("reverts on the backend, refills the draft, and cuts the timeline at the question", async () => {
     const revertSession = vi.fn()
-    const { runtime, session } = setup(revertSession)
-    revertSession.mockResolvedValue({ ...session, revert: { messageID: "m2" } })
+    const { state, runtime, session } = setup(revertSession)
+    // The backend deletes the boundary message and clears its revert marker.
+    revertSession.mockResolvedValue({ ...session, revert: null })
 
     await runtime.revertToMessage("m2")
 
@@ -80,6 +81,7 @@ describe("runtime.revertToMessage", () => {
     expect(runtime.attachments()).toHaveLength(1)
     expect(runtime.attachments()[0]).toMatchObject({ filename: "notes.md", kind: "file" })
     expect(runtime.messages().map((message) => message.id)).toEqual(["m1"])
+    expect(state.parts.m2).toBeUndefined()
   })
 
   it("reports an error and keeps the draft when the backend rejects", async () => {
