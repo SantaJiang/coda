@@ -55,6 +55,7 @@
   --chat-code: #2e2e32;
   --chat-link: #7bafe9;
   --shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  --shadow-float: 0 22px 56px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.32);
   --bg-code: #18181a;
   --text-code: #ccccd2;
   --bg-inline-code: #303036;
@@ -118,6 +119,7 @@
   --chat-code: #e5e5e7;
   --chat-link: #1a6dcc;
   --shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
+  --shadow-float: 0 22px 56px rgba(0, 0, 0, 0.16), 0 4px 14px rgba(0, 0, 0, 0.08);
   --bg-code: #ebebeb;
   --text-code: #262626;
   --bg-inline-code: #efefef;
@@ -1002,30 +1004,6 @@ button.ctx-pill:hover {
   background: var(--chat-bg);
 }
 
-.turn[data-role="user"]::after {
-  content: "";
-  position: absolute;
-  left: -14px;
-  right: -14px;
-  top: 100%;
-  z-index: 1;
-  height: 18px;
-  /* Feather only the clip at the bubble edge. A tall opaque stop reads as a gap. */
-  background: linear-gradient(
-    to bottom,
-    var(--chat-bg) 0%,
-    color-mix(in srgb, var(--chat-bg) 18%, transparent) 24%,
-    transparent 100%
-  );
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 160ms ease;
-}
-
-.turn[data-role="user"].is-stuck::after {
-  opacity: 1;
-}
-
 .turn[data-role="user"][data-expanded] {
   position: relative;
 }
@@ -1067,7 +1045,7 @@ button.ctx-pill:hover {
   color: var(--chat-text);
   font-size: 14px;
   line-height: 22px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-float);
 }
 
 .msg-meta {
@@ -1105,13 +1083,18 @@ button.ctx-pill:hover {
 
 .turn[data-role="user"] .msg-meta {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 4px);
   right: 0;
   width: max-content;
   max-width: 100%;
   margin-top: 0;
   z-index: 3;
-  background: var(--chat-bg);
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(10px);
 }
 
 .turn:hover .msg-meta,
@@ -2163,7 +2146,7 @@ button.ctx-pill:hover {
   border: 1px solid var(--border-strong);
   border-radius: 14px;
   padding: 10px 12px 8px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-float);
   overflow: visible;
 }
 
@@ -3930,8 +3913,7 @@ span.capability-pill.added {
 .jump-latest { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 150ms; border: 1px solid var(--border); border-radius: 18px; padding: 7px 14px; background: var(--bg-elevated); color: var(--text); cursor: pointer; box-shadow: 0 2px 8px #0003; z-index: 2; }
 .jump-latest.is-visible { opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s; }
 @media (prefers-reduced-motion: reduce) {
-  .jump-latest,
-  .turn[data-role="user"]::after { transition: none; }
+  .jump-latest { transition: none; }
 }
 .tool-details .work-step-body { max-height: 200px; overflow: auto; }
 
