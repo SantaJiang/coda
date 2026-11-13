@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-window-material"
+description = "Apply the native window backdrop (Liquid Glass / Mica) behind the navigation column."
+commands.allow = ["window_material"]

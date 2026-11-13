@@ -79,6 +79,12 @@
   --hljs-variable: #eeffff;
   --hljs-name: #f07178;
   --hljs-meta: #89ddff;
+  /* 原生材质模式下侧栏的叠加层。玻璃自带染色，Mica 对比更低，
+     两者都留一层半透明底色保证文字可读性。 */
+  --nav-material-bg: rgba(18, 18, 20, 0.76);
+  --nav-material-hover: rgba(255, 255, 255, 0.07);
+  --nav-material-active: rgba(255, 255, 255, 0.11);
+  --nav-material-border: rgba(255, 255, 255, 0.09);
   font-family:
     "Inter",
     "SF Pro Text",
@@ -143,6 +149,10 @@
   --hljs-variable: #24292f;
   --hljs-name: #953800;
   --hljs-meta: #0550ae;
+  --nav-material-bg: rgba(250, 250, 250, 0.76);
+  --nav-material-hover: rgba(0, 0, 0, 0.05);
+  --nav-material-active: rgba(0, 0, 0, 0.085);
+  --nav-material-border: rgba(0, 0, 0, 0.09);
 }
 
 * {
@@ -157,6 +167,28 @@ body,
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
+}
+
+/* 只有 Rust 侧确认系统给了 Liquid Glass / Mica 时，才把窗口背景放空，
+   让原生材质从侧栏露出来；聊天区仍然画自己的不透明底色。
+   浏览器预览、Win10 和 Linux 不带这个属性，保持原样。 */
+html[data-window-material="glass"],
+html[data-window-material="mica"],
+html[data-window-material="glass"] body,
+html[data-window-material="glass"] #root,
+html[data-window-material="glass"] .shell,
+html[data-window-material="mica"] body,
+html[data-window-material="mica"] #root,
+html[data-window-material="mica"] .shell {
+  background: transparent;
+}
+
+html[data-window-material="glass"] {
+  --nav-material-bg: rgba(18, 18, 22, 0.56);
+}
+
+html[data-theme="light"][data-window-material="glass"] {
+  --nav-material-bg: rgba(250, 250, 252, 0.54);
 }
 
 button,
@@ -242,6 +274,15 @@ a,
   --nav-muted: #6e6e73;
   --nav-faint: #8e8e93;
   border-right-color: #e4e4e4;
+}
+
+/* 原生材质透出后用半透明叠加层替换实色导航底色；
+   hover/active 也改成 layer fill，避免像贴上去的实心色块。 */
+:root:is([data-window-material="glass"], [data-window-material="mica"]) .sidebar {
+  --nav-bg: var(--nav-material-bg);
+  --nav-hover: var(--nav-material-hover);
+  --nav-active: var(--nav-material-active);
+  border-right-color: var(--nav-material-border);
 }
 
 .sidebar-icon {

@@ -1,5 +1,6 @@
 import { createContext, createEffect, createSignal, onCleanup, useContext, type ParentProps } from "solid-js"
 import { onSharedChange } from "../lib/shared"
+import { applyWindowMaterial } from "../lib/window-effects"
 import {
   applyTheme,
   isTheme,
@@ -27,7 +28,11 @@ export function ThemeProvider(props: ParentProps) {
   const [system, setSystem] = createSignal<ResolvedTheme>(systemTheme())
   const resolvedTheme = () => resolveTheme(theme(), system())
 
-  createEffect(() => applyTheme(resolvedTheme()))
+  createEffect(() => {
+    const resolved = resolvedTheme()
+    applyTheme(resolved)
+    void applyWindowMaterial(resolved)
+  })
 
   const stopWatchingSystem = watchSystemTheme(setSystem)
   onCleanup(stopWatchingSystem)

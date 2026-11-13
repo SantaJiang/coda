@@ -8,6 +8,7 @@ mod macos_permissions;
 mod paths;
 mod settings;
 mod terminal_record;
+mod window_effects;
 
 #[tauri::command]
 fn path_exists(path: String) -> bool {
@@ -130,22 +131,35 @@ pub fn run() {
             settings_write,
             settings_patch,
             user_file_read,
-            user_file_write
+            user_file_write,
+            window_effects::window_material
         ])
         .setup(|app| {
             paths::migrate_legacy();
             lifecycle::install(app);
             #[cfg(target_os = "macos")]
             mac_traffic_lights::install_main(app);
+            // 原生材质要在窗口显示前挂上，否则首帧的实色背景会盖住玻璃/Mica。
             // 窗口在这个 hook 之前就已经创建。Windows 上它默认可见，但 WebView2
             // 要等事件循环继续跑才能画出页面。以前在这里同步等 sidecar，主线程被
             // 堵住，用户会先看到一个没有内容的空窗口。后端改到后台启动；窗口保持
             // 隐藏，等前端画完再显示（见 tauri.windows.conf.json 的 visible: false）。
+            let material = {
+                use tauri::Manager;
+                app.get_webview_window("main").map(|window| {
+                    let theme = window_theme(&window);
+                    window_effects::apply(&window, theme)
+                })
+            };
             #[cfg(windows)]
             {
-                paint_hidden_window(app);
+                // Mica 生效时窗口自己就是背景，再刷不透明底色会把材质盖掉。
+                if material == Some(window_effects::SOLID) {
+                    paint_hidden_window(app);
+                }
                 schedule_reveal_fallback(app);
             }
+            let _ = material;
             let handle = app.handle().clone();
             std::thread::spawn(move || backend::supervise(handle));
             Ok(())
@@ -156,7 +170,6 @@ pub fn run() {
 }
 
 /// 跟 `global.css` 里的 `--bg` 保持一致，避免 WebView2 在首帧用默认白底。
-#[cfg(any(windows, test))]
 fn startup_theme(raw: &str, system: &str) -> &'static str {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
         return "dark";
@@ -166,6 +179,18 @@ fn startup_theme(raw: &str, system: &str) -> &'static str {
         Some("system") if system == "light" => "light",
         _ => "dark",
     }
+}
+
+/// 读设置里的主题偏好并解析成实际生效的浅色/深色。
+fn window_theme(window: &tauri::WebviewWindow) -> &'static str {
+    let raw = std::fs::read_to_string(paths::settings_path()).ok();
+    let system = match window.theme() {
+        Ok(tauri::Theme::Light) => "light",
+        _ => "dark",
+    };
+    raw.as_deref()
+        .map(|raw| startup_theme(raw, system))
+        .unwrap_or("dark")
 }
 
 /// 浅色 `#ffffff`，深色 `#1e1e20`。
@@ -186,15 +211,7 @@ fn paint_hidden_window(app: &tauri::App) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
-    let raw = std::fs::read_to_string(paths::settings_path()).ok();
-    let system = match window.theme() {
-        Ok(tauri::Theme::Light) => "light",
-        _ => "dark",
-    };
-    let theme = raw
-        .as_deref()
-        .map(|raw| startup_theme(raw, system))
-        .unwrap_or("dark");
+    let theme = window_theme(&window);
     let (red, green, blue, alpha) = theme_background(theme);
     let _ = window.set_background_color(Some(tauri::window::Color(red, green, blue, alpha)));
 }

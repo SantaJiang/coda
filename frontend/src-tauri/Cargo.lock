@@ -523,7 +523,7 @@ dependencies = [
 
 [[package]]
 name = "coda"
-version = "2.7.2"
+version = "2.7.3"
 dependencies = [
  "base64 0.22.1",
  "clipboard-rs",
@@ -544,6 +544,7 @@ dependencies = [
  "url",
  "uuid",
  "windows-sys 0.61.2",
+ "windows-version",
 ]
 
 [[package]]

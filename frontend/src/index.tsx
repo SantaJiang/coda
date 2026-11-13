@@ -4,7 +4,8 @@ import "virtual:uno.css"
 import "./styles/global.css"
 import { applyWindowChromeAttr, revealMainWindow } from "./lib/platform"
 import { hydrateShared } from "./lib/shared"
-import { initTheme, loadTheme } from "./lib/theme"
+import { applyWindowMaterial } from "./lib/window-effects"
+import { initTheme, loadTheme, resolveTheme } from "./lib/theme"
 import { clearRetiredModelStorage, loadConfiguredModels, loadSelectedModelKey, loadSelectedVariants } from "./lib/models"
 import { loadPermissionMode } from "./lib/permissions"
 import { clearRetiredBackgroundSetting, loadTaskRecovery, loadStopBehavior, loadSendShortcut } from "./lib/settings"
@@ -33,6 +34,8 @@ async function boot() {
     }
     initTheme()
     applyWindowChromeAttr()
+    // 先把原生材质挂上再画首屏，避免实色背景先盖住玻璃/Mica。
+    await applyWindowMaterial(resolveTheme(loadTheme()))
     render(() => <App />, document.getElementById("root") as HTMLElement)
   } finally {
     await revealMainWindow()
