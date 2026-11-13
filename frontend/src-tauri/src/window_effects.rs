@@ -24,9 +24,9 @@ pub fn apply(window: &WebviewWindow, theme: &str) -> &'static str {
         // One Liquid Glass style plus one material: Tauri falls back to the
         // material on macOS 15 and older. Liquid Glass ignores `state`.
         let tint = if theme == "light" {
-            Color(250, 250, 252, 72)
+            Color(232, 232, 234, 96)
         } else {
-            Color(18, 18, 20, 104)
+            Color(16, 16, 18, 128)
         };
         let effects = EffectsBuilder::new()
             .effect(Effect::LiquidGlassRegular)
