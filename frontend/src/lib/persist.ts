@@ -375,6 +375,39 @@ export function saveLastProject(id: string) {
   setSharedValue({ lastProject: id })
 }
 
+// 未读标记只属于当前客户端的界面状态，重启后仍要保留，所以单独存在本地。
+export function loadAttention(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.attention)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    const ids = Array.isArray(parsed)
+      ? parsed
+      : parsed && typeof parsed === "object"
+        ? Object.entries(parsed)
+            .filter(([, value]) => value === true)
+            .map(([id]) => id)
+        : []
+    const entries = ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+    return Object.fromEntries(entries.map((id) => [id, true]))
+  } catch {
+    return {}
+  }
+}
+
+export function saveAttention(attention: Record<string, boolean>) {
+  try {
+    const ids = Object.keys(attention).filter((id) => attention[id])
+    if (!ids.length) {
+      localStorage.removeItem(STORAGE_KEYS.attention)
+      return
+    }
+    localStorage.setItem(STORAGE_KEYS.attention, JSON.stringify(ids))
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
 export function createProject(path: string): Project {
   return {
     id: uid("prj"),

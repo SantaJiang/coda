@@ -25,6 +25,7 @@ import {
   pickSelectedProjectId,
   resolveHomeDir,
   samePath,
+  saveAttention,
   saveLastProject,
   saveProjects,
   saveProjectSessions,
@@ -279,6 +280,10 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
 
   createEffect(() => {
     saveProjects(state.projects)
+  })
+
+  createEffect(() => {
+    saveAttention(state.attention)
   })
 
   createEffect(() => {

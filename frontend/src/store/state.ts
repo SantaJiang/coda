@@ -14,6 +14,7 @@ import type {
   Todo,
 } from "../lib/types"
 import { loadPermissionMode } from "../lib/permissions"
+import { loadAttention } from "../lib/persist"
 import { loadCloseBehavior, loadTaskRecovery, loadStopBehavior, loadSendShortcut } from "../lib/settings"
 
 export type ConnectionState = "connecting" | "connected" | "disconnected"
@@ -123,7 +124,7 @@ export const initialState: AppState = {
   messages: {},
   parts: {},
   status: {},
-  attention: {},
+  attention: loadAttention(),
   sessionErrors: {},
   sessionErrorText: {},
   todos: {},

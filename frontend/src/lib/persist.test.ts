@@ -4,10 +4,12 @@ import {
   filterProjectSessions,
   forgetRemovedProject,
   hydrateDraftSessions,
+  loadAttention,
   loadDraftSessions,
   loadRemovedProjects,
   rememberRemovedProject,
   restoreCandidates,
+  saveAttention,
   saveDraftSessions,
   serializeDraftSessions,
 } from "./persist"
@@ -115,6 +117,29 @@ describe("removed project persistence", () => {
     forgetRemovedProject("/tmp/app")
     expect(loadRemovedProjects()).toEqual([])
     localStorage.removeItem(STORAGE_KEYS.removedProjects)
+  })
+})
+
+describe("unread attention persistence", () => {
+  it("round-trips unread session ids and drops cleared ones", () => {
+    localStorage.removeItem(STORAGE_KEYS.attention)
+    saveAttention({ s1: true, s2: false })
+    expect(loadAttention()).toEqual({ s1: true })
+
+    saveAttention({ s1: true, s2: true })
+    expect(loadAttention()).toEqual({ s1: true, s2: true })
+
+    saveAttention({ s1: false, s2: false })
+    expect(loadAttention()).toEqual({})
+    expect(localStorage.getItem(STORAGE_KEYS.attention)).toBeNull()
+  })
+
+  it("ignores malformed stored values", () => {
+    localStorage.setItem(STORAGE_KEYS.attention, "not-json")
+    expect(loadAttention()).toEqual({})
+    localStorage.setItem(STORAGE_KEYS.attention, JSON.stringify({ s1: true, s2: "yes", "": true }))
+    expect(loadAttention()).toEqual({ s1: true })
+    localStorage.removeItem(STORAGE_KEYS.attention)
   })
 })
 
