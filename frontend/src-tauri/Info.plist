@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>CFBundleIconName</key>
+  <string>AppIcon</string>
   <key>NSDesktopFolderUsageDescription</key>
   <string>Coda 需要访问桌面文件夹，以便读写你选择的项目文件。</string>
   <key>NSDocumentsFolderUsageDescription</key>

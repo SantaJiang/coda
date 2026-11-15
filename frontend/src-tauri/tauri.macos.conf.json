@@ -1,0 +1,12 @@
+{
+  "build": {
+    "beforeBuildCommand": "bash scripts/build-macos-icon.sh && bun run before-tauri-build"
+  },
+  "bundle": {
+    "macOS": {
+      "files": {
+        "Resources/Assets.car": "target/macos-icon/Assets.car"
+      }
+    }
+  }
+}

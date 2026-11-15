@@ -98,6 +98,10 @@ jobs:
             exit 128
           fi
 
+      - name: Select Xcode for macOS app icons
+        if: runner.os == 'macOS'
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer" >> "$GITHUB_ENV"
+
       - name: Add Git Bash to PATH
         if: runner.os == 'Windows'
         run: echo "C:/Program Files/Git/bin" >> "$GITHUB_PATH"
