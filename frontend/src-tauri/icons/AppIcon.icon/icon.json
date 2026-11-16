@@ -1,24 +1,6 @@
 {
   "fill-specializations": [
     {
-      "value": {
-        "linear-gradient": [
-          "srgb:0.13333,0.20000,0.30980,1.00000",
-          "srgb:0.06667,0.09804,0.15294,1.00000"
-        ],
-        "orientation": {
-          "start": {
-            "x": 0.5,
-            "y": 0
-          },
-          "stop": {
-            "x": 0.5,
-            "y": 1
-          }
-        }
-      }
-    },
-    {
       "appearance": "dark",
       "value": {
         "linear-gradient": [
@@ -44,7 +26,42 @@
         {
           "image-name": "Mark.png",
           "name": "Coda mark",
-          "glass": false
+          "glass": false,
+          "hidden-specializations": [
+            {
+              "value": true
+            },
+            {
+              "appearance": "dark",
+              "value": false
+            },
+            {
+              "appearance": "tinted",
+              "value": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "layers": [
+        {
+          "image-name": "Default.png",
+          "name": "Original app icon",
+          "glass": false,
+          "hidden-specializations": [
+            {
+              "value": false
+            },
+            {
+              "appearance": "dark",
+              "value": true
+            },
+            {
+              "appearance": "tinted",
+              "value": true
+            }
+          ]
         }
       ]
     }
