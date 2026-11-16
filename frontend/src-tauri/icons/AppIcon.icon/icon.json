@@ -32,10 +32,6 @@
               "value": true
             },
             {
-              "appearance": "dark",
-              "value": false
-            },
-            {
               "appearance": "tinted",
               "value": false
             }
@@ -60,6 +56,24 @@
             {
               "appearance": "tinted",
               "value": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "layers": [
+        {
+          "image-name": "Dark.png",
+          "name": "Grayscale app icon",
+          "glass": false,
+          "hidden-specializations": [
+            {
+              "value": true
+            },
+            {
+              "appearance": "dark",
+              "value": false
             }
           ]
         }
