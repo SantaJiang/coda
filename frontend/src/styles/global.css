@@ -22,6 +22,8 @@
   color-scheme: dark;
   --sidebar: 264px;
   --chrome-h: 36px;
+  /* macOS 左侧仍让出整条标题栏。Windows 和 Linux 的按钮在右侧。 */
+  --sidebar-chrome-h: var(--chrome-h);
   --radius: 10px;
   --font-chat: 14px;
   --line-chat: 1.6;
@@ -306,9 +308,14 @@ a,
   color: var(--nav-text);
 }
 
+:root[data-os="windows"],
+:root[data-os="linux"] {
+  --sidebar-chrome-h: 20px;
+}
+
 .sidebar-chrome {
-  flex: 0 0 var(--chrome-h);
-  height: var(--chrome-h);
+  flex: 0 0 var(--sidebar-chrome-h);
+  height: var(--sidebar-chrome-h);
   display: flex;
   align-items: stretch;
   user-select: none;

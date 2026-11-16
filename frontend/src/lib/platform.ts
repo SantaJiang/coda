@@ -25,7 +25,14 @@ export function usesCustomWindowControls() {
   return isTauri() && !isMacPlatform()
 }
 
+export function desktopOs(): "macos" | "windows" | "linux" {
+  if (isMacPlatform()) return "macos"
+  if (isWindowsPlatform()) return "windows"
+  return "linux"
+}
+
 export function applyWindowChromeAttr() {
   if (typeof document === "undefined") return
   document.documentElement.dataset.chrome = isMacPlatform() ? "overlay" : "frameless"
+  document.documentElement.dataset.os = desktopOs()
 }

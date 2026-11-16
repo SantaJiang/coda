@@ -18,6 +18,7 @@ afterEach(() => {
   if (originalPlatform) Object.defineProperty(navigator, "platform", originalPlatform)
   if (originalUa) Object.defineProperty(navigator, "userAgent", originalUa)
   delete document.documentElement.dataset.chrome
+  delete document.documentElement.dataset.os
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__")
 })
 
@@ -37,6 +38,7 @@ describe("window chrome platform", () => {
     expect(usesCustomWindowControls()).toBe(false)
     applyWindowChromeAttr()
     expect(document.documentElement.dataset.chrome).toBe("overlay")
+    expect(document.documentElement.dataset.os).toBe("macos")
   })
 
   it("detects Windows without treating other desktops as Windows", () => {
@@ -62,6 +64,10 @@ describe("window chrome platform", () => {
     expect(usesCustomWindowControls()).toBe(false)
     applyWindowChromeAttr()
     expect(document.documentElement.dataset.chrome).toBe("frameless")
+    expect(document.documentElement.dataset.os).toBe("windows")
+    stubNavigator("Linux x86_64", "Mozilla/5.0 (X11; Linux x86_64)")
+    applyWindowChromeAttr()
+    expect(document.documentElement.dataset.os).toBe("linux")
 
     markTauri()
     expect(usesCustomWindowControls()).toBe(true)
