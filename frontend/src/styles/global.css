@@ -3543,22 +3543,97 @@ span.capability-pill.added {
 
 .question-head {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 4px;
-}
-
-.question-pager {
-  display: flex;
   align-items: center;
-  gap: 2px;
+  justify-content: flex-end;
+  margin-bottom: 6px;
 }
 
-.question-pager-label {
-  padding: 0 4px;
-  font-size: 11px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  user-select: none;
+.step-track {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px;
+  border-radius: 999px;
+  background: var(--bg-chip);
+}
+
+.step-seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 4px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.step-seg:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.step-seg:focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 1px;
+}
+
+.step-seg-dot {
+  position: relative;
+  overflow: hidden;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 32%, transparent);
+  transition:
+    width 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 200ms ease;
+}
+
+.step-seg[data-state="pending"]:hover .step-seg-dot {
+  background: color-mix(in srgb, var(--text) 50%, transparent);
+}
+
+.step-seg[data-state="answered"] .step-seg-dot {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.step-seg[data-state="active"] .step-seg-dot {
+  width: 20px;
+  background: var(--bg-chip-hover);
+}
+
+.step-seg-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: var(--accent);
+}
+
+.step-seg-fill[data-run] {
+  animation: step-drain var(--step-countdown, 5s) linear forwards;
+}
+
+@keyframes step-drain {
+  from {
+    width: 100%;
+  }
+
+  to {
+    width: 0%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-seg-dot {
+    transition: none;
+  }
+
+  .step-seg-fill[data-run] {
+    animation: none;
+  }
 }
 
 .question-auto {

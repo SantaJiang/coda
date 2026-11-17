@@ -2,7 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "so
 import { AUTO_QUESTION_SECONDS, isAutoMode } from "../lib/permissions"
 import type { QuestionInfo } from "../lib/types"
 import { useChrome, useRuntime } from "../store/app"
-import { Icon } from "./Icon"
+import { StepIndicator } from "./StepIndicator"
 
 const CUSTOM = "__coda_custom__"
 
@@ -29,6 +29,8 @@ export function QuestionDock() {
   const [customTexts, setCustomTexts] = createSignal<string[]>([])
   const [step, setStep] = createSignal(0)
   const [countdown, setCountdown] = createSignal(AUTO_QUESTION_SECONDS)
+  // 从 1 起：0 会被 StepIndicator 的 keyed Show 当成假值
+  const [fillEpoch, setFillEpoch] = createSignal(1)
   const [submitting, setSubmitting] = createSignal(false)
 
   const request = () => pending()[0]
@@ -153,6 +155,8 @@ export function QuestionDock() {
   const startCountdown = () => {
     clearTimer()
     setCountdown(AUTO_QUESTION_SECONDS)
+    // 重启耗尽动画：与倒计时同一个入口，两者不会走偏
+    setFillEpoch((value) => value + 1)
     timer = setInterval(() => {
       const value = countdown()
       if (value > 1) {
@@ -167,6 +171,12 @@ export function QuestionDock() {
 
   const bump = () => {
     if (auto() && requestId()) startCountdown()
+  }
+
+  const jump = (next: number) => {
+    if (submitting()) return
+    setStep(Math.min(Math.max(0, next), total() - 1))
+    bump()
   }
 
   createEffect(() => {
@@ -187,29 +197,15 @@ export function QuestionDock() {
         <div class="dock dock-question">
           <Show when={many()}>
             <div class="question-head">
-              <div class="question-pager">
-                <button
-                  type="button"
-                  class="icon-btn"
-                  disabled={index() === 0 || submitting()}
-                  onClick={() => setStep((value) => Math.max(0, value - 1))}
-                  aria-label="上一个问题"
-                >
-                  <Icon name="chevron-left" />
-                </button>
-                <span class="question-pager-label">
-                  {index() + 1} of {total()}
-                </span>
-                <button
-                  type="button"
-                  class="icon-btn"
-                  disabled={last() || submitting()}
-                  onClick={() => setStep((value) => Math.min(total() - 1, value + 1))}
-                  aria-label="下一个问题"
-                >
-                  <Icon name="chevron-right" />
-                </button>
-              </div>
+              <StepIndicator
+                total={total()}
+                active={index()}
+                answered={answered}
+                onSelect={jump}
+                disabled={submitting()}
+                countdownKey={auto() ? fillEpoch() : undefined}
+                countdownSeconds={AUTO_QUESTION_SECONDS}
+              />
             </div>
           </Show>
           <Show when={auto()}>

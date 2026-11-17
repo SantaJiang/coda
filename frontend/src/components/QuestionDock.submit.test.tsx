@@ -60,3 +60,30 @@ it("submits the picked answer", async () => {
   await Promise.resolve()
   expect(replyQuestion).toHaveBeenCalledWith("frm_1", [["A"]])
 })
+
+const twoQuestions: QuestionRequest["questions"] = [
+  { header: "方向", question: "第一题", options: [{ label: "A" }] },
+  { header: "范围", question: "第二题", options: [{ label: "B" }] },
+]
+
+it("jumps to a question from the step indicator", async () => {
+  const { container } = setup({ id: "frm_2", sessionID: "s1", questions: twoQuestions })
+  const segments = container.querySelectorAll<HTMLButtonElement>(".step-seg")
+  expect(segments).toHaveLength(2)
+  expect(container.querySelector(".question-text")?.textContent).toBe("第一题")
+  segments[1].click()
+  await Promise.resolve()
+  expect(container.querySelector(".question-text")?.textContent).toBe("第二题")
+})
+
+it("shows which questions are already answered", async () => {
+  const { container } = setup({ id: "frm_3", sessionID: "s1", questions: twoQuestions })
+  const segments = container.querySelectorAll<HTMLButtonElement>(".step-seg")
+  container.querySelector<HTMLButtonElement>(".question-option")!.click()
+  // 答完第一题后仍停在这题，active 优先于 answered
+  expect(segments[0].dataset.state).toBe("active")
+  segments[1].click()
+  await Promise.resolve()
+  expect(segments[0].dataset.state).toBe("answered")
+  expect(segments[1].dataset.state).toBe("active")
+})
