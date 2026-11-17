@@ -15,6 +15,20 @@ export function installQuitShortcut() {
   return () => window.removeEventListener("keydown", quit, true)
 }
 
+/** 外部链接交给系统浏览器；浏览器预览里退回新标签页。 */
+export async function openExternalLink(url: string) {
+  if (!isTauri()) {
+    window.open(url, "_blank", "noopener,noreferrer")
+    return
+  }
+  try {
+    const { openUrl } = await import("@tauri-apps/plugin-opener")
+    await openUrl(url)
+  } catch {
+    // 打不开链接不该打断阅读。
+  }
+}
+
 export async function prepareNotifications() {
   if (!isTauri()) return
   try {

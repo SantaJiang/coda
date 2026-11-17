@@ -3,6 +3,8 @@ import type { JSX } from "solid-js"
 import { activityDiff, activityFailureCount, stepPresentation } from "../lib/activity"
 import { blockTitle, type BlockShape } from "../lib/step-grouping"
 import { toolActivity } from "../lib/conversation"
+import { openExternalLink } from "../lib/desktop"
+import { sourceHue, webSearchSources, type WebSource } from "../lib/sources"
 import type { ConversationEntry } from "../lib/conversation"
 import { childSessionStub, isSubagentTool, subagentDescription, subagentSessionID } from "../lib/subagent"
 import { meaningfulThought, thinkingBody } from "../lib/thinking"
@@ -287,6 +289,12 @@ function ToolStep(props: {
     if (state.status === "error") return state.error ?? ""
     return ""
   }
+  // 搜索结果是正文里的 `## [title](url)`，单独列成可点击的来源，原始正文留在折叠的详情里。
+  const sources = createMemo(() => {
+    const part = tool()
+    if (part?.tool !== "websearch" || part.state.status !== "completed") return []
+    return webSearchSources(part.state.output)
+  })
   const subagent = () => {
     const part = tool()
     return part && isSubagentTool(part) ? part : undefined
@@ -363,9 +371,48 @@ function ToolStep(props: {
           <button type="button" class="subagent-open-link" onClick={openChild}>查看子代理会话</button>
         </Show>
         <Show when={parameters()}><div class="detail-label">参数</div><pre class="work-step-body">{parameters()}</pre></Show>
-        <Show when={output()}><div class="detail-label">{failed() ? "错误" : "输出"}</div><pre class="work-step-body">{output()}</pre></Show>
+        <Show
+          when={sources().length > 0}
+          fallback={
+            <Show when={output()}><div class="detail-label">{failed() ? "错误" : "输出"}</div><pre class="work-step-body">{output()}</pre></Show>
+          }
+        >
+          <div class="detail-label">来源 · {sources().length}</div>
+          <ul class="source-list" aria-label="搜索来源">
+            <For each={sources()}>{(source) => <SourceRow source={source} />}</For>
+          </ul>
+          <Show when={output()}>
+            <details class="source-raw">
+              <summary>原始结果</summary>
+              <pre class="work-step-body">{output()}</pre>
+            </details>
+          </Show>
+        </Show>
         <Show when={running() && !output()}><div class="detail-label">{toolActivity(tool()!)}，等待输出</div></Show>
       </div>
     </Show>
   </div>
+}
+
+function SourceRow(props: { source: WebSource }) {
+  const title = () => props.source.title ?? props.source.site
+  return (
+    <li>
+      <button
+        type="button"
+        class="source-row"
+        title={props.source.url}
+        aria-label={`在浏览器中打开 ${title()}`}
+        onClick={() => void openExternalLink(props.source.url)}
+      >
+        <span class="source-tile" style={{ "--source-hue": String(sourceHue(props.source.site)) }} aria-hidden="true">
+          {props.source.site.charAt(0)}
+        </span>
+        <span class="source-text">
+          <span class="source-title">{title()}</span>
+          <Show when={props.source.title}><span class="source-site">{props.source.site}</span></Show>
+        </span>
+      </button>
+    </li>
+  )
 }

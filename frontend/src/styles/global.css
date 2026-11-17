@@ -1619,6 +1619,84 @@ button.ctx-pill:hover {
   white-space: pre-wrap;
 }
 
+/* 搜索来源：字母块 + 标题 + 站点，点击交给系统浏览器。 */
+.source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.source-row:hover { background: var(--bg-hover); }
+.source-row:focus-visible { outline: 2px solid var(--focus-border); outline-offset: -2px; }
+
+.source-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, hsl(var(--source-hue) 45% 54%), hsl(var(--source-hue) 45% 38%));
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.source-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.source-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 17px;
+}
+
+.source-row:hover .source-title { color: var(--chat-link); }
+
+.source-site {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.source-raw { margin: 2px 0 8px; }
+.source-raw > summary { cursor: pointer; color: var(--text-faint); font-size: 11px; line-height: 16px; }
+.source-raw .work-step-body { margin-bottom: 0; }
+
 /* Thought text grows in the transcript; scrolling belongs to the timeline. */
 .thinking-body {
   margin: 2px 0 8px;

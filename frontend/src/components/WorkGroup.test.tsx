@@ -141,6 +141,32 @@ describe("streaming turn presentation", () => {
     expect(head.textContent).toContain("Read")
   })
 
+  it("lists a web search's results as clickable sources", () => {
+    const search = {
+      ...tool,
+      id: "w1",
+      callID: "w1",
+      tool: "websearch",
+      state: {
+        status: "completed",
+        input: { query: "coda" },
+        output: "## [Coda 文档](https://coda.example.com/docs)\n\n正文不属于来源\nhttps://www.other.example/path\n",
+      },
+    } as Part
+    const { container } = setup([search])
+    ;(container.querySelector(".work-group > .work-head") as HTMLButtonElement).click()
+    ;(container.querySelector(".work-step-head") as HTMLButtonElement).click()
+    const rows = [...container.querySelectorAll<HTMLButtonElement>(".source-row")]
+    expect(rows).toHaveLength(2)
+    expect([...container.querySelectorAll(".source-title")].map((node) => node.textContent)).toEqual(["Coda 文档", "other.example"])
+    expect([...container.querySelectorAll(".source-site")].map((node) => node.textContent)).toEqual(["coda.example.com"])
+    expect(container.querySelector(".source-raw")?.textContent).toContain("正文不属于来源")
+    const open = vi.spyOn(window, "open").mockImplementation(() => null)
+    rows[0].click()
+    expect(open).toHaveBeenCalledWith("https://coda.example.com/docs", "_blank", "noopener,noreferrer")
+    open.mockRestore()
+  })
+
   it("closes as a single Thinking row and expands Thought body only after a click", () => {
     const { container, setParts } = setup()
     expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
