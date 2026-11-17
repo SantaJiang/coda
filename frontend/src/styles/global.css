@@ -1677,7 +1677,7 @@ button.ctx-pill:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-muted);
+  color: var(--chat-text);
   font-size: 12.5px;
   line-height: 17px;
 }
@@ -3901,9 +3901,13 @@ span.capability-pill.added {
 }
 
 /* 正在生成的那一行末尾留一个点，免得 token 之间的停顿看起来像卡住了。
-   用伪元素而不是真实节点：syncChildren 每帧都会删掉多余子节点。 */
-.markdown.is-streaming > :last-child:not(.md-code-block)::after,
-.markdown.is-streaming > :last-child.md-code-block pre code::after {
+   用伪元素而不是真实节点：syncChildren 每帧都会删掉多余子节点。
+   列表和引用要落在最后一个文字块后面，否则 ::after 会跑到整块下方，看着像多出一个项目符号。 */
+.markdown.is-streaming > :last-child:not(.md-code-block):not(ul):not(ol):not(blockquote)::after,
+.markdown.is-streaming > ul:last-child > li:last-child::after,
+.markdown.is-streaming > ol:last-child > li:last-child::after,
+.markdown.is-streaming > blockquote:last-child > p:last-child::after,
+.markdown.is-streaming > .md-code-block:last-child pre code::after {
   content: "";
   display: inline-block;
   width: 6px;
@@ -3917,8 +3921,11 @@ span.capability-pill.added {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .markdown.is-streaming > :last-child:not(.md-code-block)::after,
-  .markdown.is-streaming > :last-child.md-code-block pre code::after {
+  .markdown.is-streaming > :last-child:not(.md-code-block):not(ul):not(ol):not(blockquote)::after,
+  .markdown.is-streaming > ul:last-child > li:last-child::after,
+  .markdown.is-streaming > ol:last-child > li:last-child::after,
+  .markdown.is-streaming > blockquote:last-child > p:last-child::after,
+  .markdown.is-streaming > .md-code-block:last-child pre code::after {
     animation: none;
     opacity: 0.35;
   }
