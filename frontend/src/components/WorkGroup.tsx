@@ -4,7 +4,7 @@ import { activityDiff, activityFailureCount, stepPresentation } from "../lib/act
 import { blockTitle, type BlockShape } from "../lib/step-grouping"
 import { toolActivity } from "../lib/conversation"
 import { openExternalLink } from "../lib/desktop"
-import { sourceHue, webSearchSources, type WebSource } from "../lib/sources"
+import { webSearchSources } from "../lib/sources"
 import type { ConversationEntry } from "../lib/conversation"
 import { childSessionStub, isSubagentTool, subagentDescription, subagentSessionID } from "../lib/subagent"
 import { meaningfulThought, thinkingBody } from "../lib/thinking"
@@ -12,6 +12,7 @@ import type { Part, ReasoningPart } from "../lib/types"
 import { useProjects } from "../store/app"
 import { MarkdownView } from "./MarkdownView"
 import { Icon } from "./Icon"
+import { SourceRow } from "./SourceRow"
 
 const TITLE_GAP = 200
 
@@ -379,7 +380,7 @@ function ToolStep(props: {
         >
           <div class="detail-label">来源 · {sources().length}</div>
           <ul class="source-list" aria-label="搜索来源">
-            <For each={sources()}>{(source) => <SourceRow source={source} />}</For>
+            <For each={sources()}>{(source) => <li><SourceRow source={source} onOpen={() => void openExternalLink(source.url)} /></li>}</For>
           </ul>
           <Show when={output()}>
             <details class="source-raw">
@@ -392,27 +393,4 @@ function ToolStep(props: {
       </div>
     </Show>
   </div>
-}
-
-function SourceRow(props: { source: WebSource }) {
-  const title = () => props.source.title ?? props.source.site
-  return (
-    <li>
-      <button
-        type="button"
-        class="source-row"
-        title={props.source.url}
-        aria-label={`在浏览器中打开 ${title()}`}
-        onClick={() => void openExternalLink(props.source.url)}
-      >
-        <span class="source-tile" style={{ "--source-hue": String(sourceHue(props.source.site)) }} aria-hidden="true">
-          {props.source.site.charAt(0)}
-        </span>
-        <span class="source-text">
-          <span class="source-title">{title()}</span>
-          <Show when={props.source.title}><span class="source-site">{props.source.site}</span></Show>
-        </span>
-      </button>
-    </li>
-  )
 }

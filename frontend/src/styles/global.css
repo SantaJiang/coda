@@ -1697,6 +1697,116 @@ button.ctx-pill:hover {
 .source-raw > summary { cursor: pointer; color: var(--text-faint); font-size: 11px; line-height: 16px; }
 .source-raw .work-step-body { margin-bottom: 0; }
 
+/* 回答末尾的来源入口：胶囊 + 向上展开的浮层。 */
+.sources-chip-wrap {
+  position: relative;
+  display: inline-block;
+  margin-top: 10px;
+}
+
+.sources-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 11px 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sources-chip:hover,
+.sources-chip[aria-expanded="true"] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sources-chip:focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 2px;
+}
+
+.sources-chip-stack {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sources-chip-stack .source-tile {
+  box-shadow: 0 0 0 2px var(--chat-bg);
+}
+
+.sources-chip-stack .source-tile + .source-tile {
+  margin-left: -4px;
+}
+
+.sources-chip-label {
+  font-weight: 600;
+}
+
+.sources-popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  width: 420px;
+  max-width: min(420px, calc(100vw - 64px));
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-float);
+}
+
+.sources-popover.down {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+
+.sources-popover-head {
+  padding: 6px 8px 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sources-step + .sources-step {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+.sources-step-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.sources-step-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sources-step-head b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sources-step-count {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
 /* Thought text grows in the transcript; scrolling belongs to the timeline. */
 .thinking-body {
   margin: 2px 0 8px;

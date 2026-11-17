@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { sourceHue, webSearchSources } from "./sources"
+import { sourceHue, turnSources, webSearchSources, webSource } from "./sources"
+import type { Part } from "./types"
 
 describe("web search sources", () => {
   it("parses the tool's heading results and keeps the order", () => {
@@ -72,5 +73,62 @@ describe("source hue", () => {
     expect(sourceHue("example.com")).toBeGreaterThanOrEqual(0)
     expect(sourceHue("example.com")).toBeLessThan(360)
     expect(sourceHue("example.com")).not.toBe(sourceHue("other.example"))
+  })
+})
+
+function toolPart(
+  id: string,
+  tool: string,
+  input: Record<string, unknown>,
+  output?: string,
+  status: "completed" | "error" | "running" = "completed",
+): Part {
+  const base = { id, sessionID: "s", messageID: "a", type: "tool" as const, tool, callID: id }
+  if (status === "error") return { ...base, state: { status, input, error: "failed" } }
+  if (status === "running") return { ...base, state: { status, input } }
+  return { ...base, state: { status, input, output } }
+}
+
+describe("turn sources", () => {
+  it("aggregates searches and fetches in order, deduping across steps", () => {
+    const result = turnSources([
+      toolPart("w1", "websearch", { query: "figma" }, "## [A](https://a.example/one)\n## [B](https://b.example/two)"),
+      toolPart("f1", "webfetch", { url: "https://d.example/four" }),
+      toolPart("w2", "websearch", { query: "console" }, "## [C](https://c.example/three)"),
+    ])
+    expect(result.steps.map((step) => step.type)).toEqual(["search", "fetch", "search"])
+    expect(result.sources.map((source) => source.url)).toEqual([
+      "https://a.example/one",
+      "https://b.example/two",
+      "https://d.example/four",
+      "https://c.example/three",
+    ])
+    expect(result.steps[0]).toMatchObject({ type: "search", query: "figma" })
+  })
+
+  it("skips unfinished tools and searches with no results", () => {
+    const result = turnSources([
+      toolPart("w1", "websearch", { query: "a" }, undefined, "error"),
+      toolPart("w2", "websearch", { query: "b" }, "No search results found."),
+      toolPart("w3", "websearch", { query: "c" }, "## [C](https://c.example)", "running"),
+    ])
+    expect(result.steps).toEqual([])
+    expect(result.sources).toEqual([])
+  })
+
+  it("keeps the first title when a page shows up in both a search and a fetch", () => {
+    const result = turnSources([
+      toolPart("w1", "websearch", { query: "q" }, "## [Titled](https://x.example/page)"),
+      toolPart("f1", "webfetch", { url: "https://www.x.example/page/" }),
+    ])
+    expect(result.steps).toHaveLength(1)
+    expect(result.sources).toHaveLength(1)
+    expect(result.sources[0].title).toBe("Titled")
+  })
+
+  it("ignores fetches that are not http(s)", () => {
+    expect(turnSources([toolPart("f1", "webfetch", { url: "file:///etc/passwd" })]).steps).toEqual([])
+    expect(webSource("javascript:alert(1)")).toBeUndefined()
+    expect(webSource("https://example.com/a")?.site).toBe("example.com")
   })
 })

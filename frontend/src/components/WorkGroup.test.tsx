@@ -167,6 +167,22 @@ describe("streaming turn presentation", () => {
     open.mockRestore()
   })
 
+  it("shows a sources chip only after a finished turn that searched the web", () => {
+    const search = {
+      ...tool,
+      id: "w1",
+      callID: "w1",
+      tool: "websearch",
+      state: { status: "completed", input: { query: "coda" }, output: "## [Coda](https://coda.example/docs)" },
+    } as Part
+    const finished = setup([search], true)
+    expect(finished.container.querySelector(".sources-chip-label")?.textContent).toBe("1 个来源")
+    ;(finished.container.querySelector(".sources-chip") as HTMLButtonElement).click()
+    expect(finished.container.querySelectorAll(".sources-popover .source-row")).toHaveLength(1)
+    const live = setup([search])
+    expect(live.container.querySelector(".sources-chip")).toBeNull()
+  })
+
   it("closes as a single Thinking row and expands Thought body only after a click", () => {
     const { container, setParts } = setup()
     expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)

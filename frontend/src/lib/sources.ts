@@ -1,3 +1,5 @@
+import type { Part } from "./types"
+
 /** 一条网页来源：搜索结果或抓取过的页面。 */
 export type WebSource = {
   /** 规范化后的 http(s) 地址。 */
@@ -8,6 +10,51 @@ export type WebSource = {
   site: string
   /** 完整 host。 */
   host: string
+}
+
+/** 一轮回答里的一次网页操作。 */
+export type SourceStep =
+  | { type: "search"; key: string; query: string; sources: WebSource[] }
+  | { type: "fetch"; key: string; source: WebSource }
+
+export type TurnSources = {
+  steps: SourceStep[]
+  /** 去重后的全部来源，按本轮首次出现的顺序。 */
+  sources: WebSource[]
+}
+
+/** 把一轮里已完成的 websearch / webfetch 聚合起来，跨步骤按页面去重。 */
+export function turnSources(parts: Part[]): TurnSources {
+  const seen = new Set<string>()
+  // 只在第一次出现时保留，后面的步骤里同一个页面直接略过，计数和列表才对得上。
+  const fresh = (sources: WebSource[]) => sources.filter((source) => {
+    const key = pageKey(source.url)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  const steps = parts.flatMap((part): SourceStep[] => {
+    if (part.type !== "tool" || part.state.status !== "completed") return []
+    const input = part.state.input ?? {}
+    if (part.tool === "websearch") {
+      const sources = fresh(webSearchSources(part.state.output))
+      if (!sources.length) return []
+      return [{ type: "search", key: part.id, query: String(input.query ?? ""), sources }]
+    }
+    if (part.tool !== "webfetch") return []
+    const source = webSource(String(input.url ?? ""))
+    const page = source ? fresh([source])[0] : undefined
+    return page ? [{ type: "fetch", key: part.id, source: page }] : []
+  })
+  return {
+    steps,
+    sources: steps.flatMap((step) => (step.type === "search" ? step.sources : [step.source])),
+  }
+}
+
+/** 单个 URL 转成来源；非 http(s) 或无法解析时返回 undefined。 */
+export function webSource(url: string): WebSource | undefined {
+  return sourceOf(url)?.source
 }
 
 /**
@@ -77,4 +124,11 @@ function parseHttpUrl(url: string) {
   } catch {
     return undefined
   }
+}
+
+// 同一个页面：协议、www.、尾斜杠和锚点都不算新来源。
+function pageKey(url: string) {
+  const parsed = parseHttpUrl(url)
+  if (!parsed) return url
+  return `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`
 }

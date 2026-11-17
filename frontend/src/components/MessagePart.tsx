@@ -14,11 +14,13 @@ import type {
   TextPart,
   UserMessage,
 } from "../lib/types"
+import { turnSources } from "../lib/sources"
 import { useModels, useRuntime } from "../store/app"
 import { MarkdownView } from "./MarkdownView"
 import { WorkGroup } from "./WorkGroup"
 import { StatusText, useStatusLine } from "./StatusText"
 import { ChangedFiles } from "./ChangedFiles"
+import { SourcesChip } from "./SourcesChip"
 import { Icon } from "./Icon"
 
 function partsPlainText(parts: Part[]) {
@@ -403,6 +405,7 @@ export function ChatTurnView(props: {
   }
   const parts = createMemo(() => props.turn.entries.flatMap((entry) => entry.kind === "part" ? [entry.part] : []))
   const files = createMemo(() => changedFiles(parts()))
+  const sources = createMemo(() => turnSources(parts()))
   const last = () => props.turn.assistants[props.turn.assistants.length - 1]
   const copyText = () => partsPlainText((props.turn.answer.length ? props.turn.answer : props.turn.entries).flatMap((entry) => entry.kind === "part" ? [entry.part] : []))
   const liveBlocks = createMemo(() => conversationBlocks(props.turn.entries, conversationDensity()))
@@ -494,6 +497,9 @@ export function ChatTurnView(props: {
           </Show>
           <Show when={props.turn.error}><div class="error-card">{props.turn.error}</div></Show>
           <Show when={!props.turn.active && files().length > 0}><ChangedFiles files={files()} /></Show>
+          <Show when={!props.turn.active && sources().sources.length > 0}>
+            <SourcesChip sources={sources()} />
+          </Show>
         </div>
           <Show when={!props.turn.active && last()}>{(message) => <MessageMeta
           relative
