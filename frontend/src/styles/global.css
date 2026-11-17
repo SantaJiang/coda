@@ -2244,6 +2244,26 @@ button.ctx-pill:hover {
   flex: 1;
 }
 
+.composer-hint {
+  flex: 0 1 auto;
+  max-width: 50%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 18px;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (max-width: 720px) {
+  .composer-hint {
+    display: none;
+  }
+}
+
 .plus-picker {
   position: relative;
 }

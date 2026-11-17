@@ -8,7 +8,7 @@ import type { ComposerAttachment } from "../lib/attachments"
 import { Composer } from "./Composer"
 
 const native = vi.hoisted(() => ({ active: false }))
-vi.mock("../lib/platform-detect", () => ({ isTauri: () => native.active }))
+vi.mock("../lib/platform-detect", () => ({ isTauri: () => native.active, isMacPlatform: () => false }))
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }))
 vi.mock("./ComposerPlus", () => ({ ComposerPlus: () => <div /> }))
 vi.mock("./ModelMenu", () => ({ ModelMenu: () => <div /> }))
@@ -18,7 +18,7 @@ vi.mock("./PermissionMenu", () => ({ PermissionMenu: () => <div /> }))
 const cleanups: (() => void)[] = []
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); native.active = false })
 
-function setup(importAttachments = vi.fn().mockResolvedValue(false), overrides: Partial<RuntimeApi> = {}, model: Record<string, unknown> = {}) {
+function setup(importAttachments = vi.fn().mockResolvedValue(false), overrides: Partial<RuntimeApi> = {}, model: Record<string, unknown> = {}, chromeOverrides: Partial<ChromeApi> = {}) {
   const [text, setText] = createSignal("before after")
   const [session, setSession] = createSignal<string | null>("s1")
   const runtime = { composer: text, setComposer: setText, attachments: () => [], attachmentsLoading: () => false, blocked: () => false, stopping: () => false, busy: () => false, importAttachments, ...overrides } as unknown as RuntimeApi
@@ -27,7 +27,7 @@ function setup(importAttachments = vi.fn().mockResolvedValue(false), overrides: 
   const dispose = render(() => <StoreProviders runtime={runtime}
     projects={{ selectedProject: () => ({ id: "p1", path: "/tmp/app" }), selectedSessionId: session } as ProjectApi}
     models={{ selectedModel: () => ({ name: "text model", ...model }) } as ModelApi}
-    chrome={{ overlayOpen: () => false, planMode: () => false } as ChromeApi}><Composer /></StoreProviders>, container)
+    chrome={{ overlayOpen: () => false, planMode: () => false, sendShortcut: () => "enter", ...chromeOverrides } as ChromeApi}><Composer /></StoreProviders>, container)
   cleanups.push(() => { dispose(); container.remove() })
   const area = container.querySelector("textarea")!
   const paste = (files: File[], text = "") => {
@@ -129,4 +129,58 @@ it("discards a delayed plain text fallback when the user switches sessions", asy
   resolve(false)
   await Promise.resolve()
   expect(text()).toBe("before after")
+})
+
+it("keeps focus in the textarea when the send button is pressed", () => {
+  const { container } = setup()
+  const button = container.querySelector<HTMLButtonElement>(".send-btn")!
+  const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 })
+  button.dispatchEvent(event)
+  expect(event.defaultPrevented).toBe(true)
+})
+
+it("shows the active send shortcut only while there is something to send", async () => {
+  const { container, setText } = setup()
+  expect(container.querySelector(".composer-hint")?.textContent).toBe("Enter 发送")
+  setText("")
+  await Promise.resolve()
+  expect(container.querySelector(".composer-hint")).toBeNull()
+})
+
+it("labels the configured send shortcut", () => {
+  const { container } = setup(undefined, {}, {}, { sendShortcut: () => "mod-enter" })
+  expect(container.querySelector(".composer-hint")?.textContent).toBe("Ctrl+Enter 发送")
+})
+
+it("says a draft sent while busy will queue", () => {
+  const { container } = setup(undefined, { busy: () => true })
+  expect(container.querySelector(".composer-hint")?.textContent).toBe("将加入队列")
+})
+
+it("holds the open height for a beat after the sent draft clears", async () => {
+  const { area, container, setText } = setup(undefined, { send: vi.fn() })
+  Object.defineProperty(area, "scrollHeight", { configurable: true, get: () => 120 })
+  Object.defineProperty(area, "offsetHeight", { configurable: true, get: () => parseFloat(area.style.height) || 44 })
+  area.value = "one\ntwo\nthree"
+  area.dispatchEvent(new Event("input", { bubbles: true }))
+  await Promise.resolve()
+  expect(area.style.height).toBe("120px")
+  container.querySelector<HTMLButtonElement>(".send-btn")!.click()
+  setText("")
+  await Promise.resolve()
+  expect(area.style.height).toBe("120px")
+  await new Promise<void>((resolve) => setTimeout(resolve, 80))
+  expect(area.style.height).toBe("")
+})
+
+it("leaves the height alone when the draft survives the send", async () => {
+  const { area, container } = setup(undefined, { send: vi.fn() })
+  Object.defineProperty(area, "scrollHeight", { configurable: true, get: () => 120 })
+  Object.defineProperty(area, "offsetHeight", { configurable: true, get: () => parseFloat(area.style.height) || 44 })
+  area.value = "one\ntwo\nthree"
+  area.dispatchEvent(new Event("input", { bubbles: true }))
+  await Promise.resolve()
+  container.querySelector<HTMLButtonElement>(".send-btn")!.click()
+  await new Promise<void>((resolve) => setTimeout(resolve, 80))
+  expect(area.style.height).toBe("120px")
 })

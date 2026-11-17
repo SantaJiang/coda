@@ -1,7 +1,7 @@
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { isTauri } from "../lib/platform-detect"
 import { attachmentFormatError, attachmentInputWarning } from "../lib/model-input"
-import { isNewlineHotkey, isSendHotkey } from "../lib/settings"
+import { isNewlineHotkey, isSendHotkey, modifierLabel } from "../lib/settings"
 import { useChrome, useModels, useProjects, useRuntime } from "../store/app"
 import { isLocalProject } from "../lib/persist"
 import { AttachmentStrip } from "./AttachmentStrip"
@@ -12,6 +12,11 @@ import { VariantMenu } from "./VariantMenu"
 import { Icon } from "./Icon"
 
 const COMPOSER_MAX_HEIGHT = 220
+const COMPOSER_MIN_HEIGHT = 44
+// Let the sent message paint before the cleared box settles down.
+const COLLAPSE_HOLD_MS = 40
+const COLLAPSE_MS = 160
+const COLLAPSE_EASE = "cubic-bezier(0.165, 0.84, 0.44, 1)"
 
 export function Composer() {
   const projects = useProjects()
@@ -21,6 +26,9 @@ export function Composer() {
   let area: HTMLTextAreaElement | undefined
   let composing = false
   let root!: HTMLDivElement
+  let heldHeight = 0
+  let holdTimer: number | undefined
+  let collapse: Animation | undefined
   const [dragging, setDragging] = createSignal(false)
   // 输入能力不足只提示不拦截：附件照发，后端会把读不了的媒体替换成模型可转述的说明。
   const attachmentError = () => attachmentFormatError(runtime.attachments(), models.selectedModel()?.adapter)
@@ -47,15 +55,90 @@ export function Composer() {
     ((runtime.busy() && !hasDraft()) ||
       (!runtime.attachmentsLoading() && !attachmentError() && hasDraft()))
 
+  // The send key is configurable; surface the active one beside the button.
+  // A busy draft queues, which is the other thing worth saying there.
+  const hint = () => {
+    if (!hasDraft() || runtime.blocked() || runtime.stopping() || runtime.attachmentsLoading()) return ""
+    const project = projects.selectedProject()
+    if (!project || project.missing || attachmentError()) return ""
+    if (runtime.busy()) return "将加入队列"
+    return chrome.sendShortcut() === "mod-enter" ? `${modifierLabel()}+Enter 发送` : "Enter 发送"
+  }
+
+  const reducedMotion = () =>
+    typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+
+  // The empty height is CSS-owned; read it so the collapse lands exactly there.
+  const emptyHeight = () =>
+    area ? parseFloat(getComputedStyle(area).minHeight) || COMPOSER_MIN_HEIGHT : COMPOSER_MIN_HEIGHT
+
+  const stopCollapse = () => {
+    window.clearTimeout(holdTimer)
+    holdTimer = undefined
+    collapse?.cancel()
+    collapse = undefined
+    heldHeight = 0
+  }
+
   const resize = () => {
     if (!area) return
     if (!area.value) {
-      area.style.height = ""
+      // Keep the filled height until the sent message has painted; holdComposerHeight settles it.
+      area.style.height = heldHeight ? `${heldHeight}px` : ""
       return
     }
+    stopCollapse()
     area.style.height = "auto"
     area.style.height = `${Math.min(area.scrollHeight, COMPOSER_MAX_HEIGHT)}px`
   }
+
+  // Sending clears the draft, which used to snap a tall box back to one line
+  // while the new message appeared above it. Hold the height through the paint,
+  // then settle it down so both moves read as one.
+  const holdComposerHeight = () => {
+    if (!area) return
+    stopCollapse()
+    const from = area.offsetHeight
+    const target = emptyHeight()
+    if (from <= target + 1) return
+    heldHeight = from
+    window.clearTimeout(holdTimer)
+    holdTimer = window.setTimeout(() => {
+      holdTimer = undefined
+      heldHeight = 0
+      if (!area) return
+      // A send that failed leaves the draft in place.
+      if (area.value) {
+        resize()
+        return
+      }
+      if (reducedMotion() || typeof area.animate !== "function") {
+        area.style.height = ""
+        return
+      }
+      const animation = area.animate(
+        [{ height: `${from}px` }, { height: `${target}px` }],
+        { duration: COLLAPSE_MS, easing: COLLAPSE_EASE, fill: "forwards" },
+      )
+      collapse = animation
+      animation.onfinish = () => {
+        collapse = undefined
+        // Drop the fill before clearing the inline height so the last frame is
+        // not the tall box again.
+        animation.cancel()
+        if (!area) return
+        if (area.value) resize()
+        else area.style.height = ""
+      }
+    }, COLLAPSE_HOLD_MS)
+  }
+
+  const submit = () => {
+    if (canSend()) holdComposerHeight()
+    void runtime.send()
+  }
+
+  onCleanup(stopCollapse)
 
   // textarea 不用 value 绑定做受控组件：Solid 每次输入都回写 node.value 会
   // 重置光标并打断 IME 组合，导致 "" 自动配对、智能引号变成 ”” 之类的乱码。
@@ -171,7 +254,7 @@ export function Composer() {
     }
     if (isSendHotkey(event, chrome.sendShortcut())) {
       event.preventDefault()
-      void runtime.send()
+      submit()
     }
   }
 
@@ -217,12 +300,19 @@ export function Composer() {
           <VariantMenu />
           <PermissionMenu />
         </div>
+        <Show when={hint()}>
+          <span class="composer-hint" aria-hidden="true">{hint()}</span>
+        </Show>
         <button
           type="button"
           class="send-btn"
           classList={{ stop: runtime.busy() && !hasDraft() }}
           disabled={!canSend()}
-          onClick={() => (runtime.busy() && !hasDraft() ? void runtime.abort() : void runtime.send())}
+          // Keeps focus in the textarea: WebView2 focuses the button on mousedown.
+          onMouseDown={(event) => {
+            if (event.button === 0) event.preventDefault()
+          }}
+          onClick={() => (runtime.busy() && !hasDraft() ? void runtime.abort() : submit())}
         >
           {runtime.busy() && !hasDraft() ? "停止" : "发送"}
         </button>
