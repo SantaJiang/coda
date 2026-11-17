@@ -317,7 +317,7 @@ describe("stream event ordering", () => {
     expect(state.status.s1).toEqual({ type: "busy" })
     expect(state.statusRevision.s1).toBe(1)
     expect(turn()).toMatchObject({ active: true, phase: "running" })
-    expect(turn().label).not.toBe("回复已中断")
+    expect(turn().label.text).not.toBe("回复已中断")
     for (const event of translateWireEvent({ id: "evt_end", type: "session.execution.succeeded", data: { sessionID: "s1" } })) applyClientEvent(state, event)
     expect(state.status.s1).toEqual({ type: "idle" })
     expect(turn().active).toBe(false)

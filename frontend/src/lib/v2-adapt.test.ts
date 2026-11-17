@@ -91,7 +91,7 @@ describe("v2 feature adapters", () => {
     expect(turns[0]?.entries.some((entry) => entry.kind === "part" && entry.part.type === "text" && entry.part.text.includes("Instructions from"))).toBe(false)
     expect(turns[0]?.answer.map((entry) => entry.kind === "part" && entry.part.type === "text" ? entry.part.text : "")).toEqual(["原因在版本号"])
     expect(turns[0]?.phase).toBe("done")
-    expect(turns[0]?.label).not.toBe("回复已中断")
+    expect(turns[0]?.label.text).not.toBe("回复已中断")
   })
 
   it("keeps user files on the transcript and maps old permission names", () => {

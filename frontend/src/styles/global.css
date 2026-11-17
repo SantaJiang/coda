@@ -1346,10 +1346,12 @@ button.ctx-pill:hover {
   from {
     transform: translateY(0);
     opacity: 1;
+    filter: blur(0);
   }
   to {
     transform: translateY(-55%);
     opacity: 0;
+    filter: blur(2px);
   }
 }
 
@@ -1357,10 +1359,12 @@ button.ctx-pill:hover {
   from {
     transform: translateY(55%);
     opacity: 0;
+    filter: blur(2px);
   }
   to {
     transform: translateY(0);
     opacity: 1;
+    filter: blur(0);
   }
 }
 

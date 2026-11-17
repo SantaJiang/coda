@@ -69,20 +69,35 @@ describe("conversation event sequences", () => {
   it("keeps parallel operations visible and counts recovered tool failures", () => {
     const messages = [user(), assistant()]
     const running = project(messages, { a1: [tool("t1", "running"), tool("t2", "pending")] }, { type: "busy" })[0]
-    expect(running.label).toContain("2 项运行中")
+    expect(running.label.text).toContain("2 项运行中")
     const finished = project([user(), done()], { a1: [tool("t1", "error"), tool("t2"), text("p1", "已恢复")] })[0]
     expect(finished.phase).toBe("done")
     expect(finished.failures).toBe(1)
     expect(finished.summary).toContain("1 项失败")
   })
 
+  it("keeps a shell countdown on one identity while its text ticks", () => {
+    const start = 1_700_000_000_000
+    const shell = {
+      id: "sh1", type: "tool", tool: "bash", callID: "sh1", messageID: "a1", sessionID: "s1",
+      state: { status: "running", input: { command: "pnpm test" }, time: { start }, metadata: { nextCheckAt: start + 60_000 } },
+    } as Part
+    const messages = [user(), assistant()]
+    const first = project(messages, { a1: [shell] }, { type: "busy" }, { now: start + 11_000 })[0]
+    const later = project(messages, { a1: [shell] }, { type: "busy" }, { now: start + 12_000 })[0]
+    expect(first.label).toEqual({ key: "shell-wait", text: "Waiting up to 0m 49s for shell", announce: "Waiting for shell", clock: true })
+    expect(later.label.key).toBe(first.label.key)
+    expect(later.label.text).not.toBe(first.label.text)
+    expect(later.label.announce).toBe(first.label.announce)
+  })
+
   it("prioritizes blockers and stopping over normal activity and retry", () => {
     const messages = [user(), assistant()]
     const status: SessionStatus = { type: "retry", attempt: 2, next: 5000 }
-    expect(project(messages, {}, status, { permissionCount: 1 })[0].label).toBe("Waiting for permission")
-    expect(project(messages, {}, status, { questionCount: 1 })[0].label).toBe("Asking questions")
-    expect(project(messages, {}, status, { stopping: true })[0].label).toBe("Stopping")
-    expect(project(messages, {}, status, { now: 3000 })[0].label).toBe("Retrying in 2s · attempt 2")
+    expect(project(messages, {}, status, { permissionCount: 1 })[0].label.text).toBe("Waiting for permission")
+    expect(project(messages, {}, status, { questionCount: 1 })[0].label.text).toBe("Asking questions")
+    expect(project(messages, {}, status, { stopping: true })[0].label.text).toBe("Stopping")
+    expect(project(messages, {}, status, { now: 3000 })[0].label.text).toBe("Retrying in 2s · attempt 2")
   })
 
   it("preserves output on failure, stop and incomplete idle history", () => {
@@ -122,7 +137,7 @@ describe("conversation event sequences", () => {
       { type: "idle" },
     )[0]
     expect(turn.phase).toBe("done")
-    expect(turn.label).not.toBe("回复已中断")
+    expect(turn.label.text).not.toBe("回复已中断")
     expect(turn.entries.length).toBeGreaterThan(0)
   })
 
@@ -136,7 +151,7 @@ describe("conversation event sequences", () => {
     expect(turn.phase).toBe("stopped")
     expect(turn.error).toBeFalsy()
     expect(turn.entries).toHaveLength(1)
-    expect(turn.label).toBe("已停止")
+    expect(turn.label.text).toBe("已停止")
   })
 
   it("treats v2 abort-shaped interruptions as a stop, not a cryptic failure", () => {

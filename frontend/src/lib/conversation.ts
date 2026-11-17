@@ -1,5 +1,5 @@
 import { basename } from "./path"
-import { activityFailureCount, activityStatus, formatDuration, workDurationMs } from "./activity"
+import { activityFailureCount, activityStatus, formatDuration, liveShellWaitLabel, workDurationMs } from "./activity"
 import type { ConversationDensity } from "./density"
 import { groupEntries } from "./step-grouping"
 import { formatSessionErrorMessage, isAbortError } from "./session-status"
@@ -10,6 +10,23 @@ export type { ConversationBlock } from "./step-grouping"
 export type TurnPhase = "sending" | "waiting" | "running" | "permission" | "question" | "retry" | "stopping" | "settling" | "done" | "failed" | "stopped" | "interrupted"
 export type CompactionEntry = { kind: "compaction"; key: string; status: "running" | "done" | "failed" | "interrupted"; summary: string; error?: string }
 export type ConversationEntry = { kind: "part"; key: string; part: Part } | CompactionEntry
+
+/**
+ * One status line. `key` is the identity that drives the row animation: clock-like labels
+ * (shell wait, retry countdown) keep the same key while their text ticks, so the row updates
+ * in place instead of flipping once per second.
+ */
+export type TurnLabel = {
+  key: string
+  text: string
+  /** Read by assistive tech. Must stay stable while `text` counts down. */
+  announce: string
+  /** Clock-like labels tick in place: no shimmer, tabular numerals. */
+  clock?: boolean
+}
+
+const plainLabel = (text: string): TurnLabel => ({ key: text, text, announce: text })
+const waitingLabel = (text: string): TurnLabel => ({ key: "shell-wait", text, announce: "Waiting for shell", clock: true })
 
 /** Group steps the way the session stream shows them. Default density is Compact. */
 export function conversationBlocks(entries: ConversationEntry[], density: ConversationDensity = "compact-all-grouped") {
@@ -24,7 +41,7 @@ export type ConversationTurn = {
   answer: ConversationEntry[]
   phase: TurnPhase
   active: boolean
-  label: string
+  label: TurnLabel
   error?: string
   summary: string
   durationMs: number
@@ -94,7 +111,7 @@ export function toolActivity(part: ToolPart) {
   return `执行 ${part.tool}`
 }
 
-function statusLabel(phase: TurnPhase, entries: ConversationEntry[], ctx: ConversationContext) {
+function statusLabel(phase: TurnPhase, entries: ConversationEntry[], ctx: ConversationContext): TurnLabel {
   const labels: Partial<Record<TurnPhase, string>> = {
     sending: "Planning next moves", waiting: "Planning next moves", permission: "Waiting for permission", question: "Asking questions",
     stopping: "Stopping", settling: "Syncing response", done: "已完成", failed: "回复失败", stopped: "已停止", interrupted: "回复已中断",
@@ -102,21 +119,32 @@ function statusLabel(phase: TurnPhase, entries: ConversationEntry[], ctx: Conver
   if (phase === "retry") {
     const retry = ctx.status?.type === "retry" ? ctx.status : undefined
     const seconds = retry?.next ? Math.max(0, Math.ceil((retry.next - (ctx.now ?? Date.now())) / 1000)) : 0
-    return `Retrying${seconds ? ` in ${seconds}s` : ""}${retry?.attempt ? ` · attempt ${retry.attempt}` : ""}`
+    const attempt = retry?.attempt ? ` · attempt ${retry.attempt}` : ""
+    return {
+      // A new attempt is a real state change and should flip; the countdown itself must not.
+      key: `retry${attempt}`,
+      text: `Retrying${seconds ? ` in ${seconds}s` : ""}${attempt}`,
+      announce: `Retrying${attempt}`,
+      clock: true,
+    }
   }
   const parts = entries.flatMap((entry) => entry.kind === "part" ? [entry.part] : [])
   const running = parts.filter(runningTool)
+  // activityStatus explains the last running tool; only that one can be a shell countdown.
+  const current = running[running.length - 1]
+  const waiting = Boolean(current && liveShellWaitLabel(current, ctx.now))
+  const activityLabel = (text: string) => waiting ? waitingLabel(text) : plainLabel(text)
   // Prefer the live shell/tool explanation over the generic waiting placeholder.
   if (running.length && (phase === "running" || phase === "waiting" || phase === "sending" || phase === "settling")) {
-    return `${activityStatus(running, ctx.now)}${running.length > 1 ? ` · ${running.length} 项运行中` : ""}`
+    return activityLabel(`${activityStatus(running, ctx.now)}${running.length > 1 ? ` · ${running.length} 项运行中` : ""}`)
   }
-  if (labels[phase]) return labels[phase]!
-  if (running.length) return `${activityStatus(running, ctx.now)}${running.length > 1 ? ` · ${running.length} 项运行中` : ""}`
+  if (labels[phase]) return plainLabel(labels[phase]!)
+  if (running.length) return activityLabel(`${activityStatus(running, ctx.now)}${running.length > 1 ? ` · ${running.length} 项运行中` : ""}`)
   const last = entries[entries.length - 1]
-  if (last?.kind === "compaction" && last.status === "running") return "Compacting context"
-  if (last?.kind === "part" && last.part.type === "text") return "Writing response"
+  if (last?.kind === "compaction" && last.status === "running") return plainLabel("Compacting context")
+  if (last?.kind === "part" && last.part.type === "text") return plainLabel("Writing response")
   const activity = activityStatus(parts, ctx.now)
-  return activity === "Thought" ? "Planning next moves" : activity
+  return activityLabel(activity === "Thought" ? "Planning next moves" : activity)
 }
 
 function successfulEnd(message?: AssistantMessage) {
