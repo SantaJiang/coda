@@ -81,6 +81,11 @@ backend_pkg_dir() {
     echo "$root/packages/coda"
     return 0
   fi
+  # v2.2.5 起的布局：CLI 在 packages/cli，serve 子命令在 src/commands/handlers/serve.ts
+  if [[ -f "$root/packages/cli/src/index.ts" && -f "$root/packages/cli/src/commands/handlers/serve.ts" ]]; then
+    echo "$root/packages/cli"
+    return 0
+  fi
   local pkg
   for pkg in "$root/packages/"*; do
     if [[ -f "$pkg/src/cli/cmd/serve.ts" && -f "$pkg/src/index.ts" ]]; then
@@ -215,7 +220,10 @@ echo $! >"$BACKEND_PID_FILE"
 echo "==> 等待后端就绪"
 ready=0
 for _ in $(seq 1 60); do
-  if curl -sf "http://127.0.0.1:$PORT/global/health" >/dev/null 2>&1; then
+  # v2 后端没有 /global/health（那是老布局的接口），所以按"端口答复了 HTTP"判断：
+  # 401/404 都说明服务已经起来了，只有连不上（000）才继续等。
+  status="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$PORT/api/info" 2>/dev/null || true)"
+  if [[ -n "$status" && "$status" != "000" ]]; then
     ready=1
     break
   fi
