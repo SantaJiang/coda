@@ -1,6 +1,6 @@
 {
-  "base": "9bbb8ce18c80f099e0e448775f59d965ead40a21",
-  "revision": "b58b7f9643237c8881086bb9199b557a08fbfa4c",
+  "base": "a6b15d33daf6ab7d35569f6d711fdb630b9f04e7",
+  "revision": "b1493bde768e0921ab2183b7e07599466243c6d3",
   "patches": [
     "coda-home.patch",
     "coda-directory.patch",

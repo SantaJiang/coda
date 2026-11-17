@@ -32,17 +32,15 @@ index a9324e4987..4935aea2e8 100644
      data: path.join(data!, app),
      cache: path.join(cache!, app),
 diff --git a/packages/util/src/global.ts b/packages/util/src/global.ts
-index 5fe51f8281..73ff96d279 100644
+index 5fe51f8281..5b3e164b36 100644
 --- a/packages/util/src/global.ts
 +++ b/packages/util/src/global.ts
-@@ -76,7 +76,9 @@ const acquire = (input: Partial<Interface>) =>
+@@ -76,7 +76,7 @@ const acquire = (input: Partial<Interface>) =>
  
  const layer = Layer.effect(
    Service,
 -  Effect.suspend(() => acquire({ config: process.env.OPENCODE_CONFIG_DIR ?? Path.config })),
-+  Effect.suspend(() =>
-+      acquire({ config: process.env.CODA_CONFIG_DIR ?? process.env.OPENCODE_CONFIG_DIR ?? Path.config }),
-+    ),
++  Effect.suspend(() => acquire({ config: process.env.CODA_CONFIG_DIR ?? process.env.OPENCODE_CONFIG_DIR ?? Path.config })),
  )
  
  export const node = makeGlobalNode({ service: Service, layer: layer, deps: [] })

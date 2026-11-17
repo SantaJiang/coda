@@ -1,5 +1,5 @@
 diff --git a/packages/core/src/config.ts b/packages/core/src/config.ts
-index 42be62ed7b..d2f9fdc145 100644
+index 48d6e054e9..b4dda32573 100644
 --- a/packages/core/src/config.ts
 +++ b/packages/core/src/config.ts
 @@ -25,6 +25,48 @@ import { WellKnown } from "./wellknown.js"
@@ -39,11 +39,11 @@ index 42be62ed7b..d2f9fdc145 100644
 +  if (patch.mcp || patch.mcpRemove?.length) {
 +    const mcp = root().mcp
 +    const existing = isRecord(mcp) ? { ...mcp } : {}
-+    const nested = isRecord(existing.servers)
-+    const target = nested ? existing.servers : existing
++    const servers = isRecord(existing.servers) ? existing.servers : undefined
++    const target: Record<string, unknown> = servers ?? existing
 +    const merged = patch.mcp ? mergeRecords(target, patch.mcp) : { ...target }
 +    for (const name of patch.mcpRemove ?? []) delete merged[name]
-+    write(["mcp"], nested ? { ...existing, servers: merged } : merged)
++    write(["mcp"], servers ? { ...existing, servers: merged } : merged)
 +  }
 +  return current
 +}
@@ -51,7 +51,7 @@ index 42be62ed7b..d2f9fdc145 100644
  export function latest<K extends keyof Info>(entries: readonly Entry[], key: K): Info[K] | undefined {
    return entries.findLast((entry): entry is Document => entry.type === "document" && entry.info[key] !== undefined)
      ?.info[key]
-@@ -470,13 +512,7 @@ export const layer = (options?: Options) =>
+@@ -474,13 +516,7 @@ export const layer = (options?: Options) =>
              (yield* Effect.filter(candidates, fs.isFile)).at(-1) ?? path.join(directory, "opencode.jsonc")
            const text = (yield* fs.readFileStringSafe(filepath)) ?? "{}\n"
            const updated = yield* Effect.try({

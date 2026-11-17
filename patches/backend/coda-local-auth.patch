@@ -1,5 +1,5 @@
 diff --git a/packages/cli/src/server-process.ts b/packages/cli/src/server-process.ts
-index 2f64e3ec7b..70552d3c73 100644
+index 2f64e3ec7b..0c8cb0dfdc 100644
 --- a/packages/cli/src/server-process.ts
 +++ b/packages/cli/src/server-process.ts
 @@ -88,13 +88,17 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
@@ -22,7 +22,17 @@ index 2f64e3ec7b..70552d3c73 100644
        const instanceID = randomUUID()
        const transform = yield* WebUi.handler()
        const remote = { urls: [] as ReadonlyArray<string> }
-@@ -206,7 +210,7 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
+@@ -148,6 +152,9 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
+           : {
+               onListen: (address, shutdown) =>
+                 Effect.gen(function* () {
++                  // Service mode always generates a password, so the desktop sidecar's unauthenticated
++                  // default can never reach the service registry.
++                  if (!password) return yield* Effect.fail(new Error("Missing server password"))
+                   if (!config.password) yield* ServiceConfig.password(password)
+                   return yield* ServiceRegistration.register({
+                     address,
+@@ -206,7 +213,7 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
        }
        const url = HttpServer.formatAddress(server.address)
        console.log(options.mode === "stdio" ? JSON.stringify({ url }) : `server listening on ${url}`)
@@ -32,10 +42,10 @@ index 2f64e3ec7b..70552d3c73 100644
          ? server.shutdown
          : options.mode === "stdio"
 diff --git a/packages/server/src/process.ts b/packages/server/src/process.ts
-index 9058d49722..1424b56e8b 100644
+index bf2b7bb33e..7e1259ec69 100644
 --- a/packages/server/src/process.ts
 +++ b/packages/server/src/process.ts
-@@ -52,8 +52,7 @@ export const start = Effect.fn("ServerProcess.start")(function* <E, R>(
+@@ -53,8 +53,7 @@ export const start = Effect.fn("ServerProcess.start")(function* <E, R>(
    transform?: Transform,
    remoteURLs?: () => ReadonlyArray<string>,
  ) {
@@ -45,7 +55,7 @@ index 9058d49722..1424b56e8b 100644
    const hostname = options.hostname ?? "127.0.0.1"
    const port = Option.fromNullishOr(options.port)
    const shutdown = yield* Latch.make()
-@@ -175,14 +174,18 @@ function addressInUse(error: unknown) {
+@@ -180,14 +179,18 @@ function addressInUse(error: unknown) {
  }
  
  function dispatch(
@@ -66,7 +76,7 @@ index 9058d49722..1424b56e8b 100644
    return Effect.gen(function* () {
      const request = yield* HttpServerRequest.HttpServerRequest
      const url = new URL(request.url, "http://localhost")
-@@ -190,10 +193,11 @@ function dispatch(
+@@ -195,10 +198,11 @@ function dispatch(
      const app = yield* Ref.get(application)
      const ready = state.type === "ready" && Option.isSome(app)
      if (request.method === "GET" && url.pathname === "/api/info" && !ready) {

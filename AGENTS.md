@@ -59,7 +59,7 @@ git -C backend apply ../patches/backend/<name>.patch
 
 如果上游改动了相关代码导致 apply 失败，要**手工把同等语义合并进新代码**，然后重新生成补丁文件（`git -C backend diff > patches/backend/<name>.patch`），保持补丁与子模块实际改动一致。
 
-v1 时代的补丁系列随协议切换停用。当前补丁都相对 `v2.2.5`：
+v1 时代的补丁系列随协议切换停用。当前补丁都相对 `v2.3.0`：
 
 | 补丁 | 位置 | 作用 |
 |---|---|---|
@@ -87,7 +87,7 @@ bash ./scripts/install-hooks.sh
 bash ./scripts/sync-backend-mirror.sh
 ```
 
-本地同步上游仍用 `anomalyco/opencode`（可加 remote 名 `upstream`）。桌面端 sidecar 从 **2.0.0** 起跟 **`v2` 标签**（当前 `v2.2.5`），客户端走 `/api/*`。不要再同步 `upstream/v1`。流程：同步 → 打补丁 / 关键字替换 → 更新父仓库 gitlink → 推父仓库（hook 会推镜像）。未装 hook 时，推 `main` 前务必先跑一遍 `sync-backend-mirror.sh`，否则 Pack 会在 submodule 步骤以 exit 128 失败。
+本地同步上游仍用 `anomalyco/opencode`（可加 remote 名 `upstream`）。桌面端 sidecar 从 **2.0.0** 起跟 **`v2` 标签**（当前 `v2.3.0`），客户端走 `/api/*`。不要再同步 `upstream/v1`。流程：同步 → 打补丁 / 关键字替换 → 更新父仓库 gitlink → 推父仓库（hook 会推镜像）。未装 hook 时，推 `main` 前务必先跑一遍 `sync-backend-mirror.sh`，否则 Pack 会在 submodule 步骤以 exit 128 失败。
 
 ## 5. 版本号
 
