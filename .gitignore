@@ -3,5 +3,6 @@ dist
 frontend/src-tauri/target
 config/local.env
 .coda
+.workbuddy
 .DS_Store
 *.log

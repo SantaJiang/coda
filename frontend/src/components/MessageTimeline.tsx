@@ -1,7 +1,12 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js"
 import { useProjects, useRuntime } from "../store/app"
 import { conversationTurns } from "../lib/conversation"
+import { minimapMarks } from "../lib/timeline-minimap"
 import { ChatTurnView } from "./MessagePart"
+import { TurnMinimap } from "./TurnMinimap"
+
+/** Rail width plus clearance. The minimap only shows when this much gutter is left. */
+const MINIMAP_GUTTER = 52
 
 export function MessageTimeline() {
   const projects = useProjects()
@@ -18,6 +23,8 @@ function SessionTimeline(props: { sessionID: string }) {
   const [awayFromBottom, setAwayFromBottom] = createSignal(false)
   const showLatest = () => !following() && awayFromBottom()
   const [clock, setClock] = createSignal(Date.now())
+  const [narrow, setNarrow] = createSignal(false)
+  const [activeTurnID, setActiveTurnID] = createSignal<string>()
   let frame: number | undefined
   let disposed = false
   let userScroll = false
@@ -32,6 +39,19 @@ function SessionTimeline(props: { sessionID: string }) {
     sessionError: runtime.sessionError(), now: clock(),
   }))
   const byID = createMemo(() => new Map(turns().map((turn) => [turn.id, turn])))
+  // The minimap indexes turns, not headings. Prompts come from the user parts
+  // so hovering the rail reads like the timeline it points into.
+  const marks = createMemo(() => {
+    const parts = runtime.partsByMessage()
+    return minimapMarks(turns(), (turn) => {
+      if (!turn.user) return ""
+      return (parts[turn.user.id] ?? [])
+        .map((part) => (part.type === "text" ? part.text : ""))
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim()
+    })
+  })
   const selectedText = () => {
     const selection = window.getSelection()
     return Boolean(scroller && selection && !selection.isCollapsed && selection.rangeCount && selection.getRangeAt(0).intersectsNode(scroller))
@@ -65,6 +85,10 @@ function SessionTimeline(props: { sessionID: string }) {
       if (element) scroller.scrollTop += element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.offset
     }
     measureBottom()
+    // The rail is an overlay in the reading gutter. Measuring the difference
+    // between the scroller and the centered column keeps it off the text at
+    // every window width instead of relying on a media query.
+    setNarrow((scroller.clientWidth - inner.clientWidth) / 2 < MINIMAP_GUTTER)
     save()
     captureAnchor()
   }
@@ -90,6 +114,23 @@ function SessionTimeline(props: { sessionID: string }) {
     setFollowing(true)
     save()
     scheduleLayout()
+  }
+  // Jump must go through the same bookkeeping as a user scroll. Writing
+  // scrollTop without the userScroll flag would leave `following` true and the
+  // next layout pass would snap the reader back to the bottom. The anchor is
+  // recaptured here so a frame already scheduled by a streaming delta cannot
+  // restore the pre-jump position.
+  const jumpToTurn = (turnID: string) => {
+    const target = [...scroller.querySelectorAll<HTMLElement>("[data-turn-id]")].find((element) => element.dataset.turnId === turnID)
+    if (!target) return
+    pause()
+    userScroll = true
+    scroller.scrollTop += target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 8
+    setFollowing(nearBottom() && !selectedText())
+    measureBottom()
+    save()
+    captureAnchor()
+    setActiveTurnID(turnID)
   }
   onMount(() => {
     applyLayout()
@@ -119,7 +160,33 @@ function SessionTimeline(props: { sessionID: string }) {
     const timer = window.setInterval(() => setClock(Date.now()), 1000)
     onCleanup(() => window.clearInterval(timer))
   })
-  onCleanup(() => { save(); disposed = true; if (frame !== undefined) cancelAnimationFrame(frame) })
+  // Track the turn at the top of the reading area. Keyed on the id list so a
+  // streaming delta does not rebuild the observer on every token.
+  let turnObserver: IntersectionObserver | undefined
+  createEffect(on(() => turns().map((turn) => turn.id).join("\n"), () => {
+    turnObserver?.disconnect()
+    turnObserver = undefined
+    if (!scroller || typeof IntersectionObserver === "undefined") return
+    const visible = new Set<string>()
+    const tops = new Map<string, number>()
+    turnObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset.turnId
+        if (!id) continue
+        if (entry.isIntersecting) { visible.add(id); tops.set(id, entry.boundingClientRect.top) }
+        else { visible.delete(id); tops.delete(id) }
+      }
+      let best: string | undefined
+      let bestTop = Infinity
+      for (const id of visible) {
+        const top = tops.get(id) ?? Infinity
+        if (top < bestTop) { bestTop = top; best = id }
+      }
+      setActiveTurnID(best)
+    }, { root: scroller, rootMargin: "0px 0px -62% 0px" })
+    for (const element of scroller.querySelectorAll<HTMLElement>("[data-turn-id]")) turnObserver.observe(element)
+  }))
+  onCleanup(() => { turnObserver?.disconnect(); save(); disposed = true; if (frame !== undefined) cancelAnimationFrame(frame) })
 
   return <div class="timeline-region">
     <div class="timeline" ref={scroller} aria-busy={turns().some((turn) => turn.active)}
@@ -157,6 +224,7 @@ function SessionTimeline(props: { sessionID: string }) {
         </Show>
       </div>
     </div>
+    <TurnMinimap marks={marks()} activeID={activeTurnID()} hidden={narrow() || marks().length < 3} onJump={jumpToTurn} />
     <button type="button" class="jump-latest" classList={{ "is-visible": showLatest() }}
       disabled={!showLatest()} aria-hidden={!showLatest()} aria-label="下拉到最新" onClick={latest}>下拉到最新</button>
   </div>

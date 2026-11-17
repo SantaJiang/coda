@@ -4159,6 +4159,83 @@ span.capability-pill.added {
 .attachment-notice.warning { color: var(--warning, #c79762); }
 .attachment-preview { width: 112px; height: 64px; object-fit: contain; border-radius: 5px; margin-bottom: 5px; }
 .timeline-region > .timeline { width: 100%; overflow-anchor: none; }
+/* Turn minimap: an overlay rail in the reading gutter, never a flex sibling.
+   Length encodes turn size; proximity expands neighbours; the current turn
+   stays lit so the rail also answers "where am I". */
+.turn-minimap {
+  position: absolute;
+  top: 6px;
+  bottom: 34px;
+  left: 0;
+  right: 0;
+  width: min(840px, 100%);
+  margin: 0 auto;
+  z-index: 3;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+.turn-minimap[data-hidden="true"] { opacity: 0; pointer-events: none; }
+/* The rail re-enables pointer events, so hiding has to switch it back off. */
+.turn-minimap[data-hidden="true"] .turn-minimap-rail { pointer-events: none; }
+/* Anchored to the reading column, not the region edge, so the rail keeps the
+   same relationship to the text at every window width. */
+.turn-minimap-rail { position: absolute; top: 0; bottom: 0; left: -50px; width: 50px; pointer-events: auto; }
+.turn-mark {
+  position: absolute;
+  left: 5px;
+  width: 45px;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  display: flex;
+  align-items: center;
+  overflow: visible;
+  cursor: pointer;
+}
+.turn-mark-bar {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--text-faint);
+  transform-origin: left center;
+  transition: width 140ms ease-out, background-color 140ms ease;
+}
+.turn-mark[data-active="true"] .turn-mark-bar { background: var(--text-muted); }
+.turn-mark[data-live="true"] .turn-mark-bar { background: var(--dot-busy); }
+.turn-mark[data-failed="true"] .turn-mark-bar { background: var(--danger); }
+.turn-mark:focus-visible { outline: 1px solid var(--focus-border); outline-offset: 2px; border-radius: 2px; }
+.turn-mark-tip {
+  position: absolute;
+  left: 30px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 232px;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  text-align: left;
+}
+.turn-mark-tip-meta { font-size: 10px; color: var(--text-faint); }
+.turn-mark-tip-text {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.turn-mark-tip-text.is-empty { color: var(--text-faint); font-style: italic; }
+@media (prefers-reduced-motion: reduce) {
+  .turn-minimap,
+  .turn-mark-bar { transition: none; }
+}
 .turn-status { color: var(--chat-secondary); font-size: 14px; line-height: 22px; margin-bottom: 10px; }
 .turn-status.live { color: var(--text); }
 .turn-status.failed, .step-error-preview { color: var(--danger, #e56c6c); }
