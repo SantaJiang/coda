@@ -8,6 +8,15 @@ import { MessageTimeline } from "./MessageTimeline"
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+// Markdown and the timeline both schedule frames. Keep every callback and run
+// them in order, the way a browser frame does, instead of only the last one.
+function stubFrames() {
+  const callbacks: FrameRequestCallback[] = []
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callbacks.push(callback); return callbacks.length })
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => { callbacks[id - 1] = () => {} })
+  return () => { for (const callback of callbacks.splice(0)) callback(0) }
+}
+
 // Timeline and the long-prompt bubble both observe layout. Keep every callback.
 function stubResizeObservers() {
   const observers = new Set<ResizeObserverCallback>()
@@ -293,9 +302,7 @@ it("does not show jump-latest from a stale paused view while an empty session lo
 })
 
 it.each([true, false])("keeps the live thought completion position (reading latest: %s)", (atBottom) => {
-  let frame: FrameRequestCallback | undefined
-  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frame = callback; return 1 })
-  vi.stubGlobal("cancelAnimationFrame", () => { frame = undefined })
+  const flushFrames = stubFrames()
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} })
   const live: import("../lib/types").Part = { id: "r1", type: "reasoning", text: "正在思考", sessionID: "s1", messageID: "a1", time: { start: 1 } }
   const [parts, setParts] = createSignal<import("../lib/types").Part[]>([live])
@@ -331,7 +338,7 @@ it.each([true, false])("keeps the live thought completion position (reading late
     }])
     expect(view().following).toBe(atBottom)
     height = 500
-    frame?.(0)
+    flushFrames()
     expect(scroller.scrollTop).toBe(atBottom ? 300 : 100)
     expect(container.querySelector(".thinking-body")).toBeNull()
     expect(container.querySelector(".work-step-action")?.textContent).toBe("Thought")

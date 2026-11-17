@@ -119,11 +119,11 @@ function useModelName() {
   return (providerID?: string, modelID?: string) => models.nameFor(providerID, modelID)
 }
 
-function MessagePartView(props: { part: Part; plain?: boolean; streaming?: boolean }) {
+function MessagePartView(props: { part: Part; plain?: boolean; streaming?: boolean; caret?: boolean }) {
   return (
     <Switch>
       <Match when={props.part.type === "text"}>
-        <Show when={props.plain} fallback={<MarkdownView text={(props.part as TextPart).text} streaming={props.streaming} />}>
+        <Show when={props.plain} fallback={<MarkdownView text={(props.part as TextPart).text} streaming={props.streaming} caret={props.caret} />}>
           <div class="user-text">{(props.part as TextPart).text}</div>
         </Show>
       </Match>
@@ -261,7 +261,13 @@ function UserBubble(props: { message: Message; parts: Part[] }) {
 function EntryList(props: { entries: ConversationEntry[]; fade?: boolean; onInspect?: () => void; beforeLayout?: (target?: HTMLElement) => void; afterLayout?: () => void }) {
   const runtime = useRuntime()
   const map = createMemo(() => new Map(props.entries.map((entry) => [entry.key, entry])))
-  const fadeKey = () => props.fade ? [...props.entries].reverse().find((entry) => entry.kind === "part" && entry.part.type === "text")?.key : undefined
+  // Only the text being written right now is live: it has to be the turn's last
+  // entry, otherwise a tool call already moved on and the answer is finished.
+  const liveKey = () => {
+    if (!props.fade) return undefined
+    const last = props.entries[props.entries.length - 1]
+    return last?.kind === "part" && last.part.type === "text" ? last.key : undefined
+  }
   return <For each={props.entries.map((entry) => entry.key)}>{(key) => {
     const entry = () => map().get(key)!
     const open = () => runtime.timelineView().stepOpen[key] === true
@@ -273,7 +279,7 @@ function EntryList(props: { entries: ConversationEntry[]; fade?: boolean; onInsp
     }
     return <div class="conversation-entry" data-entry-key={key}>
       <Show when={entry().kind === "part"} fallback={<CompactionRow entry={entry() as CompactionEntry} open={open()} onToggle={toggle} />}>
-        <MessagePartView part={(entry() as { part: Part }).part} streaming={fadeKey() === key} />
+        <MessagePartView part={(entry() as { part: Part }).part} streaming={liveKey() === key} caret={liveKey() === key} />
       </Show>
     </div>
   }}</For>
@@ -296,6 +302,7 @@ function BlockList(props: {
     return next
   })
   const map = createMemo(() => new Map(blocks().map((block) => [block.key, block])))
+  const lastKey = createMemo(() => blocks()[blocks().length - 1]?.key)
   const inspect = (target: HTMLElement, change: () => void) => {
     props.onInspect?.()
     props.beforeLayout?.(target)
@@ -307,7 +314,7 @@ function BlockList(props: {
     const card = () => block().shape === "card"
     const open = () => card() ? runtime.timelineView().groupOpen?.[key] !== false : runtime.timelineView().groupOpen?.[key] === true
     return <Show when={block().kind === "work"} fallback={
-      <EntryList entries={block().entries} fade={props.active} onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
+      <EntryList entries={block().entries} fade={props.active && lastKey() === key} onInspect={props.onInspect} beforeLayout={props.beforeLayout} afterLayout={props.afterLayout} />
     }>
       <div class="conversation-work-block" data-block-key={key} data-scroll-key={key}>
         <WorkGroup entries={block().entries} shape={block().shape} open={open()} onToggle={(target) => inspect(target, () => runtime.updateTimelineView({ groupOpen: { ...runtime.timelineView().groupOpen, [key]: !open() } }))}

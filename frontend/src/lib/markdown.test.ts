@@ -29,8 +29,7 @@ describe("renderMarkdown autolinks", () => {
   })
 })
 
-describe("renderMarkdown emphasis beside CJK", () => {
-  it("bolds quotes that sit against Chinese text", () => {
+describe("renderMarkdown emphasis beside CJK", () => {  it("bolds quotes that sit against Chinese text", () => {
     const html = renderMarkdown("简单说：是**“共用基建，各自打包”**——你可以把它看作是一个工具链")
     expect(html).toContain("<strong>“共用基建，各自打包”</strong>")
     expect(html).not.toContain("**")
@@ -57,5 +56,41 @@ describe("renderMarkdown emphasis beside CJK", () => {
     const html = renderMarkdown('word**"quote"**more')
     expect(html).not.toContain("<strong>")
     expect(html).toContain("**")
+  })
+})
+
+describe("renderMarkdown while streaming", () => {
+  it("closes an unfinished bold marker instead of flashing raw asterisks", () => {
+    const html = renderMarkdown("前文**注意：", true)
+    expect(html).toContain("<strong>注意：</strong>")
+    expect(html).not.toContain("**")
+  })
+
+  it("closes strikethrough but leaves arithmetic and inline code alone", () => {
+    expect(renderMarkdown("~~作废", true)).toContain("<del>作废</del>")
+    expect(renderMarkdown("2 * 3 = 6", true)).toContain("2 * 3 = 6")
+    expect(renderMarkdown("`**未闭合", true)).toContain("`**未闭合")
+    expect(renderMarkdown("``a**b", true)).toContain("``a**b</p>")
+  })
+
+  it("keeps raw markers in a finished message", () => {
+    expect(renderMarkdown("前文**注意：")).toContain("**")
+  })
+
+  it("leaves a lone marker that cannot open emphasis alone", () => {
+    const html = renderMarkdown("输入 ** 就是加粗", true)
+    expect(html).toContain("** 就是加粗")
+    expect(html).toContain("加粗</p>")
+  })
+
+  it("does not close a marker that was opened far above the tail", () => {
+    expect(renderMarkdown("**开头" + "字".repeat(300), true)).toContain("**开头")
+  })
+
+  it("leaves only the still-open code fence unhighlighted", () => {
+    const open = renderMarkdown("```ts\nconst a = 1", true)
+    expect(open).toContain("const a = 1")
+    expect(open).not.toContain("hljs-keyword")
+    expect(renderMarkdown("```ts\nconst a = 1\n```", true)).toContain("hljs-keyword")
   })
 })

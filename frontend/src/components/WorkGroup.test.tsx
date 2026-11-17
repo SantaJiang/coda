@@ -85,6 +85,20 @@ describe("streaming turn presentation", () => {
     expect(container.querySelector(".out")).toBeNull()
   })
 
+  it("marks only prose that is still being written as live", () => {
+    const { container, setDone, setStatus } = setup([part("p1", "text", "正在写")])
+    expect(container.querySelector(".markdown")!.classList.contains("is-streaming")).toBe(true)
+    setDone(true)
+    setStatus({ type: "idle" })
+    expect(container.querySelector(".markdown.is-streaming")).toBeNull()
+  })
+
+  it("drops the live marker as soon as a tool call takes over", () => {
+    const { container, setParts } = setup([part("p1", "text", "正在写")])
+    setParts([part("p1", "text", "正在写"), tool])
+    expect(container.querySelector(".markdown.is-streaming")).toBeNull()
+  })
+
   it("shows the failure card without a second failed status", () => {
     const { container } = setup([], true, { error: { data: { message: "供应商超时" } }, finish: "error" })
     expect(container.querySelector(".error-card")?.textContent).toBe("供应商超时")

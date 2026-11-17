@@ -3723,6 +3723,30 @@ span.capability-pill.added {
   line-height: var(--line-chat);
 }
 
+/* 正在生成的那一行末尾留一个点，免得 token 之间的停顿看起来像卡住了。
+   用伪元素而不是真实节点：syncChildren 每帧都会删掉多余子节点。 */
+.markdown.is-streaming > :last-child:not(.md-code-block)::after,
+.markdown.is-streaming > :last-child.md-code-block pre code::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.55;
+  vertical-align: 0.05em;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown.is-streaming > :last-child:not(.md-code-block)::after,
+  .markdown.is-streaming > :last-child.md-code-block pre code::after {
+    animation: none;
+    opacity: 0.35;
+  }
+}
+
 .markdown h1,
 .markdown h2,
 .markdown h3,
