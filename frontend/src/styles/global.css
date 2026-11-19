@@ -1033,7 +1033,7 @@ button.ctx-pill:hover {
   width: min(840px, 100%);
   margin: 0 auto;
   /* Stream text lines up with question-bubble body text; equal L/R inset.
-     Bottom inset matches the composer fade so the last line stays fully opaque. */
+     Bottom inset keeps the last line clear of the composer card's shadow. */
   padding: 28px;
 }
 
@@ -4253,24 +4253,11 @@ span.capability-pill.added {
   border-radius: 99px;
 }
 
-/* Conversation streaming: one status per turn, stable activity rows. */
+/* Conversation streaming: one status per turn, stable activity rows.
+   No fade strip between the stream and the composer: the composer card's own
+   shadow is the transition. A translucent overlay here reads as a grey band
+   wherever `transparent` is interpolated non-premultiplied (WebKitGTK). */
 .timeline-region { position: relative; flex: 1 1 0; min-height: 0; display: flex; }
-.timeline-region::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1;
-  height: 28px;
-  pointer-events: none;
-  background: linear-gradient(
-    to bottom,
-    transparent 0%,
-    color-mix(in srgb, var(--chat-bg) 46%, transparent) 58%,
-    var(--chat-bg) 100%
-  );
-}
 .composer.drag-over { outline: 2px solid var(--accent); outline-offset: 2px; }
 .attachment-notice { padding: 4px 12px 8px; color: var(--text-faint); font-size: 12px; }
 .attachment-notice.warning { color: var(--warning, #c79762); }
