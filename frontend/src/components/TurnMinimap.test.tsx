@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest"
 import { render } from "solid-js/web"
 import type { MinimapMark } from "../lib/timeline-minimap"
-import { TurnMinimap } from "./TurnMinimap"
+import { TurnMinimap, RAIL_WIDTH } from "./TurnMinimap"
 
 afterEach(() => { vi.restoreAllMocks(); document.body.replaceChildren() })
 
@@ -19,11 +19,11 @@ function mark(id: string, overrides: Partial<MinimapMark> = {}): MinimapMark {
   }
 }
 
-function mount(marks: MinimapMark[], options: { hidden?: boolean; gutter?: number; onJump?: (id: string) => void } = {}) {
+function mount(marks: MinimapMark[], options: { hidden?: boolean; onJump?: (id: string) => void } = {}) {
   const host = document.createElement("div")
   document.body.append(host)
   const dispose = render(() => (
-    <TurnMinimap marks={marks} activeID={undefined} gutter={options.gutter ?? 0}
+    <TurnMinimap marks={marks} activeID={undefined}
       hidden={options.hidden ?? false} onJump={options.onJump ?? (() => {})} />
   ), host)
   return { host, dispose }
@@ -43,7 +43,7 @@ it("signals the current turn without reordering the rail", () => {
   const host = document.createElement("div")
   document.body.append(host)
   const dispose = render(() => (
-    <TurnMinimap marks={[mark("a"), mark("b")]} activeID="b" gutter={0} hidden={false} onJump={() => {}} />
+    <TurnMinimap marks={[mark("a"), mark("b")]} activeID="b" hidden={false} onJump={() => {}} />
   ), host)
   const buttons = [...host.querySelectorAll<HTMLElement>(".turn-mark")]
   expect(buttons[0]!.dataset.active).toBe("false")
@@ -62,18 +62,17 @@ it("keeps the rail out of the tab order and off the pointer when hidden", () => 
   dispose()
 })
 
-it("grows the rail into the gutter and keeps it inside the padding without one", () => {
-  const tight = mount([mark("a")], { gutter: 0 })
-  const tightRail = tight.host.querySelector<HTMLElement>(".turn-minimap-rail")!
-  expect(tightRail.style.left).toBe("0px")
-  expect(tightRail.style.width).toBe("20px")
-  tight.dispose()
-
-  const roomy = mount([mark("a")], { gutter: 100 })
-  const roomyRail = roomy.host.querySelector<HTMLElement>(".turn-minimap-rail")!
-  expect(roomyRail.style.width).toBe("40px")
-  expect(roomyRail.style.left).toBe("-20px")
-  roomy.dispose()
+it("keeps every bar inside a fixed-width mirrored rail", () => {
+  const { host, dispose } = mount([mark("a", { weight: 0 }), mark("b", { weight: 1, active: true })])
+  const rail = host.querySelector<HTMLElement>(".turn-minimap-rail")!
+  // Position comes from CSS (`right: 0`), so the mirror never needs a JS offset.
+  expect(rail.style.left).toBe("")
+  expect(rail.style.right).toBe("")
+  expect(rail.style.width).toBe(`${RAIL_WIDTH}px`)
+  for (const bar of host.querySelectorAll<HTMLElement>(".turn-mark-bar")) {
+    expect(Number.parseFloat(bar.style.width)).toBeLessThanOrEqual(RAIL_WIDTH - 4)
+  }
+  dispose()
 })
 
 it("shows the prompt of the hovered mark", () => {

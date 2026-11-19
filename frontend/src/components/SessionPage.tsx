@@ -177,7 +177,7 @@ export function SessionPage() {
           <Show when={projects.error()}>
             <div class="session-error">{projects.error()}</div>
           </Show>
-          <Show when={!isDraftView()}><MessageTimeline /></Show>
+          <Show when={!isDraftView()}><MessageTimeline asideOpen={asidePresent()} /></Show>
           <div class="composer-region" classList={{ "draft-composer-region": isDraftView() }}>
             <SubagentDock />
             <QuestionDock />

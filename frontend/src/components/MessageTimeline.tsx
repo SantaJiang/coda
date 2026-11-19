@@ -5,12 +5,12 @@ import { minimapMarks } from "../lib/timeline-minimap"
 import { ChatTurnView } from "./MessagePart"
 import { TurnMinimap } from "./TurnMinimap"
 
-export function MessageTimeline() {
+export function MessageTimeline(props: { asideOpen?: boolean }) {
   const projects = useProjects()
-  return <Show keyed when={projects.selectedSessionId()}>{(sessionID) => <SessionTimeline sessionID={sessionID} />}</Show>
+  return <Show keyed when={projects.selectedSessionId()}>{(sessionID) => <SessionTimeline sessionID={sessionID} asideOpen={props.asideOpen} />}</Show>
 }
 
-function SessionTimeline(props: { sessionID: string }) {
+function SessionTimeline(props: { sessionID: string; asideOpen?: boolean }) {
   const runtime = useRuntime()
   const projects = useProjects()
   let scroller!: HTMLDivElement
@@ -20,7 +20,6 @@ function SessionTimeline(props: { sessionID: string }) {
   const [awayFromBottom, setAwayFromBottom] = createSignal(false)
   const showLatest = () => !following() && awayFromBottom()
   const [clock, setClock] = createSignal(Date.now())
-  const [gutter, setGutter] = createSignal(0)
   const [activeTurnID, setActiveTurnID] = createSignal<string>()
   let frame: number | undefined
   let disposed = false
@@ -82,10 +81,6 @@ function SessionTimeline(props: { sessionID: string }) {
       if (element) scroller.scrollTop += element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.offset
     }
     measureBottom()
-    // Free space left of the centered reading column. The minimap shrinks to
-    // fit instead of disappearing, so it also works when the window is narrow
-    // or the terminal aside is open.
-    setGutter(Math.max(0, (scroller.clientWidth - inner.clientWidth) / 2))
     save()
     captureAnchor()
   }
@@ -221,7 +216,10 @@ function SessionTimeline(props: { sessionID: string }) {
         </Show>
       </div>
     </div>
-    <TurnMinimap marks={marks()} activeID={activeTurnID()} gutter={gutter()} hidden={marks().length < 3} onJump={jumpToTurn} />
+    {/* The rail lives at the window's right edge, which the aside covers. Hide
+        it outright instead of letting it sit on top of the panel edge. */}
+    <TurnMinimap marks={marks()} activeID={activeTurnID()}
+      hidden={marks().length < 3 || Boolean(props.asideOpen)} onJump={jumpToTurn} />
     <button type="button" class="jump-latest" classList={{ "is-visible": showLatest() }}
       disabled={!showLatest()} aria-hidden={!showLatest()} aria-label="下拉到最新" onClick={latest}>下拉到最新</button>
   </div>
