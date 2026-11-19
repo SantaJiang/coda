@@ -307,21 +307,43 @@ export function AppProvider(props: ParentProps<{ ports?: Partial<AppPorts> }>) {
     return id
   })
 
+  // Branch only depends on the project path and the backend being reachable.
+  // Reading the whole project object made this effect re-run on unrelated churn
+  // (a transient `missing` flag, a rebuilt project record), and each re-run
+  // cancelled the pending request and blanked the chip — permanently, because
+  // nothing re-triggered it afterwards. Cache per path so switching back is instant.
+  const vcsBranches = new Map<string, string>()
   createEffect(() => {
     const project = projects.selectedProject()
-    if (!project || isLocalProject(project) || project.missing) {
+    const path = project && !isLocalProject(project) ? project.path : ""
+    if (!path) {
       setState("vcsBranch", "")
       return
     }
+    const cached = vcsBranches.get(path) ?? ""
+    if (projects.connection() !== "connected") {
+      setState("vcsBranch", cached)
+      return
+    }
     let cancelled = false
-    void client
-      .getVcs(project.path)
-      .then((info) => {
-        if (!cancelled) setState("vcsBranch", info?.branch ?? "")
-      })
-      .catch(() => {
-        if (!cancelled) setState("vcsBranch", "")
-      })
+    const load = (attempt: number) => {
+      void client
+        .getVcs(path)
+        .then((info) => {
+          const branch = info?.branch ?? ""
+          vcsBranches.set(path, branch)
+          if (!cancelled) setState("vcsBranch", branch)
+        })
+        .catch(() => {
+          // The sidecar can win the race against the first request; retry once
+          // before giving up instead of showing "—" for the rest of the session.
+          if (cancelled) return
+          if (attempt === 0) setTimeout(() => !cancelled && load(1), 1200)
+          else setState("vcsBranch", vcsBranches.get(path) ?? "")
+        })
+    }
+    setState("vcsBranch", cached)
+    load(0)
     onCleanup(() => {
       cancelled = true
     })
