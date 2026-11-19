@@ -9,6 +9,11 @@ const BAR_MAX = 22
 const ACTIVE_GAIN = 5
 const HOVER_REACH = 84
 const HOVER_GAIN = 13
+// The rail hugs the text: its right edge sits this far into the column, which
+// is inside the 28px content padding. It therefore never depends on the gutter
+// being wide, and cannot be clipped by the session container.
+const RAIL_EDGE = 20
+const RAIL_MAX = 40
 
 function reducedMotion() {
   return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -17,6 +22,8 @@ function reducedMotion() {
 export function TurnMinimap(props: {
   marks: MinimapMark[]
   activeID: string | undefined
+  /** Free space left of the reading column, in px. 0 when the window is narrow. */
+  gutter: number
   hidden: boolean
   onJump: (turnID: string) => void
 }) {
@@ -26,6 +33,10 @@ export function TurnMinimap(props: {
   const [hovered, setHovered] = createSignal(-1)
   const bars = new Map<string, HTMLElement>()
   const activeIndex = createMemo(() => markIndexOf(props.marks, props.activeID))
+  // Grows into the gutter when there is one, collapses to the padding width
+  // when there is not. The right edge never moves.
+  const railWidth = createMemo(() => Math.max(RAIL_EDGE, Math.min(RAIL_MAX, RAIL_EDGE + props.gutter)))
+  const railLeft = createMemo(() => RAIL_EDGE - railWidth())
   // Short windows must compress the rail instead of letting marks spill into
   // the composer, so the slot shrinks with the available height.
   const slot = createMemo(() => {
@@ -43,15 +54,17 @@ export function TurnMinimap(props: {
   const center = (index: number) => (offsets()[index] ?? 0) + slot() / 2
 
   // Width is scale-free: the bar grows right from the rail edge, so proximity
-  // never reflows the timeline behind it.
+  // never reflows the timeline behind it. Clamped so a narrow rail still keeps
+  // its bars inside the rail.
   const width = (index: number) => {
     const mark = props.marks[index]
     if (!mark) return BAR_MIN
     const base = BAR_MIN + mark.weight * (BAR_MAX - BAR_MIN) + (index === activeIndex() ? ACTIVE_GAIN : 0)
     const point = pointerY()
-    if (point === null) return base
-    const near = Math.max(0, 1 - Math.abs(center(index) - point) / HOVER_REACH)
-    return base + near * near * HOVER_GAIN
+    const grown = point === null
+      ? base
+      : base + Math.pow(Math.max(0, 1 - Math.abs(center(index) - point) / HOVER_REACH), 2) * HOVER_GAIN
+    return Math.min(grown, railWidth() - 3)
   }
 
   const track = (event: PointerEvent) => {
@@ -95,6 +108,7 @@ export function TurnMinimap(props: {
   return (
     <div class="turn-minimap" data-hidden={props.hidden ? "true" : "false"} aria-hidden={props.hidden ? "true" : undefined}>
       <div class="turn-minimap-rail" ref={rail} role="navigation" aria-label="会话轮次导航"
+        style={{ left: `${railLeft()}px`, width: `${railWidth()}px` }}
         onPointerMove={track} onPointerLeave={leave}>
         <For each={props.marks}>{(mark, index) => (
           <button type="button" class="turn-mark"

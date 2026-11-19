@@ -5,9 +5,6 @@ import { minimapMarks } from "../lib/timeline-minimap"
 import { ChatTurnView } from "./MessagePart"
 import { TurnMinimap } from "./TurnMinimap"
 
-/** Rail width plus clearance. The minimap only shows when this much gutter is left. */
-const MINIMAP_GUTTER = 52
-
 export function MessageTimeline() {
   const projects = useProjects()
   return <Show keyed when={projects.selectedSessionId()}>{(sessionID) => <SessionTimeline sessionID={sessionID} />}</Show>
@@ -23,7 +20,7 @@ function SessionTimeline(props: { sessionID: string }) {
   const [awayFromBottom, setAwayFromBottom] = createSignal(false)
   const showLatest = () => !following() && awayFromBottom()
   const [clock, setClock] = createSignal(Date.now())
-  const [narrow, setNarrow] = createSignal(false)
+  const [gutter, setGutter] = createSignal(0)
   const [activeTurnID, setActiveTurnID] = createSignal<string>()
   let frame: number | undefined
   let disposed = false
@@ -85,10 +82,10 @@ function SessionTimeline(props: { sessionID: string }) {
       if (element) scroller.scrollTop += element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.offset
     }
     measureBottom()
-    // The rail is an overlay in the reading gutter. Measuring the difference
-    // between the scroller and the centered column keeps it off the text at
-    // every window width instead of relying on a media query.
-    setNarrow((scroller.clientWidth - inner.clientWidth) / 2 < MINIMAP_GUTTER)
+    // Free space left of the centered reading column. The minimap shrinks to
+    // fit instead of disappearing, so it also works when the window is narrow
+    // or the terminal aside is open.
+    setGutter(Math.max(0, (scroller.clientWidth - inner.clientWidth) / 2))
     save()
     captureAnchor()
   }
@@ -224,7 +221,7 @@ function SessionTimeline(props: { sessionID: string }) {
         </Show>
       </div>
     </div>
-    <TurnMinimap marks={marks()} activeID={activeTurnID()} hidden={narrow() || marks().length < 3} onJump={jumpToTurn} />
+    <TurnMinimap marks={marks()} activeID={activeTurnID()} gutter={gutter()} hidden={marks().length < 3} onJump={jumpToTurn} />
     <button type="button" class="jump-latest" classList={{ "is-visible": showLatest() }}
       disabled={!showLatest()} aria-hidden={!showLatest()} aria-label="下拉到最新" onClick={latest}>下拉到最新</button>
   </div>

@@ -4295,12 +4295,13 @@ span.capability-pill.added {
 /* The rail re-enables pointer events, so hiding has to switch it back off. */
 .turn-minimap[data-hidden="true"] .turn-minimap-rail { pointer-events: none; }
 /* Anchored to the reading column, not the region edge, so the rail keeps the
-   same relationship to the text at every window width. */
-.turn-minimap-rail { position: absolute; top: 0; bottom: 0; left: -50px; width: 50px; pointer-events: auto; }
+   same relationship to the text at every window width. Offset and width are
+   inline: narrow windows shrink the rail instead of hiding it. */
+.turn-minimap-rail { position: absolute; top: 0; bottom: 0; pointer-events: auto; }
 .turn-mark {
   position: absolute;
-  left: 5px;
-  width: 45px;
+  left: 0;
+  right: 0;
   height: 10px;
   padding: 0;
   border: 0;
@@ -4323,7 +4324,8 @@ span.capability-pill.added {
 .turn-mark:focus-visible { outline: 1px solid var(--focus-border); outline-offset: 2px; border-radius: 2px; }
 .turn-mark-tip {
   position: absolute;
-  left: 30px;
+  left: 100%;
+  margin-left: 6px;
   top: 50%;
   transform: translateY(-50%);
   width: 232px;

@@ -19,11 +19,12 @@ function mark(id: string, overrides: Partial<MinimapMark> = {}): MinimapMark {
   }
 }
 
-function mount(marks: MinimapMark[], options: { hidden?: boolean; onJump?: (id: string) => void } = {}) {
+function mount(marks: MinimapMark[], options: { hidden?: boolean; gutter?: number; onJump?: (id: string) => void } = {}) {
   const host = document.createElement("div")
   document.body.append(host)
   const dispose = render(() => (
-    <TurnMinimap marks={marks} activeID={undefined} hidden={options.hidden ?? false} onJump={options.onJump ?? (() => {})} />
+    <TurnMinimap marks={marks} activeID={undefined} gutter={options.gutter ?? 0}
+      hidden={options.hidden ?? false} onJump={options.onJump ?? (() => {})} />
   ), host)
   return { host, dispose }
 }
@@ -42,7 +43,7 @@ it("signals the current turn without reordering the rail", () => {
   const host = document.createElement("div")
   document.body.append(host)
   const dispose = render(() => (
-    <TurnMinimap marks={[mark("a"), mark("b")]} activeID="b" hidden={false} onJump={() => {}} />
+    <TurnMinimap marks={[mark("a"), mark("b")]} activeID="b" gutter={0} hidden={false} onJump={() => {}} />
   ), host)
   const buttons = [...host.querySelectorAll<HTMLElement>(".turn-mark")]
   expect(buttons[0]!.dataset.active).toBe("false")
@@ -51,7 +52,7 @@ it("signals the current turn without reordering the rail", () => {
   dispose()
 })
 
-it("hides the rail when the reading gutter is too narrow", () => {
+it("keeps the rail out of the tab order and off the pointer when hidden", () => {
   const { host, dispose } = mount([mark("a")], { hidden: true })
   const rail = host.querySelector<HTMLElement>(".turn-minimap")
   expect(rail?.dataset.hidden).toBe("true")
@@ -59,6 +60,20 @@ it("hides the rail when the reading gutter is too narrow", () => {
   // An invisible button must not stay in the tab order.
   expect(host.querySelector<HTMLElement>(".turn-mark")?.getAttribute("tabindex")).toBe("-1")
   dispose()
+})
+
+it("grows the rail into the gutter and keeps it inside the padding without one", () => {
+  const tight = mount([mark("a")], { gutter: 0 })
+  const tightRail = tight.host.querySelector<HTMLElement>(".turn-minimap-rail")!
+  expect(tightRail.style.left).toBe("0px")
+  expect(tightRail.style.width).toBe("20px")
+  tight.dispose()
+
+  const roomy = mount([mark("a")], { gutter: 100 })
+  const roomyRail = roomy.host.querySelector<HTMLElement>(".turn-minimap-rail")!
+  expect(roomyRail.style.width).toBe("40px")
+  expect(roomyRail.style.left).toBe("-20px")
+  roomy.dispose()
 })
 
 it("shows the prompt of the hovered mark", () => {
