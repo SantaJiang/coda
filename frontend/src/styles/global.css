@@ -936,6 +936,22 @@ button.ctx-pill:hover {
   font-size: 12px;
 }
 
+.revert-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.revert-banner span {
+  flex: 1;
+}
+
 .win-controls {
   display: flex;
   align-self: stretch;
@@ -2752,11 +2768,51 @@ button.ctx-pill:hover {
   font-weight: 600;
 }
 
+.mcp-client-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.mcp-client-section h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mcp-resource-row {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.mcp-resource-uri {
+  margin-top: 2px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
 .dialog-hint {
   margin: 0 0 14px;
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.rollback-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.rollback-option input {
+  margin-top: 2px;
+  accent-color: var(--accent);
 }
 
 .model-settings-dialog {
@@ -3507,6 +3563,16 @@ span.capability-pill.added {
 
 .field-row input {
   flex: 1;
+}
+
+.field select {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
 }
 
 .dialog-actions.split {

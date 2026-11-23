@@ -1,8 +1,8 @@
 diff --git a/packages/core/src/config.ts b/packages/core/src/config.ts
-index 48d6e054e9..b4dda32573 100644
+index 48d6e054e9..4253ab42a5 100644
 --- a/packages/core/src/config.ts
 +++ b/packages/core/src/config.ts
-@@ -25,6 +25,48 @@ import { WellKnown } from "./wellknown.js"
+@@ -25,6 +25,52 @@ import { WellKnown } from "./wellknown.js"
  import { AppProcess } from "@opencode/util/process"
  import { ChildProcess } from "effect/process"
  
@@ -21,7 +21,7 @@ index 48d6e054e9..b4dda32573 100644
 +  return next
 +}
 +
-+/** Writes the fields Coda edits. Shell clears on null; provider and mcp merge by name. */
++/** Writes the fields Coda edits. Shell clears on null; agent, provider and mcp merge by name. */
 +export function applyConfigPatch(text: string, patch: Patch) {
 +  let current = text
 +  const write = (segments: string[], value: unknown) => {
@@ -31,6 +31,10 @@ index 48d6e054e9..b4dda32573 100644
 +  const root = () => {
 +    const parsed = parse(current)
 +    return isRecord(parsed) ? parsed : {}
++  }
++  if (patch.agent) {
++    const agent = root().agent
++    write(["agent"], mergeRecords(isRecord(agent) ? agent : {}, patch.agent))
 +  }
 +  if (patch.provider) {
 +    const provider = root().provider
@@ -51,7 +55,7 @@ index 48d6e054e9..b4dda32573 100644
  export function latest<K extends keyof Info>(entries: readonly Entry[], key: K): Info[K] | undefined {
    return entries.findLast((entry): entry is Document => entry.type === "document" && entry.info[key] !== undefined)
      ?.info[key]
-@@ -474,13 +516,7 @@ export const layer = (options?: Options) =>
+@@ -474,13 +520,7 @@ export const layer = (options?: Options) =>
              (yield* Effect.filter(candidates, fs.isFile)).at(-1) ?? path.join(directory, "opencode.jsonc")
            const text = (yield* fs.readFileStringSafe(filepath)) ?? "{}\n"
            const updated = yield* Effect.try({
@@ -67,16 +71,17 @@ index 48d6e054e9..b4dda32573 100644
            })
            yield* fs.writeWithDirs(filepath, updated.endsWith("\n") ? updated : `${updated}\n`)
 diff --git a/packages/schema/src/config.ts b/packages/schema/src/config.ts
-index e78cbae0f8..13e41b61da 100644
+index e78cbae0f8..61f55f2289 100644
 --- a/packages/schema/src/config.ts
 +++ b/packages/schema/src/config.ts
-@@ -117,7 +117,11 @@ export class Info extends Schema.Class<Info>("Config.Info")({
+@@ -117,7 +117,12 @@ export class Info extends Schema.Class<Info>("Config.Info")({
  }) {}
  
  export const Patch = Schema.Struct({
 -  shell: Schema.NullOr(Schema.String),
 +  shell: optional(Schema.NullOr(Schema.String)),
-+  // Coda still writes the v1 provider and mcp maps. Config normalization accepts both on read.
++  // Coda still writes the v1 agent, provider and mcp maps. Config normalization accepts both on read.
++  agent: optional(Schema.Record(Schema.String, Schema.Unknown)),
 +  provider: optional(Schema.Record(Schema.String, Schema.Unknown)),
 +  mcp: optional(Schema.Record(Schema.String, Schema.Unknown)),
 +  mcpRemove: optional(Schema.Array(Schema.String)),

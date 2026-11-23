@@ -1,4 +1,6 @@
-import { For, Show, createEffect, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createSignal, onCleanup, untrack } from "solid-js"
+import { listAgents, patchGlobalConfig } from "../lib/api"
+import { agentConfigFrom, agentParamsFrom, emptyAgentParams, type AgentInfo, type AgentParams } from "../lib/agent-params"
 import {
   MODEL_CONFIG_FILENAME,
   parseModelConfigFile,
@@ -17,20 +19,22 @@ import { normalizeProviderBaseURL } from "../lib/presets"
 import { parseImportedProviders, type ImportedProvider } from "../lib/provider-import"
 import { listRemoteModels, type RemoteModel } from "../lib/remote-models"
 import { modelCatalog, type CatalogProvider } from "../lib/catalog"
-import { useModels } from "../store/app"
+import { useModels, useProjects } from "../store/app"
 import { Icon } from "./Icon"
 import { INPUT_MEDIA, INPUT_LABELS, type InputMedia } from "../lib/model-input"
 
-type Tab = "mine" | "catalog" | "custom"
+type Tab = "mine" | "catalog" | "custom" | "params"
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "mine", label: "我的模型" },
   { id: "catalog", label: "目录" },
   { id: "custom", label: "自定义" },
+  { id: "params", label: "参数" },
 ]
 
 export function ModelSettings() {
   const models = useModels()
+  const projects = useProjects()
   const [tab, setTab] = createSignal<Tab>("mine")
   const [form, setForm] = createSignal<ModelForm>(emptyModelForm())
   const [formError, setFormError] = createSignal<string | null>(null)
@@ -45,6 +49,13 @@ export function ModelSettings() {
   const [fileBusy, setFileBusy] = createSignal(false)
   const [fileStatus, setFileStatus] = createSignal<string | null>(null)
   const [pendingImport, setPendingImport] = createSignal<ConfiguredModel[] | null>(null)
+  const [agents, setAgents] = createSignal<AgentInfo[]>([])
+  const [agentID, setAgentID] = createSignal("")
+  const [agentForm, setAgentForm] = createSignal<AgentParams>(emptyAgentParams())
+  const [agentError, setAgentError] = createSignal("")
+  const [agentStatus, setAgentStatus] = createSignal("")
+  const [agentSaving, setAgentSaving] = createSignal(false)
+  let agentsLoaded = false
   let fetchGen = 0
   let providerNameInput: HTMLInputElement | undefined
   let baseURLInput: HTMLInputElement | undefined
@@ -81,6 +92,63 @@ export function ModelSettings() {
 
   const update = <K extends keyof ModelForm>(key: K, value: ModelForm[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  const loadAgents = async (force = false) => {
+    if (agentsLoaded && !force) return
+    setAgentError("")
+    try {
+      const rows = await listAgents(projects.selectedProject()?.path)
+      const selectedID = untrack(agentID)
+      const current = rows.find((agent) => agent.id === selectedID) ?? rows.find((agent) => agent.id === "build") ?? rows[0]
+      setAgents(rows)
+      if (current) {
+        setAgentID(current.id)
+        setAgentForm(agentParamsFrom(current))
+      }
+      agentsLoaded = true
+    } catch (cause) {
+      setAgentError(cause instanceof Error ? cause.message : "读取 Agent 失败")
+    }
+  }
+
+  createEffect(() => {
+    if (tab() === "params") void loadAgents()
+  })
+
+  const selectAgent = (id: string) => {
+    setAgentID(id)
+    const agent = agents().find((item) => item.id === id)
+    setAgentForm(agent ? agentParamsFrom(agent) : emptyAgentParams())
+    setAgentStatus("")
+    setAgentError("")
+  }
+
+  const updateAgent = <K extends keyof AgentParams>(key: K, value: AgentParams[K]) => {
+    setAgentForm((current) => ({ ...current, [key]: value }))
+  }
+
+  const saveAgent = async (event: Event) => {
+    event.preventDefault()
+    const id = agentID()
+    if (!id || agentSaving()) return
+    const parsed = agentConfigFrom(agentForm())
+    if ("error" in parsed) {
+      setAgentError(parsed.error)
+      return
+    }
+    setAgentSaving(true)
+    setAgentError("")
+    setAgentStatus("")
+    try {
+      await patchGlobalConfig({ agent: { [id]: parsed.entry } })
+      await loadAgents(true)
+      setAgentStatus("已保存，新的会话会使用这些默认值")
+    } catch (cause) {
+      setAgentError(cause instanceof Error ? cause.message : "保存失败")
+    } finally {
+      setAgentSaving(false)
+    }
   }
 
   const startEdit = (id: string) => {
@@ -550,6 +618,80 @@ export function ModelSettings() {
               <div class="dialog-actions">
                 <button type="submit" class="send-btn" disabled={saving()}>
                   {saving() ? "保存中…" : "保存到菜单"}
+                </button>
+              </div>
+            </form>
+          </Show>
+
+          <Show when={tab() === "params"}>
+            <form class="model-form settings-pane" onSubmit={(event) => void saveAgent(event)}>
+              <label class="field">
+                <span>Agent</span>
+                <select value={agentID()} onChange={(event) => selectAgent(event.currentTarget.value)}>
+                  <For each={agents()}>{(agent) => <option value={agent.id}>{agent.name}</option>}</For>
+                </select>
+              </label>
+              <Show when={agents().length === 0 && !agentError()}>
+                <div class="field-hint">没有可用的 Agent</div>
+              </Show>
+              <label class="field">
+                <span>默认模型（可带变体，例如 provider/model#variant）</span>
+                <input
+                  value={agentForm().model}
+                  placeholder="留空则沿用全局模型"
+                  onInput={(event) => updateAgent("model", event.currentTarget.value)}
+                />
+              </label>
+              <div class="field-row">
+                <label class="field">
+                  <span>temperature</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="2"
+                    value={agentForm().temperature}
+                    placeholder="沿用模型默认"
+                    onInput={(event) => updateAgent("temperature", event.currentTarget.value)}
+                  />
+                </label>
+                <label class="field">
+                  <span>top_p</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="1"
+                    value={agentForm().topP}
+                    placeholder="沿用模型默认"
+                    onInput={(event) => updateAgent("topP", event.currentTarget.value)}
+                  />
+                </label>
+                <label class="field">
+                  <span>steps</span>
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={agentForm().steps}
+                    placeholder="不限"
+                    onInput={(event) => updateAgent("steps", event.currentTarget.value)}
+                  />
+                </label>
+              </div>
+              <p class="dialog-hint">
+                这些值写入本机配置的 agent 段，只影响之后创建的会话；留空的字段不会改动已有设置，
+                要恢复默认值需直接编辑配置文件。
+              </p>
+              <Show when={agentStatus()}>
+                <div class="field-hint">{agentStatus()}</div>
+              </Show>
+              <Show when={agentError()}>
+                <div class="dialog-error">{agentError()}</div>
+              </Show>
+              <div class="dialog-actions">
+                <button type="submit" class="send-btn" disabled={agentSaving() || !agentID()}>
+                  {agentSaving() ? "保存中…" : "保存参数"}
                 </button>
               </div>
             </form>

@@ -15,6 +15,13 @@ function num(value: unknown, fallback = Date.now()) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback
 }
 
+/** A staged revert is a session marker; the file list is backend state, not UI state. */
+export function revertFrom(value: unknown) {
+  const row = rec(value)
+  const messageID = typeof row?.messageID === "string" ? row.messageID : ""
+  return messageID ? { revert: { messageID } } : {}
+}
+
 export function toPermission(row: Rec): PermissionRequest {
   return {
     id: String(row.id ?? ""),
@@ -52,6 +59,7 @@ export function toSession(row: Rec): Session {
     ...(model && typeof model.id === "string" && typeof model.providerID === "string"
       ? { model: { id: model.id, providerID: model.providerID, variant: typeof model.variant === "string" ? model.variant : undefined } }
       : {}),
+    ...revertFrom(row.revert),
     time: {
       created: num(time?.created, now),
       updated: num(time?.updated, now),
@@ -305,9 +313,12 @@ export function mcpStatusFromServers(servers: Rec[]): McpStatusMap {
     const status = rec(server.status)
     if (!name || !status) continue
     const kind = status.status
-    if (kind === "connected" || kind === "disabled") result[name] = { status: kind }
-    else if (kind === "needs_auth") result[name] = { status: "needs_auth" }
-    else result[name] = { status: "failed", error: typeof status.error === "string" ? status.error : kind === "pending" ? "正在连接" : "连接失败" }
+    const integrationID = typeof server.integrationID === "string" ? server.integrationID : undefined
+    const extra = integrationID ? { integrationID } : {}
+    const error = typeof status.error === "string" ? status.error : kind === "pending" ? "正在连接" : "连接失败"
+    if (kind === "connected" || kind === "disabled") result[name] = { status: kind, ...extra }
+    else if (kind === "needs_auth") result[name] = { status: "needs_auth", error, ...extra }
+    else result[name] = { status: "failed", error, ...extra }
   }
   return result
 }

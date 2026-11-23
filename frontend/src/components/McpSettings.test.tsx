@@ -11,7 +11,13 @@ const api = vi.hoisted(() => ({
   connectMcp: vi.fn(),
   disconnectMcp: vi.fn(),
   removeMcp: vi.fn(),
-  authenticateMcp: vi.fn(),
+  listMcpResources: vi.fn(),
+  getMcpIntegration: vi.fn(),
+  startMcpOAuth: vi.fn(),
+  getMcpOAuthStatus: vi.fn(),
+  completeMcpOAuth: vi.fn(),
+  cancelMcpOAuth: vi.fn(),
+  createClientMcpTicket: vi.fn(),
   fetchHomeDir: vi.fn(),
 }))
 

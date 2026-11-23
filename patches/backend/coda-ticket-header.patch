@@ -1,0 +1,150 @@
+diff --git a/packages/protocol/src/groups/mcp.ts b/packages/protocol/src/groups/mcp.ts
+index d32c57e9a7..9cb3923f8d 100644
+--- a/packages/protocol/src/groups/mcp.ts
++++ b/packages/protocol/src/groups/mcp.ts
+@@ -5,7 +5,7 @@ import { Context, Schema } from "effect"
+ import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/http-api"
+ import { ForbiddenError, LocationNotFoundError, McpServerNotFoundError } from "../errors.js"
+ import { LocationQuery, locationQueryOpenApi } from "./location.js"
+-import { PTY_CONNECT_TICKET_QUERY, PTY_CONNECT_TOKEN_HEADER } from "./pty.js"
++import { PTY_CONNECT_TICKET_QUERY, PTY_CONNECT_TOKEN_HEADERS } from "./pty.js"
+ 
+ export const MCP_CLIENT_PATH = "/api/experimental/client-mcp"
+ 
+@@ -119,7 +119,7 @@ export const makeMcpGroup = <LocationId extends HttpApiMiddleware.AnyId, Locatio
+     .add(
+       HttpApiEndpoint.post("mcp.clientToken", `${MCP_CLIENT_PATH}/token`, {
+         query: McpClientQuery,
+-        headers: Schema.Struct({ [PTY_CONNECT_TOKEN_HEADER]: Schema.optional(Schema.String) }),
++        headers: Schema.Struct(PTY_CONNECT_TOKEN_HEADERS),
+         success: Location.response(PtyTicket.ConnectToken),
+         error: ForbiddenError,
+       })
+diff --git a/packages/protocol/src/groups/persistent-pty.ts b/packages/protocol/src/groups/persistent-pty.ts
+index 65e5099850..cbce1eea71 100644
+--- a/packages/protocol/src/groups/persistent-pty.ts
++++ b/packages/protocol/src/groups/persistent-pty.ts
+@@ -11,7 +11,7 @@ import {
+   PtyNotFoundError,
+   ServiceUnavailableError,
+ } from "../errors.js"
+-import { PTY_CONNECT_TICKET_QUERY, PTY_CONNECT_TOKEN_HEADER, PTY_CONNECT_TOKEN_HEADER_VALUE } from "./pty.js"
++import { PTY_CONNECT_TICKET_QUERY, PTY_CONNECT_TOKEN_HEADERS, PTY_CONNECT_TOKEN_HEADER, PTY_CONNECT_TOKEN_HEADER_VALUE } from "./pty.js"
+ 
+ export { PTY_CONNECT_TICKET_QUERY, PTY_CONNECT_TOKEN_HEADER, PTY_CONNECT_TOKEN_HEADER_VALUE }
+ 
+@@ -109,7 +109,7 @@ export const PersistentPtyGroup = HttpApiGroup.make("server.experimental")
+   .add(
+     HttpApiEndpoint.post("persistentPty.connectToken", "/api/experimental/persistent-pty/:ptyID/connect-token", {
+       params: { ptyID: Pty.ID },
+-      headers: Schema.Struct({ [PTY_CONNECT_TOKEN_HEADER]: Schema.optional(Schema.String) }),
++      headers: Schema.Struct(PTY_CONNECT_TOKEN_HEADERS),
+       success: Schema.Struct({ data: PtyTicket.ConnectToken }),
+       error: [ForbiddenError, PtyNotFoundError, ServiceUnavailableError],
+     }).annotateMerge(OpenApi.annotations({ identifier: "experimental.persistentPty.connectToken" })),
+diff --git a/packages/protocol/src/groups/pty.ts b/packages/protocol/src/groups/pty.ts
+index 0c17bb0cb1..37a7974e72 100644
+--- a/packages/protocol/src/groups/pty.ts
++++ b/packages/protocol/src/groups/pty.ts
+@@ -7,8 +7,17 @@ import { ForbiddenError, LocationNotFoundError, PtyNotFoundError } from "../erro
+ import { LocationQuery, locationQueryOpenApi } from "./location.js"
+ 
+ export const PTY_CONNECT_TICKET_QUERY = "ticket"
+-export const PTY_CONNECT_TOKEN_HEADER = "x-opencode-ticket"
++export const PTY_CONNECT_TOKEN_HEADER = "x-coda-ticket"
++export const PTY_CONNECT_TOKEN_HEADER_LEGACY = "x-opencode-ticket"
+ export const PTY_CONNECT_TOKEN_HEADER_VALUE = "1"
++// Coda sends the new header; the upstream name stays valid for older clients.
++export const PTY_CONNECT_TOKEN_HEADERS = {
++  [PTY_CONNECT_TOKEN_HEADER]: Schema.optional(Schema.String),
++  [PTY_CONNECT_TOKEN_HEADER_LEGACY]: Schema.optional(Schema.String),
++}
++export const hasConnectToken = (headers: Record<string, string | undefined>) =>
++  headers[PTY_CONNECT_TOKEN_HEADER] === PTY_CONNECT_TOKEN_HEADER_VALUE ||
++  headers[PTY_CONNECT_TOKEN_HEADER_LEGACY] === PTY_CONNECT_TOKEN_HEADER_VALUE
+ export const PTY_CONNECT_PATH = "/api/pty/:ptyID/connect"
+ 
+ const PTY_CONNECT_URL = /^\/api\/pty\/[^/]+\/connect$/
+@@ -103,7 +112,7 @@ export const makePtyGroup = <LocationId extends HttpApiMiddleware.AnyId, Locatio
+       HttpApiEndpoint.post("pty.connectToken", "/api/pty/:ptyID/connect-token", {
+         params: { ptyID: Pty.ID },
+         query: LocationQuery,
+-        headers: Schema.Struct({ [PTY_CONNECT_TOKEN_HEADER]: Schema.optional(Schema.String) }),
++        headers: Schema.Struct(PTY_CONNECT_TOKEN_HEADERS),
+         success: Location.response(PtyTicket.ConnectToken),
+         error: [ForbiddenError, PtyNotFoundError],
+       })
+diff --git a/packages/server/src/handlers/mcp.ts b/packages/server/src/handlers/mcp.ts
+index f2c062a835..d88503199d 100644
+--- a/packages/server/src/handlers/mcp.ts
++++ b/packages/server/src/handlers/mcp.ts
+@@ -3,7 +3,7 @@ import { LocationServiceMap } from "@opencode/core/location-service-map"
+ import { Mcp } from "@opencode/core/mcp/index"
+ import { PtyTicket } from "@opencode/core/pty/ticket"
+ import { ForbiddenError, McpServerNotFoundError } from "@opencode/protocol/errors"
+-import { PTY_CONNECT_TOKEN_HEADER, PTY_CONNECT_TOKEN_HEADER_VALUE } from "@opencode/protocol/groups/pty"
++import { hasConnectToken } from "@opencode/protocol/groups/pty"
+ import { Effect, Queue } from "effect"
+ import { HttpServerResponse } from "effect/http"
+ import { HttpApiBuilder, HttpApiSchema } from "effect/http-api"
+@@ -74,7 +74,7 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
+         Effect.fn(function* (ctx) {
+           // The custom header forces a CORS preflight, so cross-origin pages cannot mint tickets.
+           if (
+-            ctx.headers[PTY_CONNECT_TOKEN_HEADER] !== PTY_CONNECT_TOKEN_HEADER_VALUE ||
++            !hasConnectToken(ctx.headers) ||
+             !isAllowedRequestOrigin(ctx.request.headers.origin, ctx.request.headers.host, cors)
+           )
+             return yield* new ForbiddenError({ message: "Invalid client MCP connect token request" })
+diff --git a/packages/server/src/handlers/persistent-pty.ts b/packages/server/src/handlers/persistent-pty.ts
+index d57340829e..f7acefbbca 100644
+--- a/packages/server/src/handlers/persistent-pty.ts
++++ b/packages/server/src/handlers/persistent-pty.ts
+@@ -6,11 +6,7 @@ import {
+   PtyNotFoundError,
+   ServiceUnavailableError,
+ } from "@opencode/protocol/errors"
+-import {
+-  PTY_CONNECT_TICKET_QUERY,
+-  PTY_CONNECT_TOKEN_HEADER,
+-  PTY_CONNECT_TOKEN_HEADER_VALUE,
+-} from "@opencode/protocol/groups/persistent-pty"
++import { hasConnectToken, PTY_CONNECT_TICKET_QUERY } from "@opencode/protocol/groups/pty"
+ import { Effect, Queue } from "effect"
+ import { HttpServerRequest, HttpServerResponse } from "effect/http"
+ import { HttpApiBuilder, HttpApiSchema } from "effect/http-api"
+@@ -133,7 +129,7 @@ export const PersistentPtyHandler = HttpApiBuilder.group(Api, "server.experiment
+         Effect.fn(function* (ctx) {
+           const request = yield* HttpServerRequest.HttpServerRequest
+           if (
+-            request.headers[PTY_CONNECT_TOKEN_HEADER] !== PTY_CONNECT_TOKEN_HEADER_VALUE ||
++            !hasConnectToken(request.headers) ||
+             !isAllowedRequestOrigin(request.headers.origin, request.headers.host, cors)
+           )
+             return yield* new ForbiddenError({ message: "Invalid persistent PTY connect token request" })
+diff --git a/packages/server/src/handlers/pty.ts b/packages/server/src/handlers/pty.ts
+index 3bd59f159b..8eec4c09f9 100644
+--- a/packages/server/src/handlers/pty.ts
++++ b/packages/server/src/handlers/pty.ts
+@@ -10,11 +10,7 @@ import { Socket } from "effect/socket"
+ import { Api } from "../api"
+ import { CorsConfig, isAllowedRequestOrigin } from "../cors"
+ import { ForbiddenError, PtyNotFoundError } from "@opencode/protocol/errors"
+-import {
+-  PTY_CONNECT_TICKET_QUERY,
+-  PTY_CONNECT_TOKEN_HEADER,
+-  PTY_CONNECT_TOKEN_HEADER_VALUE,
+-} from "@opencode/protocol/groups/pty"
++import { hasConnectToken, PTY_CONNECT_TICKET_QUERY } from "@opencode/protocol/groups/pty"
+ import { locationErrors, requestRef, response } from "../location"
+ import { holdLocation, type Outbound, runPtySocket } from "./pty-socket"
+ 
+@@ -84,7 +80,7 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
+           // The custom header forces a CORS preflight, so cross-origin browser pages cannot
+           // mint tickets without passing the server's origin policy.
+           if (
+-            request.headers[PTY_CONNECT_TOKEN_HEADER] !== PTY_CONNECT_TOKEN_HEADER_VALUE ||
++            !hasConnectToken(request.headers) ||
+             !isAllowedRequestOrigin(request.headers.origin, request.headers.host, cors)
+           )
+             return yield* new ForbiddenError({ message: "Invalid PTY connect token request" })

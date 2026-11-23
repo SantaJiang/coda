@@ -43,7 +43,10 @@ export interface AgentClient extends SessionReader {
   updateSessionPermission(directory: string, sessionID: string, permission: PermissionRule[]): Promise<Session>
   promptAsync(directory: string, sessionID: string, options: PromptInput): Promise<void>
   abortSession(directory: string, sessionID: string): Promise<boolean>
-  revertSession(directory: string, sessionID: string, messageID: string): Promise<Session>
+  revertSession(directory: string, sessionID: string, messageID: string, files?: boolean): Promise<Session>
+  stageRevertSession(directory: string, sessionID: string, messageID: string, files?: boolean): Promise<Session>
+  commitRevertSession(directory: string, sessionID: string): Promise<Session>
+  clearRevertSession(directory: string, sessionID: string): Promise<Session>
   replyPermission(directory: string, requestID: string, reply: "once" | "always" | "reject", sessionID?: string): Promise<boolean>
   replyQuestion(directory: string, requestID: string, answers: string[][], sessionID?: string): Promise<boolean>
   rejectQuestion(directory: string, requestID: string, sessionID?: string): Promise<boolean>

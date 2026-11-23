@@ -1,4 +1,6 @@
 import type { McpServerConfig } from "./mcp"
+import { agentInfoFrom, type AgentInfo } from "./agent-params"
+import { integrationFrom, oauthAttemptFrom, oauthStatusFrom, type McpIntegration, type McpOAuthAttempt, type McpOAuthStatus } from "./mcp-oauth"
 import type { TerminalInfo } from "./terminal-contracts"
 import { API_BASE, DEFAULT_AGENT } from "./config"
 import type { ComposerAttachment } from "./attachments"
@@ -69,12 +71,15 @@ async function request<T>(
     directory?: string
     body?: unknown
     extraQuery?: Record<string, string>
+    headers?: Record<string, string>
+    signal?: AbortSignal
     raw?: boolean
     scope?: "location" | "session" | "none"
   },
 ): Promise<T> {
   const headers: Record<string, string> = {
     ...directoryHeaders(options?.directory),
+    ...options?.headers,
   }
   if (options?.body !== undefined) {
     headers["Content-Type"] = "application/json"
@@ -84,6 +89,7 @@ async function request<T>(
     method,
     headers,
     body: options?.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: options?.signal,
   })
 
   if (response.status === 204) return undefined as T
@@ -269,8 +275,18 @@ export async function listProviders(directory?: string) {
   return toProviderList(Array.isArray(providers) ? providers : [], Array.isArray(models) ? models : [])
 }
 
+export async function listAgents(directory?: string): Promise<AgentInfo[]> {
+  const rows = await request<Record<string, unknown>[]>("GET", "/api/agent", { directory })
+  return (Array.isArray(rows) ? rows : []).map(agentInfoFrom).filter((agent) => agent.id)
+}
+
 export async function patchGlobalConfig(body: ConfigPatch) {
-  return request<unknown>("PATCH", "/api/experimental/config", { body: { provider: body.provider } })
+  return request<unknown>("PATCH", "/api/experimental/config", {
+    body: {
+      ...(body.provider ? { provider: body.provider } : {}),
+      ...(body.agent ? { agent: body.agent } : {}),
+    },
+  })
 }
 
 export async function getGlobalConfig() {
@@ -314,8 +330,82 @@ export async function removeMcp(directory: string, name: string) {
   return true
 }
 
-export async function authenticateMcp(directory: string, name: string) {
-  return connectMcp(directory, name)
+export type McpResourceCatalog = {
+  resources: Array<{ server: string; name: string; uri: string; description?: string; mimeType?: string }>
+  templates: Array<{ server: string; name: string; uriTemplate: string; description?: string; mimeType?: string }>
+}
+
+export async function listMcpResources(directory: string): Promise<McpResourceCatalog> {
+  const row = await request<Record<string, unknown>>("GET", "/api/mcp/resource", { directory })
+  return {
+    resources: Array.isArray(row.resources) ? row.resources as McpResourceCatalog["resources"] : [],
+    templates: Array.isArray(row.templates) ? row.templates as McpResourceCatalog["templates"] : [],
+  }
+}
+
+export async function getMcpIntegration(directory: string, integrationID: string): Promise<McpIntegration> {
+  const row = await request<Record<string, unknown>>("GET", `/api/integration/${encodeURIComponent(integrationID)}`, { directory })
+  return integrationFrom(row)
+}
+
+export async function startMcpOAuth(
+  directory: string,
+  integrationID: string,
+  methodID: string,
+): Promise<McpOAuthAttempt> {
+  const row = await request<Record<string, unknown>>(
+    "POST",
+    `/api/integration/${encodeURIComponent(integrationID)}/connect/oauth`,
+    { directory, body: { methodID } },
+  )
+  return oauthAttemptFrom(row)
+}
+
+export async function getMcpOAuthStatus(
+  directory: string,
+  integrationID: string,
+  attemptID: string,
+  signal?: AbortSignal,
+): Promise<McpOAuthStatus> {
+  const row = await request<Record<string, unknown>>(
+    "GET",
+    `/api/integration/${encodeURIComponent(integrationID)}/connect/oauth/${encodeURIComponent(attemptID)}`,
+    { directory, signal },
+  )
+  return oauthStatusFrom(row)
+}
+
+export async function completeMcpOAuth(
+  directory: string,
+  integrationID: string,
+  attemptID: string,
+  code?: string,
+) {
+  await request(
+    "POST",
+    `/api/integration/${encodeURIComponent(integrationID)}/connect/oauth/${encodeURIComponent(attemptID)}/complete`,
+    { directory, body: code ? { code } : {} },
+  )
+  return true
+}
+
+export async function cancelMcpOAuth(directory: string, integrationID: string, attemptID: string) {
+  await request(
+    "DELETE",
+    `/api/integration/${encodeURIComponent(integrationID)}/connect/oauth/${encodeURIComponent(attemptID)}`,
+    { directory },
+  )
+  return true
+}
+
+/** Ticket minting needs a custom header so cross-origin pages cannot use it. */
+export async function createClientMcpTicket(directory: string, name: string) {
+  const row = await request<{ ticket: string; expires_in: number }>("POST", "/api/experimental/client-mcp/token", {
+    directory,
+    headers: { "x-coda-ticket": "1" },
+    extraQuery: { name },
+  })
+  return row
 }
 
 export async function abortSession(_directory: string, sessionID: string) {
@@ -323,11 +413,27 @@ export async function abortSession(_directory: string, sessionID: string) {
   return body?.interrupted !== false
 }
 
-export async function revertSession(directory: string, sessionID: string, messageID: string) {
-  await request("POST", sessionPath(sessionID, "/revert/stage"), { scope: "none", body: { messageID } })
+export async function stageRevertSession(directory: string, sessionID: string, messageID: string, files = true) {
+  await request("POST", sessionPath(sessionID, "/revert/stage"), { scope: "none", body: { messageID, files } })
+  const session = await readSession(sessionID)
+  return { ...session, directory: session.directory || directory }
+}
+
+export async function commitRevertSession(directory: string, sessionID: string) {
   await request("POST", sessionPath(sessionID, "/revert/commit"), { scope: "none" })
   const session = await readSession(sessionID)
   return { ...session, directory: session.directory || directory }
+}
+
+export async function clearRevertSession(directory: string, sessionID: string) {
+  await request("DELETE", sessionPath(sessionID, "/revert"), { scope: "none" })
+  const session = await readSession(sessionID)
+  return { ...session, directory: session.directory || directory }
+}
+
+export async function revertSession(directory: string, sessionID: string, messageID: string, files = true) {
+  await stageRevertSession(directory, sessionID, messageID, files)
+  return commitRevertSession(directory, sessionID)
 }
 
 export async function listTodos(directory: string, sessionID: string) {

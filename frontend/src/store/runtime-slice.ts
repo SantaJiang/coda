@@ -646,7 +646,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
         reportError(handle, error, "停止失败")
       }
     },
-    revertToMessage: async (messageID) => {
+    revertToMessage: async (messageID, files = true) => {
       const session = selectedSession()
       const project = selectedProject()
       if (!session || !project || busy() || isLocalDraft(session)) return
@@ -657,7 +657,7 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       // boundary message, and its events can land while the request is in flight.
       const draft = revertDraftFromParts(state.parts[messageID] ?? [])
       try {
-        const updated = await client.revertSession(usable.path, session.id, messageID)
+        const updated = await client.revertSession(usable.path, session.id, messageID, files)
         if (!current()) return
         const directory = directoryFor(state, session, usable)
         setState("sessionsByProject", directory, (list = []) => upsertById(list, { ...updated, directory }))
@@ -669,6 +669,64 @@ export function createRuntimeSlice(handle: StoreHandle, refs: QueueRefs): Runtim
       } catch (error) {
         if (!current()) return
         reportError(handle, error, "回滚失败")
+      }
+    },
+    stageRevertToMessage: async (messageID, files = true) => {
+      const session = selectedSession()
+      const project = selectedProject()
+      if (!session || !project || busy() || isLocalDraft(session)) return
+      const current = sessionLifetime(state, session.id)
+      const usable = ensureProjectDirectory(project)
+      if (!usable) return
+      try {
+        const updated = await client.stageRevertSession(usable.path, session.id, messageID, files)
+        if (!current()) return
+        const directory = directoryFor(state, session, usable)
+        setState("sessionsByProject", directory, (list = []) => upsertById(list, { ...updated, directory }))
+      } catch (error) {
+        if (!current()) return
+        reportError(handle, error, "暂存回滚失败")
+      }
+    },
+    commitRevert: async () => {
+      const session = selectedSession()
+      const project = selectedProject()
+      if (!session?.revert || !project || busy() || isLocalDraft(session)) return
+      const messageID = session.revert.messageID
+      const current = sessionLifetime(state, session.id)
+      const usable = ensureProjectDirectory(project)
+      if (!usable) return
+      const draft = revertDraftFromParts(state.parts[messageID] ?? [])
+      try {
+        const updated = await client.commitRevertSession(usable.path, session.id)
+        if (!current()) return
+        const directory = directoryFor(state, session, usable)
+        setState("sessionsByProject", directory, (list = []) => upsertById(list, { ...updated, directory }))
+        setState(produce((next) => cutSessionMessages(next, session.id, messageID)))
+        setState("drafts", draftKey(session.id, state.selectedProjectId), {
+          composer: draft.text,
+          attachments: draft.attachments,
+        })
+      } catch (error) {
+        if (!current()) return
+        reportError(handle, error, "提交回滚失败")
+      }
+    },
+    clearRevert: async () => {
+      const session = selectedSession()
+      const project = selectedProject()
+      if (!session?.revert || !project || busy() || isLocalDraft(session)) return
+      const current = sessionLifetime(state, session.id)
+      const usable = ensureProjectDirectory(project)
+      if (!usable) return
+      try {
+        const updated = await client.clearRevertSession(usable.path, session.id)
+        if (!current()) return
+        const directory = directoryFor(state, session, usable)
+        setState("sessionsByProject", directory, (list = []) => upsertById(list, { ...updated, directory }))
+      } catch (error) {
+        if (!current()) return
+        reportError(handle, error, "撤销回滚失败")
       }
     },
     sendQueuedNow: async (id) => {

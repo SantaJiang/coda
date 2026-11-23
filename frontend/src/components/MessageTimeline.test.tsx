@@ -226,7 +226,7 @@ it.each(["wheel", "touch", "keyboard", "pointer"])("never shows jump-latest for 
     scene.host.querySelector<HTMLButtonElement>(".rollback")!.click()
     scene.host.querySelector<HTMLButtonElement>(".dialog-actions .stop")!.click()
     scene.layout()
-    expect(scene.runtime.revertToMessage).toHaveBeenCalledWith("u1")
+    expect(scene.runtime.revertToMessage).toHaveBeenCalledWith("u1", true)
     expect(scene.host.querySelector("[data-turn-id]")).toBeNull()
     expect(scene.host.querySelector(".jump-latest:not([disabled])")).toBeNull()
   } finally { scene.dispose() }

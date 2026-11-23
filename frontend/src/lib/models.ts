@@ -64,6 +64,7 @@ export type BackendProviderConfig = {
 export type ConfigPatch = {
   model?: string
   provider?: Record<string, BackendProviderConfig>
+  agent?: Record<string, Record<string, unknown>>
 }
 
 export type ProviderList = {

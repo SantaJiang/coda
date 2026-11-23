@@ -174,6 +174,13 @@ export function SessionPage() {
             </Show>
           </ChromeDrag>
           <ChildSessionBar />
+          <Show when={selected()?.revert && !isDraftView()}>
+            <div class="revert-banner" role="status">
+              <span>已暂存回滚，尚未提交。提交后对话会回到标记处，提问内容放回输入框。</span>
+              <button type="button" class="ghost-btn" onClick={() => void runtime.clearRevert()}>撤销暂存</button>
+              <button type="button" class="send-btn stop" onClick={() => void runtime.commitRevert()}>提交回滚</button>
+            </div>
+          </Show>
           <Show when={projects.error()}>
             <div class="session-error">{projects.error()}</div>
           </Show>

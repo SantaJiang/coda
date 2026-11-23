@@ -161,10 +161,15 @@ function UserBubble(props: { message: Message; parts: Part[] }) {
   const modelNameOf = useModelName()
   const runtime = useRuntime()
   const [confirmOpen, setConfirmOpen] = createSignal(false)
+  const [rollbackFiles, setRollbackFiles] = createSignal(true)
   const user = () => props.message as UserMessage
   const runRollback = () => {
     setConfirmOpen(false)
-    void runtime.revertToMessage(props.message.id)
+    void runtime.revertToMessage(props.message.id, rollbackFiles())
+  }
+  const stageRollback = () => {
+    setConfirmOpen(false)
+    void runtime.stageRevertToMessage(props.message.id, rollbackFiles())
   }
   const [expanded, setExpanded] = createSignal(false)
   const [overflowing, setOverflowing] = createSignal(false)
@@ -242,15 +247,21 @@ function UserBubble(props: { message: Message; parts: Part[] }) {
               </button>
             </header>
             <p class="dialog-hint">
-              这条提问之后的所有改动都会被丢弃（discard all changes），项目将恢复到这条提问之前的状态；
-              这条提问的内容会放回输入框，便于修改后重新发送。
+              这条提问之后的内容会被撤回，提问本身会放回输入框，便于修改后重新发送。
             </p>
+            <label class="rollback-option">
+              <input type="checkbox" checked={rollbackFiles()} onChange={(event) => setRollbackFiles(event.currentTarget.checked)} />
+              同时恢复这条提问之后改动的文件（关闭则只回退对话）
+            </label>
             <div class="dialog-actions">
               <button type="button" class="ghost-btn" autofocus onClick={() => setConfirmOpen(false)}>
                 取消
               </button>
+              <button type="button" class="ghost-btn" onClick={stageRollback}>
+                仅暂存
+              </button>
               <button type="button" class="send-btn stop" onClick={runRollback}>
-                回滚
+                立即回滚
               </button>
             </div>
           </div>

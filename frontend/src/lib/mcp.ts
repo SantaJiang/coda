@@ -14,11 +14,13 @@ export type McpServerConfig =
 
 export type McpConfigEntry = McpServerConfig | { enabled: boolean }
 
+type BackendRef = { integrationID?: string }
+
 export type McpStatus =
-  | { status: "connected" }
-  | { status: "disabled" }
-  | { status: "failed"; error: string }
-  | { status: "needs_auth" }
+  | ({ status: "connected" } & BackendRef)
+  | ({ status: "disabled" } & BackendRef)
+  | ({ status: "failed"; error: string } & BackendRef)
+  | ({ status: "needs_auth"; error: string } & BackendRef)
   | { status: "needs_client_registration"; error: string }
 
 export type McpStatusMap = Record<string, McpStatus>

@@ -104,6 +104,13 @@ function attachSessionError(draft: AppState, sessionID: string, error: Assistant
   draft.sessionErrorText[sessionID] = message
 }
 
+function setSessionRevert(draft: AppState, sessionID: string, revert: Session["revert"]) {
+  for (const [directory, sessions] of Object.entries(draft.sessionsByProject)) {
+    if (!(sessions ?? []).some((item) => item.id === sessionID)) continue
+    draft.sessionsByProject[directory] = sessions!.map((item) => (item.id === sessionID ? { ...item, revert } : item))
+  }
+}
+
 const upsertSession: EventHandler = (draft, { props, directory }) => {
   const info = props.info as Session | undefined
   const sessionID = (props.sessionID as string) ?? info?.id
@@ -202,9 +209,19 @@ const handlers: Record<string, EventHandler> = {
       delete draft.parts[messageID]
     }
   },
+  "session.revert.staged": (draft, { props }) => {
+    const sessionID = props.sessionID as string
+    const messageID = props.messageID as string
+    if (sessionID && messageID) setSessionRevert(draft, sessionID, { messageID })
+  },
+  "session.revert.cleared": (draft, { props }) => {
+    const sessionID = props.sessionID as string
+    if (sessionID) setSessionRevert(draft, sessionID, null)
+  },
   "session.revert.committed": (draft, { props }) => {
     const sessionID = props.sessionID as string
     const messageID = props.messageID as string
+    if (sessionID) setSessionRevert(draft, sessionID, null)
     if (sessionID && messageID) cutSessionMessages(draft, sessionID, messageID)
   },
   "message.part.updated": (draft, { props }) => {

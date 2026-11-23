@@ -1,6 +1,6 @@
 import type { ParsedEvent } from "./events"
 import type { AssistantMessage, Part, Session, ToolState } from "./types"
-import { formToQuestion } from "./v2-map"
+import { formToQuestion, revertFrom } from "./v2-map"
 
 type Wire = {
   id?: string
@@ -51,6 +51,7 @@ function sessionFrom(data: Record<string, unknown>, directory?: string): Session
     ...(model && typeof model.id === "string" && typeof model.providerID === "string"
       ? { model: { id: model.id, providerID: model.providerID, variant: typeof model.variant === "string" ? model.variant : undefined } }
       : {}),
+    ...revertFrom(data.revert),
     time: {
       created: typeof time?.created === "number" ? time.created : now,
       updated: typeof time?.updated === "number" ? time.updated : now,
@@ -118,6 +119,10 @@ export function translateWireEvent(raw: Wire): ParsedEvent[] {
   if (type === "session.deleted" || type === "session.status" || type === "session.idle" || type === "permission.replied") {
     return [emit(type, data)]
   }
+  if (type === "session.revert.staged") {
+    return [emit(type, { sessionID, messageID: String(record(data.revert)?.messageID ?? "") })]
+  }
+  if (type === "session.revert.cleared") return [emit(type, { sessionID })]
   if (type === "session.revert.committed") {
     return [emit(type, { sessionID, messageID: String(data.to ?? "") })]
   }

@@ -25,6 +25,9 @@ function stubClient(overrides: Partial<AgentClient> = {}): AgentClient {
     promptAsync: vi.fn(),
     abortSession: vi.fn(),
     revertSession: vi.fn(),
+    stageRevertSession: vi.fn(),
+    commitRevertSession: vi.fn(),
+    clearRevertSession: vi.fn(),
     replyPermission: vi.fn(),
     replyQuestion: vi.fn(),
     rejectQuestion: vi.fn(),
@@ -37,7 +40,7 @@ function userMessage(id: string): Message {
   return { id, sessionID: "s1", role: "user", time: { created: 1 } }
 }
 
-function setup(revertSession: AgentClient["revertSession"]) {
+function setup(revertSession: AgentClient["revertSession"], extra: Partial<AgentClient> = {}) {
   const session: Session = { id: "s1", directory: "/tmp/app", title: "会话", time: { created: 1, updated: 1 } }
   const [state, setState] = createStore<AppState>({
     ...structuredClone(initialState),
@@ -62,7 +65,7 @@ function setup(revertSession: AgentClient["revertSession"]) {
       ],
     },
   })
-  const handle: StoreHandle = { state, setState, client: stubClient({ revertSession }) }
+  const handle: StoreHandle = { state, setState, client: stubClient({ revertSession, ...extra }) }
   const runtime = createRuntimeSlice(handle, { skipQueueFlush: {}, sendAfterIdle: {}, flushing: {} })
   return { state, setState, runtime, session }
 }
@@ -76,7 +79,7 @@ describe("runtime.revertToMessage", () => {
 
     await runtime.revertToMessage("m2")
 
-    expect(revertSession).toHaveBeenCalledWith("/tmp/app", "s1", "m2")
+    expect(revertSession).toHaveBeenCalledWith("/tmp/app", "s1", "m2", true)
     expect(runtime.composer()).toBe("修复登录")
     expect(runtime.attachments()).toHaveLength(1)
     expect(runtime.attachments()[0]).toMatchObject({ filename: "notes.md", kind: "file" })
@@ -104,4 +107,36 @@ describe("runtime.revertToMessage", () => {
 
     expect(revertSession).not.toHaveBeenCalled()
   })
+
+  it("stages without files and hides the timeline until commit", async () => {
+    const stageRevertSession = vi.fn(async () => ({ ...setupSession, revert: { messageID: "m2" } }))
+    const { state, runtime, setState } = setup(vi.fn(), { stageRevertSession })
+    setState("sessionsByProject", "/tmp/app", (list = []) => list.map((item) => item.id === "s1" ? { ...item, revert: { messageID: "m2" } } : item))
+
+    await runtime.stageRevertToMessage("m2", false)
+
+    expect(stageRevertSession).toHaveBeenCalledWith("/tmp/app", "s1", "m2", false)
+    expect(runtime.messages().map((message) => message.id)).toEqual(["m1"])
+    expect(state.parts.m2).toBeDefined()
+  })
+
+  it("commits and clears a staged revert", async () => {
+    const commitRevertSession = vi.fn(async () => ({ ...setupSession, revert: null }))
+    const clearRevertSession = vi.fn(async () => ({ ...setupSession, revert: null }))
+    const { runtime, setState } = setup(vi.fn(), { commitRevertSession, clearRevertSession })
+    setState("sessionsByProject", "/tmp/app", (list = []) => list.map((item) => item.id === "s1" ? { ...item, revert: { messageID: "m2" } } : item))
+
+    await runtime.commitRevert()
+    expect(commitRevertSession).toHaveBeenCalledWith("/tmp/app", "s1")
+    expect(runtime.messages().map((message) => message.id)).toEqual(["m1"])
+
+    // The commit above removed m2/m3 from the timeline; restore them to test clear on its own.
+    setState("messages", "s1", [userMessage("m1"), userMessage("m2"), userMessage("m3")])
+    setState("sessionsByProject", "/tmp/app", (list = []) => list.map((item) => item.id === "s1" ? { ...item, revert: { messageID: "m2" } } : item))
+    await runtime.clearRevert()
+    expect(clearRevertSession).toHaveBeenCalledWith("/tmp/app", "s1")
+    expect(runtime.messages().map((message) => message.id)).toEqual(["m1", "m2", "m3"])
+  })
 })
+
+const setupSession: Session = { id: "s1", directory: "/tmp/app", title: "会话", time: { created: 1, updated: 1 } }
