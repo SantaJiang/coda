@@ -1,6 +1,6 @@
 {
   "name": "coda",
-  "version": "2.9.3",
+  "version": "2.9.4",
   "description": "Coda — 精简桌面 Agent 客户端",
   "type": "module",
   "scripts": {
