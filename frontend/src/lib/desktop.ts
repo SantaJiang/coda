@@ -29,6 +29,45 @@ export async function openExternalLink(url: string) {
   }
 }
 
+/**
+ * 窗口里只显示 Coda 自带的前端：外链（含会话流里的网址）交给系统浏览器，
+ * 其它协议和跨源跳转直接拦下，不让主窗口离开我们的页面。
+ */
+export function installNavigationGuard() {
+  const openable = (protocol: string) => ["http:", "https:", "mailto:", "tel:"].includes(protocol)
+  const guard = (event: MouseEvent) => {
+    if (event.defaultPrevented) return
+    const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null
+    if (!anchor) return
+    const href = anchor.getAttribute("href")
+    if (!href || href.startsWith("#")) return
+    let url: URL
+    try {
+      url = new URL(anchor.href, document.baseURI)
+    } catch {
+      event.preventDefault()
+      return
+    }
+    // 导出下载（blob 或 [download]）走浏览器的下载路径，不是页面跳转。
+    if (url.protocol === "blob:" || anchor.hasAttribute("download")) return
+    // 同源页面是前端自己，放行（SPA 路由用 history API，不会走到这里）。
+    if (openable(url.protocol) && url.origin === location.origin) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (openable(url.protocol)) void openExternalLink(url.href)
+  }
+  document.addEventListener("click", guard, true)
+  document.addEventListener("auxclick", guard, true)
+  // 只在桌面端接管 window.open；浏览器预览保持原生新标签页行为。
+  const originalOpen = window.open
+  if (isTauri()) window.open = ((url?: string | URL) => { void openExternalLink(String(url ?? "")); return null }) as typeof window.open
+  return () => {
+    document.removeEventListener("click", guard, true)
+    document.removeEventListener("auxclick", guard, true)
+    if (isTauri()) window.open = originalOpen
+  }
+}
+
 export async function prepareNotifications() {
   if (!isTauri()) return
   try {

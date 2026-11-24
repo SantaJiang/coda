@@ -1,4 +1,5 @@
 import { onCleanup, onMount } from "solid-js"
+import { installNavigationGuard } from "./lib/desktop"
 import { AppProvider } from "./store/app"
 import { ThemeProvider } from "./store/theme"
 import { Sidebar } from "./components/Sidebar"
@@ -24,9 +25,11 @@ export default function App() {
     }
     document.addEventListener("contextmenu", onContextMenu)
     document.addEventListener("mousedown", onMouseDown)
+    const stopNavigationGuard = installNavigationGuard()
     onCleanup(() => {
       document.removeEventListener("contextmenu", onContextMenu)
       document.removeEventListener("mousedown", onMouseDown)
+      stopNavigationGuard()
     })
   })
 

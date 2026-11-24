@@ -5,6 +5,7 @@ mod attachments;
 mod backend;
 mod lifecycle;
 mod macos_permissions;
+mod navigation_guard;
 mod paths;
 mod settings;
 mod terminal_record;
@@ -114,6 +115,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(navigation_guard::init())
         .invoke_handler(tauri::generate_handler![
             attachments::attachment_inspect,
             attachments::attachment_save,
